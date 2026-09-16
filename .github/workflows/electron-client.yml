@@ -1,0 +1,44 @@
+name: Electron client
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: electron-client-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  PNPM_HOME: ~/.local/share/pnpm
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm engine:dev
+      - run: pnpm check
+  package:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-latest, windows-latest, macos-latest] }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm engine:build
+      - run: pnpm build
+      - run: pnpm exec electron-builder --publish never
+      - uses: actions/upload-artifact@v4
+        with: { name: electron-client-${{ matrix.os }}, path: release/** }
