@@ -1,0 +1,7 @@
+packages:
+  - .
+allowBuilds:
+  electron: true
+  esbuild: true
+  ffmpeg-static: true
+  electron-winstaller: false

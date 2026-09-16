@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.bhwa233.download-client",
+  "productName": "bhwa233 Download Client",
+  "asar": true,
+  "directories": {
+    "output": "release/${version}"
+  },
+  "files": [
+    "dist-electron",
+    "dist"
+  ],
+  "mac": {
+    "artifactName": "${productName}_${version}.${ext}",
+    "target": [
+      "dmg",
+      "zip"
+    ]
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "${productName}_${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "bhwa233",
+    "repo": "bhwa233-download-api",
+    "releaseType": "release",
+    "vPrefixedTagName": false
+  },
+  "extraResources": [
+    {
+      "from": "resources/engine",
+      "to": "engine",
+      "filter": [
+        "**/*"
+      ]
+    }
+  ]
+}
