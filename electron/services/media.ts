@@ -51,7 +51,10 @@ function tiersOf(formats: RawFormat[], platform: string, duration?: number): Med
   // download ('bv*+ba') takes at that height (measured: HEVC 30066 / 30077 on 哔哩哔哩, 616 on YouTube).
   const preferred = new Map<string, RawFormat>()
   for (const format of formats) {
-    if (format.has_drm || format.ext === 'mhtml' || !format.vcodec || format.vcodec === 'none' || !format.height) continue
+    // A missing vcodec is a codec yt-dlp could not name, not an absent video: 哔哩哔哩's progressive MP4s
+    // (16 / 32 / 64, audio muxed in) come that way to a visitor, and were every tier such a video had.
+    // Only 'none' says there is no picture.
+    if (format.has_drm || format.ext === 'mhtml' || format.vcodec === 'none' || !format.height) continue
     const name = tierName(format, platform)
     const held = byName.get(name)
     // AVC first, and a video-only stream over one with its audio already muxed in. The muxed ones are

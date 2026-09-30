@@ -103,14 +103,15 @@ export class Controller {
   // one per entry: reading every entry would be dozens of requests to one platform in a burst. The
   // listing is already on screen; the tiers appear in the quality menu when they arrive.
   private async sampleTiers(plan: ParsePlan): Promise<void> {
-    try {
-      const formats = await this.readTiers(plan)
-      // Only onto the listing it was read for: the user may have parsed something else meanwhile.
-      if (!formats?.length || this.plan !== plan) return
-      plan.result.formats = formats
-      if (this.parseState.result?.id === plan.result.id) this.parseState = { ...this.parseState, result: plan.result }
-      this.emit()
-    } catch (error) { log.warn('读取清晰度样本失败', error) }
+    if (!plan.result.listing) return
+    // Only onto the listing it was read for: the user may have parsed something else meanwhile. A
+    // listing whose first video offers no tiers still gets an answer - an empty list - so the menu
+    // settles on the default instead of reading forever.
+    const formats = await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined })
+    if (this.plan !== plan) return
+    plan.result.formats = formats || []
+    if (this.parseState.result?.id === plan.result.id) this.parseState = { ...this.parseState, result: plan.result }
+    this.emit()
   }
   // The tiers of a listing's first video, which stand for the whole listing; nothing for a result that
   // is not a listing or has no video with a page of its own.
@@ -299,7 +300,7 @@ export class Controller {
             const plan = await this.parser.parse(url, this.profile(), AbortSignal.timeout(300_000), page > 1 ? { page } : {})
             // The window reads a listing's tiers in the background once the listing is on screen; the
             // command line has no screen to fill in later, so it waits for them before it answers.
-            if (!plan.result.formats) plan.result.formats = await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined })
+            if (!plan.result.formats && plan.result.listing) plan.result.formats = await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined }) || []
             this.detached.set(plan.result.id, plan)
             for (const id of [...this.detached.keys()].slice(0, -DETACHED)) this.detached.delete(id)
             return { ok: true, state: this.state(), result: plan.result }
