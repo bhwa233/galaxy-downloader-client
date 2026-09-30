@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { ClientState } from '../../../shared/contracts'
 import type { Send } from '@/App'
@@ -8,6 +9,7 @@ import type { Send } from '@/App'
 // told where that area is whenever it moves. Clicking outside the dialog, Esc or the close button ends
 // the preview; so can Esc inside the page, which the main process catches and reports through the state.
 export function Preview({ preview, send }: { preview: ClientState['preview']; send: Send }) {
+  const { t } = useTranslation('result')
   const element = useRef<HTMLDivElement | null>(null)
   const place = useCallback(() => {
     if (!element.current) return
@@ -27,7 +29,7 @@ export function Preview({ preview, send }: { preview: ClientState['preview']; se
   return <Dialog open={Boolean(preview)} onOpenChange={open => { if (!open) void send('preview:close', null) }}>
     <DialogContent className="h-[85vh] w-[min(92vw,80rem)] grid-rows-[auto_1fr] gap-0 overflow-hidden p-0 sm:max-w-none" onAnimationEnd={place}>
       <DialogTitle className="truncate py-3 pr-12 pl-4 text-sm">{preview?.title}</DialogTitle>
-      <div ref={area} className="grid min-h-0 place-items-center bg-black text-sm text-white/60">正在打开页面…</div>
+      <div ref={area} className="grid min-h-0 place-items-center bg-black text-sm text-white/60">{t('openingPage')}</div>
     </DialogContent>
   </Dialog>
 }

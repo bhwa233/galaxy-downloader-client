@@ -1,0 +1,47 @@
+{
+  "cancel": "取消",
+  "clear": "清空",
+  "close": "关闭",
+  "save": "保存",
+  "retry": "重试",
+  "copyLink": "复制链接",
+  "openPage": "打开原网页",
+  "linkCopied": "链接已复制",
+  "untitled": "未知标题",
+  "items_other": "{{count}} 项",
+  "kinds": {
+    "video": "视频",
+    "audio": "音频",
+    "image": "图文",
+    "picture": "图片",
+    "cover": "封面"
+  },
+  "platforms": {
+    "Bilibili": "哔哩哔哩",
+    "YouTube": "YouTube",
+    "抖音": "抖音",
+    "小红书": "小红书",
+    "微博": "微博",
+    "TikTok": "TikTok",
+    "X": "X",
+    "Instagram": "Instagram",
+    "微信公众号": "微信公众号"
+  },
+  "statuses": {
+    "queued": "等待中",
+    "running": "下载中",
+    "paused": "已暂停",
+    "completed": "已完成",
+    "cancelled": "已取消",
+    "failed": "失败"
+  },
+  "walls": {
+    "login": "需要登录才能继续",
+    "membership": "需要会员资格",
+    "purchase": "需要单独购买",
+    "encrypted": "平台加密，无法下载"
+  },
+  "verifyTitle": "需要完成验证",
+  "openLogin": "打开登录窗口",
+  "openVerify": "打开验证页面"
+}

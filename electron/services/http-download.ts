@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import type { Cookie } from './engine'
 import { logger } from './log'
+import { i18n } from '../../shared/i18n'
 
 const log = logger('http')
 
@@ -26,7 +27,7 @@ export async function fetchWithCookies(fetcher: Fetcher, address: string, cookie
   let target = address
   for (let redirect = 0; redirect < 10; redirect++) {
     const url = new URL(target)
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('不支持的媒体地址')
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(i18n.t('queue:errors.unsupportedUrl'))
     const headers = new Headers(init.headers)
     headers.delete('cookie')
     const value = cookieHeader(cookies, target)
@@ -40,10 +41,10 @@ export async function fetchWithCookies(fetcher: Fetcher, address: string, cookie
     if (![301, 302, 303, 307, 308].includes(response.status)) return response
     const location = response.headers.get('location')
     await response.body?.cancel()
-    if (!location) throw new Error('媒体重定向缺少地址')
+    if (!location) throw new Error(i18n.t('queue:errors.redirectWithoutLocation'))
     target = new URL(location, target).href
   }
-  throw new Error('媒体重定向次数过多')
+  throw new Error(i18n.t('queue:errors.tooManyRedirects'))
 }
 
 type Checkpoint = { source: string; etag?: string; modified?: string }
@@ -59,7 +60,7 @@ export async function downloadHttp(fetcher: Fetcher, url: string, destination: s
     const timeout = new AbortController()
     const requestSignal = AbortSignal.any([signal, timeout.signal])
     let timer: ReturnType<typeof setTimeout>
-    const touch = () => { clearTimeout(timer); timer = setTimeout(() => timeout.abort(new Error('下载连接超时')), (options.timeout ?? 30) * 1000) }
+    const touch = () => { clearTimeout(timer); timer = setTimeout(() => timeout.abort(new Error(i18n.t('queue:errors.connectionTimeout'))), (options.timeout ?? 30) * 1000) }
     touch()
     try {
       let offset = 0
@@ -75,10 +76,10 @@ export async function downloadHttp(fetcher: Fetcher, url: string, destination: s
       }
       const response = await fetchWithCookies(fetcher, url, cookies, { headers: requestHeaders, signal: requestSignal })
       log.debug(`${url} → ${response.status} · ${response.headers.get('content-type') || '无类型'} · 长度 ${response.headers.get('content-length') || '未知'}${offset ? ` · 从 ${offset} 续传` : ''}`)
-      if (!response.ok || !response.body) throw new Error(`下载请求失败 (${response.status})`)
+      if (!response.ok || !response.body) throw new Error(i18n.t('queue:errors.requestFailed', { status: response.status }))
       if (response.status === 206) {
         const range = response.headers.get('content-range')?.match(/^bytes (\d+)-(\d+)\/(\d+)$/)
-        if (!range || Number(range[1]) !== offset) { await response.body.cancel(); throw new Error('服务器返回了不匹配的续传范围') }
+        if (!range || Number(range[1]) !== offset) { await response.body.cancel(); throw new Error(i18n.t('queue:errors.rangeMismatch')) }
       } else offset = 0
       const etag = response.headers.get('etag') || undefined
       await writeFile(checkpointFile, JSON.stringify({ source, etag: etag?.startsWith('W/') ? undefined : etag, modified: response.headers.get('last-modified') || undefined }), { mode: 0o600 })
@@ -99,14 +100,14 @@ export async function downloadHttp(fetcher: Fetcher, url: string, destination: s
         void delay(wait, undefined, { signal: requestSignal }).then(() => { touch(); report(); done(null, chunk) }, error => done(error))
       } })
       await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), counter, createWriteStream(temporary, { flags: offset ? 'a' : 'w', mode: 0o600 }), { signal: requestSignal })
-      if (total > 0 && received !== total) throw new Error('媒体下载未完成，请重试')
+      if (total > 0 && received !== total) throw new Error(i18n.t('queue:errors.incomplete'))
       await rename(temporary, destination)
       await rm(checkpointFile, { force: true })
       progress(1)
       log.info(`完成 ${path.basename(destination)} · ${received} 字节 · ${Date.now() - began}ms`)
       return destination
     } catch (error) {
-      signal.throwIfAborted(); failure = timeout.signal.aborted ? new Error('下载连接超时') : error
+      signal.throwIfAborted(); failure = timeout.signal.aborted ? new Error(i18n.t('queue:errors.connectionTimeout')) : error
       log.warn(`第 ${attempt + 1} 次失败 ${url}`, failure)
     }
     finally { clearTimeout(timer!) }

@@ -1,0 +1,95 @@
+{
+  "pause": "Pause",
+  "resume": "Resume",
+  "revealFile": "Show in folder",
+  "open": "Open",
+  "copyPath": "Copy file path",
+  "downloadCover": "Download cover",
+  "downloadAudio": "Download audio",
+  "removeRecordMenu": "Delete record…",
+  "thisParse": "This parse",
+  "batchMenu": "Batch: {{title}}",
+  "batchLabel": "Batch: {{title}}",
+  "batch": {
+    "pause": "Pause batch",
+    "resume": "Resume batch",
+    "retry": "Retry batch",
+    "cancel": "Cancel batch",
+    "removeMenu": "Delete batch…",
+    "remove": "Delete batch"
+  },
+  "removeDialog": {
+    "title": "Delete this task record?",
+    "withFiles": "{{title}} — the downloaded files will be moved to the trash too.",
+    "keepFiles": "{{title}} — files on disk are kept.",
+    "confirm": "Delete record"
+  },
+  "removeBatchDialog": {
+    "title": "Delete the records of this batch?",
+    "withFiles": "All tasks of {{title}} — their downloaded files will be moved to the trash too.",
+    "keepFiles": "All tasks of {{title}} — files on disk are kept."
+  },
+  "alsoDeleteFiles": "Also delete downloaded files",
+  "keep": "Keep",
+  "preparing": "Preparing…",
+  "completedAt": "Completed {{time}}",
+  "remaining": "{{time}} left",
+  "viewTask": "View task {{title}}",
+  "failures": {
+    "resuming": { "title": "Download interrupted, resuming shortly", "hint": "It continues from where it stopped after the time above, or you can retry now." },
+    "noSpace": { "title": "Not enough disk space", "hint": "Free up space or choose another download folder in Settings, then retry." },
+    "permission": { "title": "No write permission", "hint": "Choose another download folder in Settings or check this folder's permissions, then retry." },
+    "expired": { "title": "Media link expired or refused", "hint": "Retrying parses the post again to get a fresh link. If it keeps happening, sign in again in the in-app browser." },
+    "network": { "title": "Network error", "hint": "Check your network or system proxy, then retry. On a slow network, increase the connection timeout in Settings." },
+    "convert": { "title": "Merge or conversion failed", "hint": "Check that FFmpeg is available under Settings → Tools & updates, then retry." },
+    "generic": { "title": "Download failed", "hint": "You can retry right away. If it keeps failing, export the diagnostics log to look into it." }
+  },
+  "files": {
+    "empty": "Files show up here once saved. Pausing and cancelling keep the partly downloaded files.",
+    "checking": "Checking…",
+    "saved": "Saved",
+    "missing": "File not found; it may have been moved or deleted"
+  },
+  "inspector": {
+    "title": "Task details",
+    "description": "Files, download status and activity.",
+    "actionFailed": "Action not completed"
+  },
+  "tabs": {
+    "overview": "Overview",
+    "files": "Files",
+    "log": "Activity log"
+  },
+  "fields": {
+    "progress": "Progress",
+    "platformKind": "Platform / type",
+    "method": "Parsed with",
+    "author": "Author",
+    "publishedAt": "Published",
+    "duration": "Duration",
+    "stats": "Views / danmaku / comments / likes",
+    "source": "Source",
+    "directory": "Save location",
+    "downloaded": "Downloaded",
+    "speed": "Current speed",
+    "eta": "Time left",
+    "autoResume": "Auto resumes",
+    "createdAt": "Created",
+    "completedAt": "Completed"
+  },
+  "methods": {
+    "browser": "In-app browser",
+    "local": "Local parse"
+  },
+  "noData": "No data yet",
+  "attempts_one": "{{count}} time",
+  "attempts_other": "{{count}} times",
+  "openFolder": "Open download folder",
+  "logNote": "Shows the latest 150 entries. Sensitive request details are hidden.",
+  "logEmpty": "No activity yet",
+  "exportLog": "Export diagnostics log",
+  "limit": {
+    "label": "Task speed limit (KiB/s)",
+    "description": "0 means no limit. Pause a running download first, then resume it after the change."
+  }
+}

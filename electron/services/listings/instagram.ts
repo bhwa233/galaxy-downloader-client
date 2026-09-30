@@ -8,6 +8,7 @@
 // only doc_id and variables, plus the csrf token and the app id, is answered in full; the nodes are the
 // v1 media shape entryOf below reads. The doc ids change with a deploy and are read off the page's own
 // scripts, the way the X adapter reads its query ids. Anything else stands down.
+import { i18n } from '../../../shared/i18n'
 import { LoginRequired } from '../login'
 import { isRecord, onePage, type Evaluate, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 
@@ -125,7 +126,7 @@ export const instagram: ProfileAdapter = {
   },
   async fetchPage({ url, page, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
     const found = handleOf(url)
-    if (!found) throw new Error('链接中没有用户名')
+    if (!found) throw new Error(i18n.t('errors:listing.noUsername'))
     // Without a way to read the page there is nothing to take the doc ids from.
     if (!evaluate) return undefined
     const facts = await (evaluate as Evaluate)<PageFacts>(READ_PAGE).catch(() => undefined)
@@ -146,7 +147,7 @@ export const instagram: ProfileAdapter = {
         : { data: { count: COUNT, include_reel_media_seen_timestamp: true, include_relationship_info: true, latest_besties_reel_media: true, latest_reel_media: true }, username: found.user, ...RELAY, ...(cursor ? { after: cursor, before: null, first: COUNT, last: null } : {}) }
       const response = await fetch(`${HOST}/graphql/query`, { method: 'POST', headers, referrer, signal, body: new URLSearchParams({ doc_id: doc, variables: JSON.stringify(variables) }).toString() })
       const body = await response.json().catch(() => undefined) as Reply | undefined
-      if (isRecord(body) && body.require_login) throw new LoginRequired('Instagram 要求登录后才能看这个主页。请打开登录窗口完成登录后重试。')
+      if (isRecord(body) && body.require_login) throw new LoginRequired(i18n.t('errors:instagram.profileSignIn'))
       if (response.status >= 400 || !isRecord(body) || !isRecord(body.data)) return undefined
       connection = found.reels ? body.data.fetch__XDTUserDict?.clips_connection : body.data.xdt_api__v1__feed__user_timeline_graphql_connection
       // The query ran but answered in a shape this does not read.
@@ -159,8 +160,8 @@ export const instagram: ProfileAdapter = {
     // A Reels edge wraps its media one level down; a posts edge is the media.
     const nodes = (connection?.edges || []).map(edge => edge.node?.media || edge.node).filter(Boolean) as Node[]
     const entries = nodes.map(node => entryOf(node, found.user)).filter((entry): entry is ListingEntry => Boolean(entry))
-    if (!entries.length && page === 1) throw new LoginRequired('这个主页没有读到任何作品。可能是私密账号，或需要登录后才能看到。请打开登录窗口完成登录后重试。')
-    return onePage('posts', `${found.user} 的${found.reels ? 'Reels' : '作品'}`, entries, {
+    if (!entries.length && page === 1) throw new LoginRequired(i18n.t('errors:instagram.profileEmpty'))
+    return onePage('posts', i18n.t(found.reels ? 'errors:instagram.reels' : 'errors:instagram.posts', { user: found.user }), entries, {
       index: page, size: COUNT, hasMore: Boolean(connection?.page_info?.has_next_page && connection.page_info.end_cursor),
     })
   },
@@ -195,11 +196,11 @@ export const instagramPost: ProfileAdapter = {
   entryUrl(url) { return url.href },
   async fetchPage({ url, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
     const code = postCodeOf(url)
-    if (!code) throw new Error('链接中没有帖子编号')
+    if (!code) throw new Error(i18n.t('errors:listing.noPostId'))
     const csrf = await evaluate?.<string>(`(document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1] || ''`).catch(() => '') || ''
     const response = await fetch(`${HOST}/api/v1/media/${mediaIdOf(code)}/info/`, { headers: { 'x-ig-app-id': APP_ID, ...(csrf ? { 'x-csrftoken': csrf } : {}) }, referrer: url.href, signal })
     const body = await response.json().catch(() => undefined) as Info | undefined
-    if (isRecord(body) && body.require_login) throw new LoginRequired('Instagram 要求登录后才能看这个帖子。请打开登录窗口完成登录后重试。')
+    if (isRecord(body) && body.require_login) throw new LoginRequired(i18n.t('errors:instagram.postSignIn'))
     const post = isRecord(body) && Array.isArray(body.items) ? body.items[0] : undefined
     if (response.status >= 400 || !post) return undefined
     const files = post.carousel_media?.length ? post.carousel_media : [post]

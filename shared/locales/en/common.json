@@ -1,0 +1,48 @@
+{
+  "cancel": "Cancel",
+  "clear": "Clear",
+  "close": "Close",
+  "save": "Save",
+  "retry": "Retry",
+  "copyLink": "Copy link",
+  "openPage": "Open original page",
+  "linkCopied": "Link copied",
+  "untitled": "Untitled",
+  "items_one": "{{count}} item",
+  "items_other": "{{count}} items",
+  "kinds": {
+    "video": "Video",
+    "audio": "Audio",
+    "image": "Photo post",
+    "picture": "Image",
+    "cover": "Cover"
+  },
+  "platforms": {
+    "Bilibili": "Bilibili",
+    "YouTube": "YouTube",
+    "抖音": "Douyin",
+    "小红书": "Xiaohongshu",
+    "微博": "Weibo",
+    "TikTok": "TikTok",
+    "X": "X",
+    "Instagram": "Instagram",
+    "微信公众号": "WeChat Official Accounts"
+  },
+  "statuses": {
+    "queued": "Queued",
+    "running": "Downloading",
+    "paused": "Paused",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+    "failed": "Failed"
+  },
+  "walls": {
+    "login": "Sign-in required",
+    "membership": "Membership required",
+    "purchase": "Purchase required",
+    "encrypted": "Encrypted by the platform; cannot be downloaded"
+  },
+  "verifyTitle": "Verification required",
+  "openLogin": "Open sign-in window",
+  "openVerify": "Open verification page"
+}

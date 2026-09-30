@@ -3,6 +3,7 @@
 // from inside the page is signed on its way out. Measured against the live API - a call carrying only
 // the business and device parameters, with no a_bogus, no msToken and no x-secsdk-web-signature,
 // answers status_code 0 with a full page of posts. This is the route the client already takes.
+import { i18n } from '../../../shared/i18n'
 import { LoginRequired, VerificationRequired } from '../login'
 import { isRecord, onePage, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 
@@ -92,7 +93,7 @@ export function entryOf(post: Post): ListingEntry | undefined {
     // The page links a picture post as a 笔记 and a video as a 视频; following its own form keeps the
     // address one the site will serve rather than one it has to redirect.
     url: `${HOST}/${image ? 'note' : 'video'}/${id}`,
-    title: post.desc?.trim() || `抖音作品 ${id}`,
+    title: post.desc?.trim() || i18n.t('errors:douyin.post', { id }),
     thumbnail: post.video?.cover?.url_list?.[0] || images[0]?.url_list?.[0],
     kind: image ? 'image' : 'video',
     // Reported in milliseconds, and zero on a picture post that has no video behind it.
@@ -130,10 +131,10 @@ export const douyin: ProfileAdapter = {
   async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
     const tab = tabOf(url)
     let sec = secUserIdOf(url)
-    if (!sec) throw new Error('链接中没有用户标识')
+    if (!sec) throw new Error(i18n.t('errors:listing.noUserKey'))
     if (sec === 'self') {
       sec = await ownId(fetch, signal)
-      if (!sec) throw new LoginRequired('这是"我的主页"，需要先在应用内浏览器登录才能知道它是谁。请打开登录窗口完成登录后重试。')
+      if (!sec) throw new LoginRequired(i18n.t('errors:douyin.myProfile'))
     }
     // The cursor cache is per tab as well as per user: 作品 and 喜欢 are different listings walked with
     // different cursors, and one key for both would hand a page of one the other's place in the walk.
@@ -146,11 +147,11 @@ export const douyin: ProfileAdapter = {
       signal.throwIfAborted()
       const query = new URLSearchParams({ ...CLIENT, ...LISTING, sec_user_id: sec, count: String(COUNT), max_cursor: String(cursor) })
       const response = await fetch(`${HOST}/${ENDPOINT[tab]}?${query}`, { signal })
-      body = await response.json().catch(() => { throw new VerificationRequired('抖音返回了验证页面而不是列表数据。请打开验证页面完成验证后重试。') }) as PostsResponse
+      body = await response.json().catch(() => { throw new VerificationRequired(i18n.t('errors:douyin.verification')) }) as PostsResponse
       // A tab whose endpoint this adapter guessed wrong answers 404 or with something that is not a
       // listing at all. That is this adapter being wrong rather than 抖音 refusing, so it stands down.
       if (tab !== 'post' && (response.status >= 400 || !isRecord(body))) return undefined
-      if (body.status_code) throw new Error(`抖音接口返回 ${body.status_code}${body.status_msg ? `：${body.status_msg}` : ''}`)
+      if (body.status_code) throw new Error(body.status_msg ? i18n.t('errors:douyin.apiMessage', { code: body.status_code, message: body.status_msg }) : i18n.t('errors:douyin.api', { code: body.status_code }))
       // A reply holding nothing but its status code is how 抖音 refuses to go deeper: the response to
       // the page's own request carries 'whale-decision-custom: black_no_login', and a signed-out visitor
       // is served the first page and no more. Named as a sign-in rather than a plain failure, because
@@ -159,11 +160,11 @@ export const douyin: ProfileAdapter = {
       // A hidden 推荐 answers aweme_list null even to a signed-in visitor, so for that tab no list on the
       // first page is privacy rather than a sign-in problem (measured 2026-09-23).
       if (reached === 1 && !body.aweme_list?.length && (tab === 'recommend' || (tab === 'like' && Array.isArray(body.aweme_list)))) {
-        throw new Error(`对方没有公开${tab === 'like' ? '喜欢' : '推荐'}列表，网页上看到的也是空的。`)
+        throw new Error(i18n.t(tab === 'like' ? 'errors:douyin.privateLikes' : 'errors:douyin.privateRecommended'))
       }
       if (!body.aweme_list) {
-        if (tab === 'like' && reached === 1) throw new LoginRequired('没有读到任何"喜欢"。对方可能没有公开喜欢列表，也可能需要登录后才能看到。请打开登录窗口完成登录后重试。')
-        throw new LoginRequired(`抖音只向已登录的访客提供第 ${reached} 页之后的作品。请打开登录窗口完成登录后重试。`)
+        if (tab === 'like' && reached === 1) throw new LoginRequired(i18n.t('errors:douyin.noLikes'))
+        throw new LoginRequired(i18n.t('errors:douyin.signInForMore', { page: reached }))
       }
       // Where this page ended, so the page after it can start here instead of at the beginning.
       if (body.max_cursor) walked?.cursors.set(reached, body.max_cursor)
@@ -174,8 +175,8 @@ export const douyin: ProfileAdapter = {
     const entries = (body.aweme_list || []).map(entryOf).filter((entry): entry is ListingEntry => Boolean(entry))
     const author = (body.aweme_list || []).find(post => post.author?.nickname)?.author?.nickname
     // The reply holds a few more than were asked for, so the page reports what it actually carried.
-    const named = { post: '的作品', like: '的喜欢', recommend: '的推荐' }[tab]
-    return onePage('posts', author ? `${author}${named}` : undefined, entries, { index: page, size: entries.length, hasMore: Boolean(body.has_more && body.max_cursor) })
+    const named = ({ post: 'errors:douyin.posts', like: 'errors:douyin.likes', recommend: 'errors:douyin.recommended' } as const)[tab]
+    return onePage('posts', author ? i18n.t(named, { author }) : undefined, entries, { index: page, size: entries.length, hasMore: Boolean(body.has_more && body.max_cursor) })
   },
 }
 
@@ -202,10 +203,10 @@ async function mixPage(fetch: PageRequest['fetch'], mix: string, page: number, s
     // Not a listing. That is this adapter being wrong about the endpoint, not 抖音 refusing.
     if (response.status >= 400 || !isRecord(reply)) return undefined
     body = reply
-    if (body.status_code) throw new Error(`抖音接口返回 ${body.status_code}${body.status_msg ? `：${body.status_msg}` : ''}`)
+    if (body.status_code) throw new Error(body.status_msg ? i18n.t('errors:douyin.apiMessage', { code: body.status_code, message: body.status_msg }) : i18n.t('errors:douyin.api', { code: body.status_code }))
     if (!Array.isArray(body.aweme_list)) {
-      if (reached === 1) throw new LoginRequired('没有读到这个合集里的作品。请打开登录窗口完成登录后重试。')
-      throw new LoginRequired(`抖音只向已登录的访客提供第 ${reached} 页之后的作品。请打开登录窗口完成登录后重试。`)
+      if (reached === 1) throw new LoginRequired(i18n.t('errors:douyin.collectionEmpty'))
+      throw new LoginRequired(i18n.t('errors:douyin.signInForMore', { page: reached }))
     }
     // The mix endpoint reports where it stopped as 'cursor'; the profile one calls it 'max_cursor'.
     const ended = reply.cursor ?? body.max_cursor
@@ -218,7 +219,7 @@ async function mixPage(fetch: PageRequest['fetch'], mix: string, page: number, s
   // naming each after its creator would file every show they made into the same directory.
   const named = (body.aweme_list || []).find(post => post.mix_info?.mix_name?.trim())?.mix_info?.mix_name?.trim()
   const author = (body.aweme_list || []).find(post => post.author?.nickname)?.author?.nickname
-  const title = named || (author ? `${author}的合集` : '合集')
+  const title = named || (author ? i18n.t('errors:douyin.authorCollection', { author }) : i18n.t('errors:douyin.collection'))
   return { title, kind: 'collection', groups: [{ id: 'collection', title, directory: title, entries, pagination: { index: page, size: entries.length, hasMore: Boolean(body.has_more) } }] }
 }
 
@@ -228,7 +229,7 @@ export const douyinCollection: ProfileAdapter = {
   entryUrl(url) { return url.href },
   async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
     const mix = mixIdOf(url)
-    if (!mix) throw new Error('链接中没有合集编号')
+    if (!mix) throw new Error(i18n.t('errors:listing.noCollectionId'))
     return await mixPage(fetch, mix, page, signal)
   },
 }
@@ -247,7 +248,7 @@ export const douyinVideo: ProfileAdapter = {
   entryUrl(url) { return url.href },
   async fetchPage({ url, page, group, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
     const aweme = awemeIdOf(url)
-    if (!aweme) throw new Error('链接中没有作品编号')
+    if (!aweme) throw new Error(i18n.t('errors:listing.noWorkId'))
     const query = new URLSearchParams({ ...CLIENT, aweme_id: aweme })
     const response = await fetch(`${HOST}/aweme/v1/web/aweme/detail/?${query}`, { signal })
     const body = await response.json().catch(() => undefined) as { aweme_detail?: { mix_info?: { mix_id?: string } } } | undefined
@@ -277,16 +278,16 @@ export const douyinSeries: ProfileAdapter = {
     const response = await fetch(`${HOST}/aweme/v1/web/series/card/feed/?${query}`, { signal })
     const body = await response.json().catch(() => undefined) as Catalogue | undefined
     if (response.status >= 400 || !isRecord(body) || !Array.isArray(body.card_list)) return undefined
-    if (body.status_code) throw new Error(`抖音接口返回 ${body.status_code}${body.status_msg ? `：${body.status_msg}` : ''}`)
+    if (body.status_code) throw new Error(body.status_msg ? i18n.t('errors:douyin.apiMessage', { code: body.status_code, message: body.status_msg }) : i18n.t('errors:douyin.api', { code: body.status_code }))
     const entries = body.card_list.map(card => card.series).filter((show): show is Show => Boolean(show?.series_id)).map((show): ListingEntry => {
       const episodes = show.stats?.total_episode || show.stats?.updated_to_episode
       return {
         id: show.series_id!, url: `${HOST}/collection/${show.series_id}`, whole: true, kind: 'video',
-        title: `${show.series_name?.trim() || `短剧 ${show.series_id}`}${episodes ? `（${episodes} 集）` : ''}`,
+        title: `${show.series_name?.trim() || i18n.t('errors:douyin.show', { id: show.series_id })}${episodes ? i18n.t('errors:douyin.episodes', { count: episodes }) : ''}`,
         thumbnail: show.cover_url?.url_list?.[0], views: count(show.stats?.play_vv), author: show.author?.nickname?.trim() || undefined,
       }
     })
-    if (!entries.length && page === 1) throw new LoginRequired('没有读到任何短剧。请打开登录窗口完成登录后重试。')
-    return onePage('shows', '抖音短剧', entries, { index: page, size: SHOWS, hasMore: Boolean(body.has_more) })
+    if (!entries.length && page === 1) throw new LoginRequired(i18n.t('errors:douyin.showsEmpty'))
+    return onePage('shows', i18n.t('errors:douyin.shows'), entries, { index: page, size: SHOWS, hasMore: Boolean(body.has_more) })
   },
 }

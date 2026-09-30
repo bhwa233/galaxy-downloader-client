@@ -1,0 +1,30 @@
+{
+  "notificationCompleted": "Download complete",
+  "coverFilename": "Cover",
+  "tray": {
+    "open": "Open Galaxy",
+    "pauseAll": "Pause all",
+    "quit": "Quit"
+  },
+  "errors": {
+    "untrustedPage": "Untrusted page",
+    "unsupportedCommand": "Unsupported operation",
+    "parseExpired": "The parse result has expired; parse again",
+    "selectionMissing": "The selected content doesn't exist",
+    "needsPurchase": "The selection includes items that must be purchased separately and can't be downloaded",
+    "qualityExpired": "The quality option is no longer valid",
+    "profileChanged": "Browser profiles have changed; refresh",
+    "noPageLink": "This task has no web page to open",
+    "noCompletedFile": "Completed file not found",
+    "openFailed": "Can't open the file: {{reason}}",
+    "cliMissing": "The command line bundle is missing: {{path}}",
+    "cliForeign": "{{path}} already exists and was not written by Galaxy Downloader."
+  },
+  "update": {
+    "latest": "You're on the latest version",
+    "development": "Development builds don't check for updates. Release builds update the app and the local engine through GitHub Releases.",
+    "checkFirst": "Check for updates first",
+    "notDownloaded": "The update hasn't finished downloading",
+    "pauseFirst": "Pause downloads before installing the update"
+  }
+}

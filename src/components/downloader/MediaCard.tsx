@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Heart, Image, MessageCircle, MessageSquare, Music2, Play, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -36,7 +37,6 @@ const lockedClick = (locked: string | undefined, onLocked: (() => void) | undefi
 // The preview button sits inside the card's label, so its click must not also tick the checkbox.
 const previewClick = (onPreview: () => void) => (event: React.MouseEvent) => { event.preventDefault(); event.stopPropagation(); onPreview() }
 
-export const kindLabel = (kind: MediaKind) => kind === 'image' ? '图文' : kind === 'audio' ? '音频' : '视频'
 // The picked card is the one the eye should land on first, so it carries the only hue on the screen.
 // Rings rather than borders, so a card can sit on any surface without its own edge shifting the layout.
 export const cardOutline = (selected = false) => cn(
@@ -82,6 +82,7 @@ export function MediaStatsRow({ views, danmaku, comments, likes, className }: Me
 }
 
 export function MediaCard({ title, kind, thumbnail, duration, selected, onSelectedChange, trailing, className, locked, onLocked, size, onPreview, label, ...stats }: MediaCardProps) {
+  const { t } = useTranslation(['result', 'common'])
   const hasOverlay = duration !== undefined || [stats.views, stats.danmaku, stats.comments, stats.likes].some(value => value !== undefined)
   // No author on a card: a listing is one creator's, and the result's title already says whose.
   const footer = stats.publishedAt ? formatDate(stats.publishedAt) : ''
@@ -89,16 +90,16 @@ export function MediaCard({ title, kind, thumbnail, duration, selected, onSelect
     <MediaCover kind={kind} thumbnail={thumbnail} alt={title} className={cn('[&_img]:transition [&_img]:group-hover:scale-105', kind === 'image' ? 'aspect-square' : 'aspect-video')}>
       <Checkbox
         className="absolute top-2 left-2 z-10 border-white/80 bg-black/55 text-white shadow-sm shadow-black/40 data-checked:border-selection data-checked:bg-selection data-checked:text-selection-foreground dark:bg-black/55 dark:data-checked:bg-selection"
-        checked={selected && !locked} disabled={Boolean(locked)} onCheckedChange={checked => onSelectedChange(checked === true)} aria-label={`选择 ${title}`}
+        checked={selected && !locked} disabled={Boolean(locked)} onCheckedChange={checked => onSelectedChange(checked === true)} aria-label={t('card.select', { title })}
       />
       {/* What the file is, on every card: a listing mixes pictures and clips, and the cover alone does
           not say which. A locked card's reason sits beside it. */}
       <span className="absolute top-2 right-2 z-10 flex gap-1 text-[11px] text-white">
         {locked && <span className="rounded-md bg-black/65 px-1.5 py-0.5">{locked}</span>}
-        <span className="rounded-md bg-black/65 px-1.5 py-0.5">{label ?? (kind === 'image' ? '图片' : kind === 'audio' ? '音频' : '视频')}</span>
+        <span className="rounded-md bg-black/65 px-1.5 py-0.5">{label ?? t(`common:kinds.${kind === 'image' ? 'picture' : kind}`)}</span>
       </span>
       {onPreview && <button
-        type="button" aria-label={`预览 ${title}`} title="预览" onClick={previewClick(onPreview)}
+        type="button" aria-label={t('card.preview', { title })} title={t('preview')} onClick={previewClick(onPreview)}
         className="absolute top-1/2 left-1/2 z-10 grid size-10 -translate-1/2 place-items-center rounded-full bg-black/65 text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/80 focus-visible:opacity-100"
       ><Play className="size-4 fill-current" /></button>}
       {/* One gradient carries both the counts and the duration, the way a listing thumbnail reads on the platform itself. */}
@@ -110,7 +111,7 @@ export function MediaCard({ title, kind, thumbnail, duration, selected, onSelect
     <div className="grid gap-1 p-2">
       <p className="line-clamp-2 text-xs font-medium">{title}</p>
       <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="truncate">{footer || label || kindLabel(kind)}</span>
+        <span className="truncate">{footer || label || t(`common:kinds.${kind}`)}</span>
         {size && <span className="shrink-0 tabular-nums">{size}</span>}
         {trailing}
       </div>
@@ -119,11 +120,12 @@ export function MediaCard({ title, kind, thumbnail, duration, selected, onSelect
 }
 
 export function MediaRow({ title, kind, thumbnail, duration, selected, onSelectedChange, trailing, className, locked, onLocked, size, onPreview, label, ...stats }: MediaCardProps) {
-  const meta = [duration !== undefined ? formatDuration(duration) : label || kindLabel(kind), size, stats.publishedAt ? formatDate(stats.publishedAt) : ''].filter(Boolean).join(' · ')
+  const { t } = useTranslation(['result', 'common'])
+  const meta = [duration !== undefined ? formatDuration(duration) : label || t(`common:kinds.${kind}`), size, stats.publishedAt ? formatDate(stats.publishedAt) : ''].filter(Boolean).join(' · ')
   return <label aria-disabled={locked ? true : undefined} onClick={lockedClick(locked, onLocked)} className={cn('flex cursor-pointer items-center gap-3 rounded-lg p-3', cardOutline(selected), selected && 'bg-selection/5', !selected && !locked && 'hover:bg-muted/50', locked && 'cursor-not-allowed opacity-60 hover:ring-border-strong', className)}>
     <Checkbox
       className="data-checked:border-selection data-checked:bg-selection data-checked:text-selection-foreground dark:data-checked:bg-selection"
-      checked={selected && !locked} disabled={Boolean(locked)} onCheckedChange={checked => onSelectedChange(checked === true)} aria-label={`选择 ${title}`}
+      checked={selected && !locked} disabled={Boolean(locked)} onCheckedChange={checked => onSelectedChange(checked === true)} aria-label={t('card.select', { title })}
     />
     <MediaCover kind={kind} thumbnail={thumbnail} className={cn('shrink-0 rounded-md', kind === 'image' ? 'size-14' : 'h-14 w-20')} />
     <span className="min-w-0 flex-1">
@@ -133,7 +135,7 @@ export function MediaRow({ title, kind, thumbnail, duration, selected, onSelecte
         <MediaStatsRow {...stats} />
       </span>
     </span>
-    {onPreview && <Button variant="ghost" size="icon-sm" aria-label={`预览 ${title}`} title="预览" onClick={previewClick(onPreview)}><Play /></Button>}
+    {onPreview && <Button variant="ghost" size="icon-sm" aria-label={t('card.preview', { title })} title={t('preview')} onClick={previewClick(onPreview)}><Play /></Button>}
     {locked ? <span className="shrink-0 text-xs text-muted-foreground">{locked}</span> : trailing}
   </label>
 }

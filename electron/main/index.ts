@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Controller } from './controller'
 import { logger } from '../services/log'
+import { i18n } from '../../shared/i18n'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const developmentUrl = !app.isPackaged ? process.env.VITE_DEV_SERVER_URL : undefined
@@ -21,13 +22,16 @@ let window: BrowserWindow | null = null
 let controller: Controller
 let tray: Tray | undefined
 let quitting = false
+// Started by the command line when it found no client running: the window is made but not shown, and
+// the tray or opening the app again brings it up.
+const background = process.argv.includes('--background')
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
   void app.whenReady().then(async () => {
     log.info(`启动 v${app.getVersion()} · ${process.platform}-${process.arch} · Electron ${process.versions.electron} · ${app.isPackaged ? '安装版' : '开发环境'} · 数据目录 ${app.getPath('userData')}`)
     controller = new Controller(() => window)
     ipcMain.handle('desktop:command', (event, name: unknown, input: unknown) => {
-      if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url.split('#')[0] !== rendererUrl.split('#')[0]) return { ok: false, message: '不可信的页面' }
+      if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url.split('#')[0] !== rendererUrl.split('#')[0]) return { ok: false, message: i18n.t('desktop:errors.untrustedPage') }
       return controller.command(name, input)
     })
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
@@ -40,14 +44,17 @@ else {
       tray = new Tray(icon)
       tray.setToolTip('Galaxy Downloader')
       const show = () => { if (!window) createWindow(); window?.show(); window?.focus() }
-      tray.setContextMenu(Menu.buildFromTemplate([{ label: '打开 Galaxy', click: show }, { label: '暂停全部', click: () => { void controller.command('jobs:batch', { action: 'pause' }) } }, { type: 'separator' }, { label: '退出', click: () => app.quit() }]))
+      // Built again whenever the language changes, so the menu follows the window's language.
+      const menu = () => { if (tray && !tray.isDestroyed()) tray.setContextMenu(Menu.buildFromTemplate([{ label: i18n.t('desktop:tray.open'), click: show }, { label: i18n.t('desktop:tray.pauseAll'), click: () => { void controller.command('jobs:batch', { action: 'pause' }) } }, { type: 'separator' }, { label: i18n.t('desktop:tray.quit'), click: () => app.quit() }])) }
+      menu()
+      i18n.on('languageChanged', menu)
       tray.on('click', show)
     }
     await controller.initialize()
   }).catch(error => { log.error('启动失败', error); app.quit() })
 }
 function createWindow(): void {
-  window = new BrowserWindow({ title: 'Galaxy Downloader', width: 1200, height: 850, minWidth: 900, minHeight: 650, backgroundColor: '#f7f8fa', webPreferences: { preload: path.join(root, 'dist-electron/preload/index.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } })
+  window = new BrowserWindow({ title: 'Galaxy Downloader', width: 1200, height: 850, minWidth: 900, minHeight: 650, backgroundColor: '#f7f8fa', show: !background, webPreferences: { preload: path.join(root, 'dist-electron/preload/index.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event, url) => { if (url !== rendererUrl) event.preventDefault() })
   window.webContents.on('will-attach-webview', event => event.preventDefault())

@@ -1,0 +1,126 @@
+{
+  "parse": {
+    "xiaohongshuProfile": "暂不支持小红书主页解析，请改用单篇笔记链接。",
+    "collectionEmpty": "这部合集里没有可下载的内容：没有读到任何一集，或者每一集都需要单独购买",
+    "listingCollectionEmpty": "这个合集里没有读到任何内容。请打开登录窗口完成登录或验证后重试。",
+    "listingProfileEmpty": "主页中没有读到任何作品。请打开登录窗口完成登录或验证后重试。",
+    "group": "内容",
+    "media": "媒体",
+    "signIn": "请在应用内浏览器登录后重试",
+    "challenge": "平台把这次访问转到了验证页面，文章本身没有打开。请打开登录窗口完成验证（必要时登录）后重试。",
+    "pageEmptyKnown": "页面没有提供可下载的内容。如果它需要登录才能看到，请打开登录窗口完成登录或验证后重试。",
+    "pageEmpty": "这个页面没有可下载的内容。",
+    "expired": "解析结果已过期，请重新解析"
+  },
+  "browser": {
+    "loginTitle": "登录",
+    "profileUnsupported": "暂不支持这个平台的主页解析，请改用单个作品链接。",
+    "profileTitle": "主页作品",
+    "fetchFailed": "页面内请求未发出：{{reason}}"
+  },
+  "media": {
+    "invalidUrl": "请粘贴有效的 http 或 https 媒体链接",
+    "unsupportedUrl": "链接格式不受支持",
+    "nothingFound": "没有找到可下载内容",
+    "item": "媒体 {{index}}",
+    "tier": {
+      "8k": "8K 超高清",
+      "4k": "4K 超清",
+      "1080p60": "1080P60 高帧率",
+      "1080p": "1080P 高清",
+      "720p60": "720P60 高帧率",
+      "720p": "720P 高清",
+      "480p": "480P 清晰",
+      "360p": "360P 流畅"
+    }
+  },
+  "access": {
+    "encrypted": "这是平台加密（DRM）的内容，即使账户有权限也取不到可用的媒体流。客户端不解密，也无法下载。",
+    "membership": "这是会员专享内容。用有权限的账户在应用内浏览器登录后重试；账户本身没有会员资格时无法下载。",
+    "purchase": "这是需要单独购买的内容。用已经购买过的账户在应用内浏览器登录后重试；没有购买就取不到。"
+  },
+  "listing": {
+    "noCollectionId": "链接中没有合集编号",
+    "noVideoId": "链接中没有视频编号",
+    "noUid": "链接中没有 UID",
+    "noUserKey": "链接中没有用户标识",
+    "noUserId": "链接中没有用户 ID",
+    "noUsername": "链接中没有用户名",
+    "noPostId": "链接中没有帖子编号",
+    "noWorkId": "链接中没有作品编号",
+    "fingerprint": "未能取得浏览器指纹"
+  },
+  "bilibili": {
+    "video": "哔哩哔哩视频 {{id}}",
+    "verification": "哔哩哔哩返回了验证页面而不是列表数据。请打开验证页面完成验证后重试。",
+    "api": "哔哩哔哩接口返回 {{code}}",
+    "apiMessage": "哔哩哔哩接口返回 {{code}}：{{message}}",
+    "series": "系列",
+    "collection": "合集",
+    "parts": "分P",
+    "wbiKeys": "未能取得 wbi 签名密钥",
+    "uploads": "{{author}}的投稿"
+  },
+  "douyin": {
+    "post": "抖音作品 {{id}}",
+    "myProfile": "这是\"我的主页\"，需要先在应用内浏览器登录才能知道它是谁。请打开登录窗口完成登录后重试。",
+    "verification": "抖音返回了验证页面而不是列表数据。请打开验证页面完成验证后重试。",
+    "api": "抖音接口返回 {{code}}",
+    "apiMessage": "抖音接口返回 {{code}}：{{message}}",
+    "privateLikes": "对方没有公开喜欢列表，网页上看到的也是空的。",
+    "privateRecommended": "对方没有公开推荐列表，网页上看到的也是空的。",
+    "noLikes": "没有读到任何\"喜欢\"。对方可能没有公开喜欢列表，也可能需要登录后才能看到。请打开登录窗口完成登录后重试。",
+    "signInForMore": "抖音只向已登录的访客提供第 {{page}} 页之后的作品。请打开登录窗口完成登录后重试。",
+    "posts": "{{author}}的作品",
+    "likes": "{{author}}的喜欢",
+    "recommended": "{{author}}的推荐",
+    "collectionEmpty": "没有读到这个合集里的作品。请打开登录窗口完成登录后重试。",
+    "authorCollection": "{{author}}的合集",
+    "collection": "合集",
+    "show": "短剧 {{id}}",
+    "episodes_other": "（{{count}} 集）",
+    "showsEmpty": "没有读到任何短剧。请打开登录窗口完成登录后重试。",
+    "shows": "抖音短剧"
+  },
+  "instagram": {
+    "profileSignIn": "Instagram 要求登录后才能看这个主页。请打开登录窗口完成登录后重试。",
+    "profileEmpty": "这个主页没有读到任何作品。可能是私密账号，或需要登录后才能看到。请打开登录窗口完成登录后重试。",
+    "posts": "{{user}} 的作品",
+    "reels": "{{user}} 的Reels",
+    "postSignIn": "Instagram 要求登录后才能看这个帖子。请打开登录窗口完成登录后重试。"
+  },
+  "weibo": {
+    "post": "微博 {{id}}",
+    "empty": "微博没有返回任何微博。请打开登录窗口完成登录后重试。",
+    "posts": "{{author}}的微博"
+  },
+  "weixin": {
+    "article": "公众号文章",
+    "history": "微信公众号的历史消息列表只存在于微信客户端内，网页上没有这个入口，客户端拿不到。可以改用公众号的「合集」链接（地址里带 album_id），或者逐篇粘贴文章链接。",
+    "api": "微信接口返回 {{code}}",
+    "apiMessage": "微信接口返回 {{code}}：{{message}}",
+    "empty": "没有读到这个合集里的文章。请打开登录窗口完成验证后重试。",
+    "collection": "公众号合集"
+  },
+  "x": {
+    "noToken": "X 没有给这个访客发出请求令牌，通常是还没有登录。请打开登录窗口完成登录后重试。",
+    "noAccount": "没有读到这个账号。它可能不存在，也可能只对已登录的访客可见。请打开登录窗口完成登录后重试。",
+    "refused": "X 接口返回拒绝：{{reason}}",
+    "noReason": "未说明原因",
+    "empty": "这个时间线没有读到任何带媒体的帖子。可能是受保护的账号，也可能需要登录后才能看到。请打开登录窗口完成登录后重试。",
+    "media": "{{handle}} 的媒体"
+  },
+  "xiaohongshu": {
+    "note": "小红书笔记 {{id}}"
+  },
+  "youtube": {
+    "video": "YouTube 视频 {{id}}",
+    "short": "YouTube 短片 {{id}}",
+    "noData": "频道页面没有返回列表数据，可能需要先完成同意或登录",
+    "videos": "{{channel}}的视频"
+  },
+  "contracts": {
+    "webLinkOnly": "只能打开网页链接",
+    "webImageOnly": "只能保存网页图片"
+  }
+}

@@ -6,6 +6,7 @@
 //   x/web-interface/wbi/view                 one video: its 分P list and, if it has one, its 合集
 //   x/polymer/web-space/seasons_archives_list one page of a 合集
 //   x/series/archives                         one page of a 系列
+import { i18n } from '../../../shared/i18n'
 import type { ListingEntry, ListingGroup, ListingPage, PageRequest, ProfileAdapter } from './types'
 import { VerificationRequired } from '../login'
 
@@ -42,7 +43,7 @@ function archiveOf(archive: Archive): ListingEntry | undefined {
   if (!archive.bvid) return undefined
   return {
     id: archive.bvid, url: `https://www.bilibili.com/video/${archive.bvid}`,
-    title: archive.title?.trim() || `哔哩哔哩视频 ${archive.bvid}`,
+    title: archive.title?.trim() || i18n.t('errors:bilibili.video', { id: archive.bvid }),
     thumbnail: https(archive.pic || '') || undefined, kind: 'video',
     duration: count(archive.duration), views: count(archive.stat?.view), publishedAt: archive.pubdate || undefined,
   }
@@ -69,8 +70,8 @@ export function sourceOf(url: URL): Source | undefined {
 async function read<T>(fetch: PageRequest['fetch'], address: string, referrer: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(address, { referrer, signal })
   // Risk control answers with an HTML challenge page rather than JSON; that is a closed route, not a reply.
-  const body = await response.json().catch(() => { throw new VerificationRequired('哔哩哔哩返回了验证页面而不是列表数据。请打开验证页面完成验证后重试。') }) as T & { code?: number; message?: string }
-  if (body.code) throw new Error(`哔哩哔哩接口返回 ${body.code}${body.message ? `：${body.message}` : ''}`)
+  const body = await response.json().catch(() => { throw new VerificationRequired(i18n.t('errors:bilibili.verification')) }) as T & { code?: number; message?: string }
+  if (body.code) throw new Error(body.message ? i18n.t('errors:bilibili.apiMessage', { code: body.code, message: body.message }) : i18n.t('errors:bilibili.api', { code: body.code }))
   return body
 }
 
@@ -85,7 +86,7 @@ export async function collectionGroup(request: Pick<PageRequest, 'fetch' | 'sign
   const entries = (body.data?.archives || []).map(archiveOf).filter((entry): entry is ListingEntry => Boolean(entry))
   // 系列 replies carry no name of their own, so a caller that already knows it says so; otherwise the
   // group is labelled for what it is rather than given a title invented here.
-  const title = named || body.data?.meta?.name?.trim() || (source.type === 'series' ? '系列' : '合集')
+  const title = named || body.data?.meta?.name?.trim() || i18n.t(source.type === 'series' ? 'errors:bilibili.series' : 'errors:bilibili.collection')
   const total = body.data?.page?.total ?? body.data?.meta?.total
   return {
     id: 'collection', title, directory: title, entries,
@@ -100,7 +101,7 @@ export const bilibiliCollection: ProfileAdapter = {
   entryUrl(url) { return url.href },
   async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage> {
     const source = sourceOf(url)
-    if (!source) throw new Error('链接中没有合集编号')
+    if (!source) throw new Error(i18n.t('errors:listing.noCollectionId'))
     const group = await collectionGroup({ fetch, signal }, source, page, url.href)
     return { title: group.title, kind: 'collection', groups: [group] }
   },
@@ -121,7 +122,7 @@ export const bilibiliVideo: ProfileAdapter = {
   entryUrl(url) { return url.href },
   async fetchPage({ url, page, group, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
     const bvid = bvidOf(url)
-    if (!bvid) throw new Error('链接中没有视频编号')
+    if (!bvid) throw new Error(i18n.t('errors:listing.noVideoId'))
     const view = await read<ViewResponse>(fetch, `${API}/x/web-interface/wbi/view?bvid=${bvid}`, url.href, signal)
     const data = view.data
     if (!data) return undefined
@@ -131,9 +132,9 @@ export const bilibiliVideo: ProfileAdapter = {
     const season = data.ugc_season
     const groups: ListingGroup[] = []
     if (parts.length > 1) {
-      const title = data.title?.trim() || `哔哩哔哩视频 ${bvid}`
+      const title = data.title?.trim() || i18n.t('errors:bilibili.video', { id: bvid })
       groups.push({
-        id: 'parts', title: '分P', directory: title,
+        id: 'parts', title: i18n.t('errors:bilibili.parts'), directory: title,
         // The part's own id has to differ from a 合集 entry's, because a 合集 contains the video being
         // looked at: both would otherwise be keyed by this same bvid and share one selection.
         entries: parts.map((part, index) => ({

@@ -1,3 +1,4 @@
+import { i18n } from '../../../shared/i18n'
 import { countOf, seconds } from './text'
 import { onePage, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 
@@ -46,7 +47,7 @@ export function lockupEntry(lockup: Record<string, unknown>): ListingEntry | und
   return {
     id, url: `https://www.youtube.com/watch?v=${id}`,
     // The grid is given titles already cut to its own width, so a long one arrives ending in '...'.
-    title: stringAt(metadata, 'title', 'content').trim() || `YouTube 视频 ${id}`,
+    title: stringAt(metadata, 'title', 'content').trim() || i18n.t('errors:youtube.video', { id }),
     thumbnail: widest(listAt(lockup, 'contentImage', 'thumbnailViewModel', 'image', 'sources')),
     kind: 'video',
     duration: seconds(badges.find(badge => /^\d+(:\d+)+$/.test(badge))),
@@ -63,7 +64,7 @@ export function shortsEntry(lockup: Record<string, unknown>): ListingEntry | und
   const overlay = at(lockup, 'overlayMetadata')
   return {
     id, url: `https://www.youtube.com/shorts/${id}`,
-    title: stringAt(overlay, 'primaryText', 'content').trim() || `YouTube 短片 ${id}`,
+    title: stringAt(overlay, 'primaryText', 'content').trim() || i18n.t('errors:youtube.short', { id }),
     thumbnail: widest(listAt(lockup, 'thumbnailViewModel', 'image', 'sources')) || widest(listAt(endpoint, 'thumbnail', 'thumbnails')),
     kind: 'video',
     views: countOf(stringAt(overlay, 'secondaryText', 'content')),
@@ -75,7 +76,7 @@ export function entryOf(renderer: Record<string, unknown>): ListingEntry | undef
   if (!id) return undefined
   return {
     id, url: `https://www.youtube.com/watch?v=${id}`,
-    title: (textOf(renderer.title) || textOf(renderer.headline)).trim() || `YouTube 视频 ${id}`,
+    title: (textOf(renderer.title) || textOf(renderer.headline)).trim() || i18n.t('errors:youtube.video', { id }),
     thumbnail: widest(listAt(renderer, 'thumbnail', 'thumbnails')),
     kind: 'video',
     // A live stream has no length and reports who is watching rather than who has watched.
@@ -197,7 +198,7 @@ export const youtube: ProfileAdapter = {
     else {
       const html = await (await fetch(address.href, { signal })).text()
       const data = embeddedJson(html, 'ytInitialData')
-      if (!data) throw new Error('频道页面没有返回列表数据，可能需要先完成同意或登录')
+      if (!data) throw new Error(i18n.t('errors:youtube.noData'))
       held.api = /"INNERTUBE_API_KEY":"([\w-]+)"/.exec(html)?.[1]
       held.version = /"INNERTUBE_CLIENT_VERSION":"([\d.]+)"/.exec(html)?.[1] || CLIENT_VERSION
       held.channel = channelOf(data)
@@ -214,7 +215,7 @@ export const youtube: ProfileAdapter = {
     const channel = held.channel
     // A channel listing leaves the owner off every row, because the whole page is one owner.
     // 短片 arrive in larger batches than 影片, so the page reports what it actually held.
-    return onePage('videos', channel ? `${channel}的视频` : undefined,
+    return onePage('videos', channel ? i18n.t('errors:youtube.videos', { channel }) : undefined,
       [...entries.values()].map(entry => ({ ...entry, author: entry.author || channel })),
       { index: page, size: entries.size || PAGE_SIZE, hasMore: Boolean(token) })
   },

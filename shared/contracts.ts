@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { i18n } from './i18n'
 
 export const settingsSchema = z.object({
   browserProfileId: z.string().max(200).nullable().default(null),
@@ -44,9 +45,14 @@ export const settingsSchema = z.object({
   resultView: z.enum(['auto', 'list', 'grid']).default('auto'),
   density: z.enum(['comfortable', 'compact']).default('comfortable'),
   theme: z.enum(['system', 'light', 'dark']).default('system'),
-  locale: z.enum(['zh', 'zh-tw', 'en', 'ja']).default('zh'),
+  // The window's language, and the one the client asks platforms for. Only Chinese and English: a
+  // setting saved as 繁体中文 or 日本語 by an earlier version reads as the closer of the two.
+  locale: z.preprocess(value => value === undefined || value === 'zh-tw' ? 'zh' : value === 'ja' ? 'en' : value, z.enum(['zh', 'en'])),
   // 详细日志: every request, wait and reply head goes to the log file, not only what the client did.
   verboseLogging: z.boolean().default(false),
+  // Whether the `galaxy` command line and the agents that use it may drive this client over its local
+  // channel. On by default; off stops the client listening at all.
+  allowControl: z.boolean().default(true),
 })
 // There is no proxy setting: every request follows whatever proxy the system itself is configured with,
 // which is where a user who runs one has already set it.
@@ -137,6 +143,9 @@ export type ClientState = {
   // The item whose page is open in the preview dialog. Held here rather than in the window, because
   // the page itself can close it too: Esc pressed inside it never reaches the window.
   preview?: { title: string };
+  // The `galaxy` command: whether its launcher is installed, where, and whether that directory is
+  // already on the PATH a new terminal gets.
+  commandLine: { installed: boolean; launcher: string; onPath: boolean };
 }
 export const parseInput = z.object({ url: z.string().trim().min(1).max(8192) })
 // What to download of each item, any combination: the media itself at 'format', its audio alone (a
@@ -157,7 +166,7 @@ export const commandSchemas = {
   'clipboard:write': z.object({ text: z.string().max(8192) }),
   // Hands an address to whatever the system opens links with. Only ever http(s): a renderer that could
   // name any scheme could ask the host to open a file or run a handler, which is not what a link is.
-  'shell:open': z.object({ url: z.url().refine(value => /^https?:\/\//i.test(value), '只能打开网页链接') }),
+  'shell:open': z.object({ url: z.url().refine(value => /^https?:\/\//i.test(value), { error: () => i18n.t('errors:contracts.webLinkOnly') }) }),
   'browser:login': z.object({ url: z.union([z.literal(''), z.url()]).default('') }),
   'media:parse': parseInput, 'media:cancel': z.null(), 'media:download': downloadInput,
   // 'groupId' names the tab being turned; a result with one group leaves it off and gets that one.
@@ -178,10 +187,15 @@ export const commandSchemas = {
   // Only ever about the list: forgetting a parse deletes nothing that was downloaded from it.
   'history:remove': z.object({ url: z.string().min(1).max(8192) }), 'history:clear': z.null(),
   // A parse result's cover, saved where the user picks. Only an http(s) address, like 'shell:open'.
-  'media:cover': z.object({ url: z.url().refine(value => /^https?:\/\//i.test(value), '只能保存网页图片'), title: z.string().max(500).default('封面') }),
+  'media:cover': z.object({ url: z.url().refine(value => /^https?:\/\//i.test(value), { error: () => i18n.t('errors:contracts.webImageOnly') }), title: z.string().max(500).default('封面') }),
   'jobs:remove': z.object({ id: z.string().uuid(), deleteFiles: z.boolean().default(false) }),
   // Whether each file a job recorded is still on disk, and how big it is, for the task detail.
   'jobs:files': z.object({ id: z.string().uuid() }),
+  // The command line's own. 'cli:parse' parses without touching the window's result, so an agent
+  // working in the background never replaces what the user is looking at.
+  'cli:hello': z.null(),
+  'cli:parse': z.object({ url: z.string().trim().min(1).max(8192), page: z.number().int().min(1).max(500).default(1) }),
+  'cli:install': z.null(), 'cli:uninstall': z.null(),
   'logs:export': z.null(), 'logs:open': z.null(),
   'tools:check': z.null(), 'update:check': z.null(), 'update:download': z.null(), 'update:install': z.null(),
 } as const
@@ -191,7 +205,10 @@ export type CommandInput<C extends Command> = z.input<(typeof commandSchemas)[C]
 // nothing, and the window says what happened rather than what was asked for.
 // 'files' answers 'jobs:files': a file that is gone has no size.
 export type JobFile = { path: string; exists: boolean; size?: number }
-export type Reply = { ok: true; state: ClientState; clipboardText?: string; added?: number; files?: JobFile[] } | { ok: false; message: string }
+// 'result', 'jobIds' and 'version' answer the command line; a refusal says which wall it hit, or that a
+// verification is wanted, so the command line can tell a sign-in apart from a failure.
+export type Reply = { ok: true; state: ClientState; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
+  | { ok: false; message: string; wall?: AccessWall; verify?: boolean; loginUrl?: string }
 export interface DesktopApi {
   command<C extends Command>(command: C, input: CommandInput<C>): Promise<Reply>
   subscribe(listener: (state: ClientState) => void): () => void

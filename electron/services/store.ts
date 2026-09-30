@@ -9,10 +9,11 @@ type StoredState = { version: 1; settings: Settings; jobs: Job[]; history: Histo
 export class Store {
   data: StoredState
   private file: string
-  constructor(directory: string, downloadDirectory: string) {
+  // 'locale' is the language a first start takes, before anything has been saved: the system's.
+  constructor(directory: string, downloadDirectory: string, locale: Settings['locale'] = 'zh') {
     mkdirSync(directory, { recursive: true })
     this.file = path.join(directory, 'state.json')
-    this.data = { version: 1, settings: { ...settingsSchema.parse({}), downloadDirectory }, jobs: [], history: [] }
+    this.data = { version: 1, settings: { ...settingsSchema.parse({}), locale, downloadDirectory }, jobs: [], history: [] }
     try {
       const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StoredState
       if (saved.version !== 1 || !Array.isArray(saved.jobs)) throw new Error('Unsupported saved state')

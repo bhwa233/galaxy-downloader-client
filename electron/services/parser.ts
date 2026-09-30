@@ -5,6 +5,7 @@ import type { EmbeddedBrowser } from './browser'
 import { findAdapter } from './listings'
 import { LoginRequired } from './login'
 import { logger } from './log'
+import { i18n } from '../../shared/i18n'
 import { SHORTENERS, flattenEntries, isCookieFailure, mediaResult, needsBrowser, normalizeUrl, platformOf, type RawInfo } from './media'
 
 const log = logger('parser')
@@ -33,8 +34,8 @@ export function isProfileUrl(url: string): boolean {
 
 // Listings the client will not walk. Saying so is kinder than letting the address fall through to a
 // route that was never going to serve it and failing there for a reason that reads like a login problem.
-const REFUSED: { host: RegExp; path: RegExp; message: string }[] = [
-  { host: /(^|\.)xiaohongshu\.com$/, path: /\/user\/profile\//, message: '暂不支持小红书主页解析，请改用单篇笔记链接。' },
+const REFUSED: { host: RegExp; path: RegExp; message: () => string }[] = [
+  { host: /(^|\.)xiaohongshu\.com$/, path: /\/user\/profile\//, message: () => i18n.t('errors:parse.xiaohongshuProfile') },
 ]
 
 // Pages a platform sends a visitor to instead of the one they asked for, when it wants a check passed
@@ -67,7 +68,7 @@ export function collapseStreams(addresses: string[]): string[] {
 
 export function refusalFor(url: string): string | undefined {
   const { hostname, pathname } = new URL(url)
-  return REFUSED.find(entry => entry.host.test(hostname) && entry.path.test(pathname))?.message
+  return REFUSED.find(entry => entry.host.test(hostname) && entry.path.test(pathname))?.message()
 }
 
 // How long a single work's parse is worth keeping. A picture post becomes one task per picture, and
@@ -153,7 +154,7 @@ export class Parser {
       }
       if (!group?.pagination?.hasMore || plan.result.items.length >= MOST) break
     }
-    if (!plan?.result.items.length) throw new Error('这部合集里没有可下载的内容：没有读到任何一集，或者每一集都需要单独购买')
+    if (!plan?.result.items.length) throw new Error(i18n.t('errors:parse.collectionEmpty'))
     return plan
   }
 
@@ -200,7 +201,7 @@ export class Parser {
       for (const found of listing.groups) {
         // Entry ids are the platform's own post ids, so the same post keeps its id across pages.
         const entries = found.entries.slice(0, Math.max(0, MOST - items.length))
-        groups.push({ id: found.id, title: found.title || '内容', directory: found.directory, itemIds: entries.map(entry => entry.id), pagination: found.pagination })
+        groups.push({ id: found.id, title: found.title || i18n.t('errors:parse.group'), directory: found.directory, itemIds: entries.map(entry => entry.id), pagination: found.pagination })
         for (const entry of entries) {
           // The post's own address is kept on the item: the window offers it as a link, and it is the
           // same public page the listing was read from.
@@ -209,7 +210,7 @@ export class Parser {
           sources.set(entry.id, whole ? { kind: 'collection', url: entry.url } : { kind: 'engine', request: { operation: 'download', url: entry.url, cookies: listing.cookies, headers: { Referer: url, 'User-Agent': listing.userAgent } } })
         }
       }
-      if (!items.length) throw new LoginRequired(listing.kind === 'collection' ? '这个合集里没有读到任何内容。请打开登录窗口完成登录或验证后重试。' : '主页中没有读到任何作品。请打开登录窗口完成登录或验证后重试。')
+      if (!items.length) throw new LoginRequired(i18n.t(listing.kind === 'collection' ? 'errors:parse.listingCollectionEmpty' : 'errors:parse.listingProfileEmpty'))
       const result: MediaResult = { id: randomUUID(), url, title: listing.title, platform: platformOf(url), method: 'browser', listing: listing.kind, groups, items }
       return { result, sources, catalog: new Map(items.map(item => [item.id, item])) }
     }
@@ -244,7 +245,7 @@ export class Parser {
           const extension = type.split('/')[1]?.split(';')[0] || 'bin'
           const kind = type.startsWith('image/') ? 'image' : type.startsWith('audio/') ? 'audio' : 'video'
           const id = '1'
-          const item: MediaItem = { id, title: url.split('/').pop()?.split('?')[0] || '媒体', kind, formats: [] }
+          const item: MediaItem = { id, title: url.split('/').pop()?.split('?')[0] || i18n.t('errors:parse.media'), kind, formats: [] }
           return { result: { id: randomUUID(), url, title: item.title, platform: platformOf(url), method: 'direct', items: [item] }, catalog: new Map([[id, item]]), sources: new Map([[id, { kind: 'http', url, cookies: [], headers: {}, extension }]]) }
         }
         throw failure
@@ -253,7 +254,7 @@ export class Parser {
     log.info(`改用应用内浏览器打开页面 ${url}`)
     let media
     try { media = await this.browser.inspect(url, signal) }
-    catch (error) { signal.throwIfAborted(); log.warn('应用内浏览器打开页面失败', error); throw new LoginRequired(error instanceof Error ? error.message : '请在应用内浏览器登录后重试') }
+    catch (error) { signal.throwIfAborted(); log.warn('应用内浏览器打开页面失败', error); throw new LoginRequired(error instanceof Error ? error.message : i18n.t('errors:parse.signIn')) }
     signal.throwIfAborted()
     // An article is read off the page and nowhere else: the engine has no extractor for one, so the
     // attempt would only cost a failure. Everything else is offered to it first, because a real
@@ -274,7 +275,7 @@ export class Parser {
     // renders, so the honest answer is "it wants you to pass its check" rather than "this page has no
     // media" - which is true of the captcha page and says nothing about the article.
     if (CHALLENGES.test(new URL(media.url).pathname)) {
-      throw new LoginRequired('平台把这次访问转到了验证页面，文章本身没有打开。请打开登录窗口完成验证（必要时登录）后重试。')
+      throw new LoginRequired(i18n.t('errors:parse.challenge'))
     }
     const assets: { address: string; kind: MediaItem['kind'] }[] = media.article
       ? [...media.videos.map(played), ...media.images.map(address => ({ address, kind: 'image' as const }))]
@@ -287,8 +288,8 @@ export class Parser {
       // not know, and signing in is the fix worth offering. Any other site that opened and held no
       // media simply has none - telling its user to sign in would send them after the wrong thing.
       const known = platformOf(url) !== new URL(url).hostname.replace(/^www\./, '')
-      if (known) throw new LoginRequired('页面没有提供可下载的内容。如果它需要登录才能看到，请打开登录窗口完成登录或验证后重试。')
-      throw new Error('这个页面没有可下载的内容。')
+      if (known) throw new LoginRequired(i18n.t('errors:parse.pageEmptyKnown'))
+      throw new Error(i18n.t('errors:parse.pageEmpty'))
     }
     const sources = new Map<string, DownloadSource>()
     const result: MediaResult = {

@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { logger } from './log'
+import { i18n } from '../../shared/i18n'
 
 const log = logger('engine')
 
@@ -47,11 +48,11 @@ export function runProcess<T>(executable: string, args: string[], input: unknown
     const output = createInterface({ input: child.stdout })
     output.on('line', line => {
       bytes += line.length
-      if (bytes > 32 * 1024 * 1024) { error = '媒体信息超过允许大小'; stop(); return }
+      if (bytes > 32 * 1024 * 1024) { error = i18n.t('queue:errors.engineOutputTooLarge'); stop(); return }
       try {
         const event = JSON.parse(line) as EngineEvent
         if (event.kind === 'result') result = event.result as T
-        else if (event.kind === 'error') error = redact(event.message || '本地引擎失败')
+        else if (event.kind === 'error') error = redact(event.message || i18n.t('queue:errors.engineFailed'))
         else {
           // yt-dlp's own messages. A caller that listens - a download - files them in the job's log,
           // which reaches this file too; progress ticks are left out, there are hundreds of them.
@@ -68,9 +69,9 @@ export function runProcess<T>(executable: string, args: string[], input: unknown
       signal?.removeEventListener('abort', stop)
       output.close()
       const took = `${Date.now() - started}ms`
-      if (signal?.aborted) { log.info(`取消 ${label} ${took}`); reject(new DOMException('操作已取消', 'AbortError')) }
-      else if (timedOut) { log.warn(`超时 ${label} ${took}`); reject(new Error('操作超时，请重试')) }
-      else if (code !== 0 || result === undefined) { log.warn(`失败 ${label} 退出码 ${code} ${took}：${error.slice(-1500)}`); reject(new Error(error || `本地引擎退出 (${code})`)) }
+      if (signal?.aborted) { log.info(`取消 ${label} ${took}`); reject(new DOMException(i18n.t('queue:errors.cancelled'), 'AbortError')) }
+      else if (timedOut) { log.warn(`超时 ${label} ${took}`); reject(new Error(i18n.t('queue:errors.timeout'))) }
+      else if (code !== 0 || result === undefined) { log.warn(`失败 ${label} 退出码 ${code} ${took}：${error.slice(-1500)}`); reject(new Error(error || i18n.t('queue:errors.engineExited', { code: String(code) }))) }
       else { log.info(`完成 ${label} ${took}`); resolve(result) }
     })
     child.stdin.end(JSON.stringify(input))
@@ -88,7 +89,7 @@ export class Engine {
     const local = path.join(this.root, 'node_modules', 'ffmpeg-static', name)
     if (existsSync(bundled)) return bundled
     if (!this.packaged && existsSync(local)) return local
-    throw new Error('缺少 FFmpeg，请重新安装客户端或运行 pnpm install')
+    throw new Error(i18n.t('queue:errors.ffmpegMissing'))
   }
 
   private get command(): [string, string[]] {
@@ -96,7 +97,7 @@ export class Engine {
     if (existsSync(binary)) return [binary, []]
     const python = path.join(this.root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
     if (!this.packaged && existsSync(python)) return [python, [path.join(this.root, 'engine/main.py')]]
-    throw new Error('缺少本地解析引擎。开发环境请运行 pnpm engine:dev；安装版请重新安装。')
+    throw new Error(i18n.t('queue:errors.engineMissing'))
   }
 
   request<T>(request: EngineRequest, signal?: AbortSignal, onEvent?: (event: EngineEvent) => void): Promise<T> {

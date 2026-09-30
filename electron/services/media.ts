@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { MediaResult, MediaItem } from '../../shared/contracts'
+import { i18n } from '../../shared/i18n'
 
 export type RawInfo = {
   id?: string; title?: string; webpage_url?: string; original_url?: string; url?: string; ext?: string; duration?: number; thumbnail?: string;
@@ -25,12 +26,12 @@ function tierName(format: RawFormat, platform: string): string {
   const height = format.height || 0
   const smooth = (format.fps || 0) >= 50
   if (platform === 'Bilibili') {
-    if (height >= 4000) return '8K 超高清'
-    if (height >= 2000) return '4K 超清'
-    if (height >= 1000) return smooth ? '1080P60 高帧率' : '1080P 高清'
-    if (height >= 700) return smooth ? '720P60 高帧率' : '720P 高清'
-    if (height >= 460) return '480P 清晰'
-    return '360P 流畅'
+    if (height >= 4000) return i18n.t('errors:media.tier.8k')
+    if (height >= 2000) return i18n.t('errors:media.tier.4k')
+    if (height >= 1000) return i18n.t(smooth ? 'errors:media.tier.1080p60' : 'errors:media.tier.1080p')
+    if (height >= 700) return i18n.t(smooth ? 'errors:media.tier.720p60' : 'errors:media.tier.720p')
+    if (height >= 460) return i18n.t('errors:media.tier.480p')
+    return i18n.t('errors:media.tier.360p')
   }
   if (format.format_note && /^\d{3,4}p/.test(format.format_note)) return format.format_note
   return `${height}p${smooth ? Math.round(format.fps!) : ''}`
@@ -91,9 +92,9 @@ const SHARED_BY_X = ['s', 't']
 
 export function normalizeUrl(input: string): string {
   const candidate = input.match(/https?:\/\/[^\s<>"「」]+/i)?.[0]?.replace(/[，。！）)]+$/, '')
-  if (!candidate) throw new Error('请粘贴有效的 http 或 https 媒体链接')
+  if (!candidate) throw new Error(i18n.t('errors:media.invalidUrl'))
   const url = new URL(candidate)
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('链接格式不受支持')
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(i18n.t('errors:media.unsupportedUrl'))
   // 抖音 短剧 are the one platform that puts the work's id in the query rather than in the path: a
   // shared episode lands on '/series?modal_id=<id>', where '/series' is the 短剧 index and nothing
   // downstream would recognise it as one work. The id is an aweme id like any other, so the address
@@ -147,7 +148,7 @@ function publishedAt(entry: RawInfo): number | undefined {
 export function mediaResult(raw: RawInfo, url: string, method: MediaResult['method']): MediaResult {
   const entries = flattenEntries(raw)
   const items: MediaItem[] = entries.map((entry, index) => ({
-    id: String(index + 1), title: entry.title || raw.title || `媒体 ${index + 1}`, duration: entry.duration,
+    id: String(index + 1), title: entry.title || raw.title || i18n.t('errors:media.item', { index: index + 1 }), duration: entry.duration,
     views: entry.view_count, comments: entry.comment_count,
     author: entry.uploader || entry.channel || raw.uploader || raw.channel, publishedAt: publishedAt(entry) ?? publishedAt(raw),
     // Channel and playlist entries carry a thumbnails list instead of a single thumbnail.
@@ -155,7 +156,7 @@ export function mediaResult(raw: RawInfo, url: string, method: MediaResult['meth
     kind: entry.vcodec === 'none' ? 'audio' : 'video',
     formats: tiersOf(entry.formats || [], platformOf(url), entry.duration),
   }))
-  if (!items.length) throw new Error('没有找到可下载内容')
+  if (!items.length) throw new Error(i18n.t('errors:media.nothingFound'))
   // A list that filled the limit exactly is one the engine stopped at rather than reached the end of:
   // 'playlistend' cuts it off there, and a YouTube Mix has no end to reach at all. Saying so is the
   // difference between a listing that is short and one the user is being shown only the front of.

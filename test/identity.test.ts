@@ -19,7 +19,7 @@ test('client hints carry the Chromium that is actually running', () => {
 
 test('language follows the interface the user picked', () => {
   expect(acceptLanguageFor('zh')).toBe('zh-CN,zh;q=0.9')
-  expect(acceptLanguageFor('ja')).toMatch(/^ja,/)
+  expect(acceptLanguageFor('en')).toMatch(/^en-US,/)
 })
 
 test('a request only states where it came from when it knows', () => {

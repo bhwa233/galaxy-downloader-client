@@ -80,7 +80,7 @@ test('a listing request names the graphics stack the way the page itself does', 
 
 // The locale travels with the request so this field cannot disagree with the session's Accept-Language.
 test('the language the client asks in follows the locale it was given', async () => {
-  const locales = ['zh', 'zh-tw', 'en', 'ja'] as const
+  const locales = ['zh', 'en'] as const
   const asked = []
   for (const locale of locales) {
     const called: string[] = []
@@ -89,8 +89,7 @@ test('the language the client asks in follows the locale it was given', async ()
     asked.push(JSON.parse(new URL(called.find(url => url.includes('arc/search'))!).searchParams.get('x-bili-locale-json')!).c_locale)
   }
   expect(asked).toEqual([
-    { language: 'zh', script: 'Hans' }, { language: 'zh', script: 'Hant' },
-    { language: 'en', script: 'Latn' }, { language: 'ja', script: 'Jpan' },
+    { language: 'zh', script: 'Hans' }, { language: 'en', script: 'Latn' },
   ])
 })
 

@@ -11,6 +11,7 @@ import { discoverProfiles, publicProfiles, type LocalProfile } from '../services
 import { normalizeUrl } from '../services/media'
 import { Parser, type ParsePlan } from '../services/parser'
 import { previewPage } from '../services/preview'
+import { i18n, localeFor, setLocale } from '../../shared/i18n'
 import { asAccessDenied } from '../services/access'
 import { LoginRequired, VerificationRequired } from '../services/login'
 import { Queue } from '../services/queue'
@@ -18,8 +19,17 @@ import { downloadHttp } from '../services/http-download'
 import { checkCover } from '../services/cover'
 import { Updates } from './update'
 import { logDirectory, logger, recentLog, setVerbose } from '../services/log'
+import { ControlServer } from '../services/control'
+import { CommandLine } from '../services/command-line'
+import { controlAddress } from '../../shared/control'
 
 const log = logger('controller')
+
+// What the command line may ask for. Nothing that opens a dialog in the window, changes settings or
+// installs anything: those stay the user's, in the window.
+const CONTROLLABLE = new Set(['state:get', 'cli:hello', 'cli:parse', 'media:download', 'jobs:action', 'jobs:batch', 'jobs:remove', 'browser:login', 'tools:check'])
+// How many command-line results are kept to download from.
+const DETACHED = 20
 
 // What a failed parse is reported as. Four refusals are told apart from one another and from an
 // ordinary failure: a sign-in fixes the first, an entitled account the next two, and nothing the last.
@@ -41,7 +51,7 @@ function refusal(error: unknown, url: string): ClientState['parse'] {
 }
 
 export class Controller {
-  private store = new Store(app.getPath('userData'), app.getPath('downloads'))
+  private store = new Store(app.getPath('userData'), app.getPath('downloads'), localeFor(app.getLocale()))
   private engine = new Engine(app.getAppPath(), process.resourcesPath, app.isPackaged, () => this.store.data.settings.locale)
   private browser = new EmbeddedBrowser(() => this.store.data.settings.locale)
   // Both go through the browser's own session: an image or a direct file has to be fetched by the same
@@ -60,11 +70,19 @@ export class Controller {
   // A job re-resolves the one post it was made from. 'single' says so: its URL can itself be a listing
   // the client would otherwise expand - a 哔哩哔哩 video that turned out to have 分P - and downloading
   // all of them under one job is not what the user picked.
-  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), (job, signal) => this.parser.parse(job.url, this.profile(), signal, { browserOnly: job.method === 'browser', single: job.itemId === '*' }), () => this.emit(), job => { if (this.store.data.settings.notifications && Notification.isSupported()) new Notification({ title: '下载完成', body: job.title }).show() }, file => shell.trashItem(file))
+  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), (job, signal) => this.parser.parse(job.url, this.profile(), signal, { browserOnly: job.method === 'browser', single: job.itemId === '*' }), () => this.emit(), job => { if (this.store.data.settings.notifications && Notification.isSupported()) new Notification({ title: i18n.t('desktop:notificationCompleted'), body: job.title }).show() }, file => shell.trashItem(file))
+  // Results parsed for the command line, apart from the window's own; the newest few are kept.
+  private detached = new Map<string, ParsePlan>()
+  private commandLine = new CommandLine(app.getPath('userData'), app.getAppPath(), app.isPackaged)
+  private control = new ControlServer(async (name, input) => {
+    if (!CONTROLLABLE.has(name)) return { ok: false, message: i18n.t('desktop:errors.unsupportedCommand') }
+    return await this.command(name, input)
+  })
   private updates = new Updates(() => this.emit(), () => this.queue.jobs.some(job => job.status === 'running' || job.status === 'queued'))
-  constructor(private window: () => BrowserWindow | null) {}
+  // What the main process says to the user - errors, a task's log, notifications - is in the window's language.
+  constructor(private window: () => BrowserWindow | null) { setLocale(this.store.data.settings.locale) }
   private profile() { const profile = this.profiles.find(item => item.id === this.store.data.settings.browserProfileId); return profile ? { browser: profile.browser, path: profile.path } : undefined }
-  state(): ClientState { return { settings: this.store.data.settings, profiles: publicProfiles(this.profiles), jobs: this.queue.jobs.map(job => ({ ...job, url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing } }
+  state(): ClientState { return { settings: this.store.data.settings, profiles: publicProfiles(this.profiles), jobs: this.queue.jobs.map(job => ({ ...job, url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: this.commandLine.state() } }
   // A successful parse goes to the top of 解析历史: one entry per address, the newest 50 kept. Only
   // successes - a list of failures would bury the entries worth parsing again.
   private remember(plan: ParsePlan): void {
@@ -85,12 +103,8 @@ export class Controller {
   // one per entry: reading every entry would be dozens of requests to one platform in a burst. The
   // listing is already on screen; the tiers appear in the quality menu when they arrive.
   private async sampleTiers(plan: ParsePlan): Promise<void> {
-    if (!plan.result.listing) return
-    const first = plan.result.items.find(item => item.kind === 'video' && !item.wall && item.url)
-    if (!first?.url) return
     try {
-      const sample = await this.parser.parse(first.url, this.profile(), new AbortController().signal, { single: true })
-      const formats = sample.result.items[0]?.formats
+      const formats = await this.readTiers(plan)
       // Only onto the listing it was read for: the user may have parsed something else meanwhile.
       if (!formats?.length || this.plan !== plan) return
       plan.result.formats = formats
@@ -98,8 +112,34 @@ export class Controller {
       this.emit()
     } catch (error) { log.warn('读取清晰度样本失败', error) }
   }
+  // The tiers of a listing's first video, which stand for the whole listing; nothing for a result that
+  // is not a listing or has no video with a page of its own.
+  private async readTiers(plan: ParsePlan): Promise<ParsePlan['result']['formats']> {
+    if (!plan.result.listing) return undefined
+    const first = plan.result.items.find(item => item.kind === 'video' && !item.wall && item.url)
+    if (!first?.url) return undefined
+    const sample = await this.parser.parse(first.url, this.profile(), new AbortController().signal, { single: true })
+    return sample.result.items[0]?.formats
+  }
   private emit(): void { const win = this.window(); if (win && !win.isDestroyed()) win.webContents.send('desktop:state', this.state()) }
-  async initialize(): Promise<void> { setVerbose(this.store.data.settings.verboseLogging); await this.refresh(); await this.checkTools(); this.queue.pump() }
+  async initialize(): Promise<void> {
+    setVerbose(this.store.data.settings.verboseLogging); await this.refresh(); await this.checkTools(); this.queue.pump()
+    await this.commandLine.refresh().catch(error => log.warn('命令行工具刷新失败', error))
+    await this.syncControl()
+  }
+  // Listening only while the setting allows it. A second client already answering on the address - a
+  // development build beside an installed one - leaves this one without a channel, which is logged.
+  private async syncControl(): Promise<void> {
+    const wanted = this.store.data.settings.allowControl
+    if (wanted && !this.control.listening) await this.control.start(controlAddress(!app.isPackaged)).catch(() => {})
+    else if (!wanted && this.control.listening) this.control.stop()
+  }
+  // The command line asks by result id; a result is the window's or one it parsed itself.
+  private planFor(resultId: string): ParsePlan {
+    const plan = this.plan?.result.id === resultId ? this.plan : this.detached.get(resultId)
+    if (!plan) throw new Error(i18n.t('desktop:errors.parseExpired'))
+    return plan
+  }
   // The login window closing is the only signal the client gets that a sign-in is over; whether it
   // succeeded is not knowable from here. So the page that asked for it is simply asked for again, and
   // reports whatever it is given this time - including the same refusal, if the window was closed
@@ -132,11 +172,12 @@ export class Controller {
   async command(name: unknown, raw: unknown): Promise<Reply> {
     let added: number | undefined
     let files: JobFile[] | undefined
+    const jobIds: string[] = []
     const started = Date.now()
     // Polled by the window; a line per poll would drown out everything else.
     const quiet = name === 'state:get' || name === 'clipboard:read'
     try {
-      if (typeof name !== 'string' || !Object.hasOwn(commandSchemas, name)) throw new Error('不支持的操作')
+      if (typeof name !== 'string' || !Object.hasOwn(commandSchemas, name)) throw new Error(i18n.t('desktop:errors.unsupportedCommand'))
       const command = name as Command
       const input = commandSchemas[command].parse(raw)
       switch (command) {
@@ -180,7 +221,7 @@ export class Controller {
         case 'media:page': {
           const { resultId, page, groupId } = commandSchemas['media:page'].parse(input)
           const current = this.plan
-          if (!current || current.result.id !== resultId) throw new Error('解析结果已过期，请重新解析')
+          if (!current || current.result.id !== resultId) throw new Error(i18n.t('desktop:errors.parseExpired'))
           this.parsing?.abort(); const controller = new AbortController(); this.parsing = controller
           try {
             const next = await this.parser.parse(current.result.url, this.profile(), controller.signal, { page, group: groupId })
@@ -216,42 +257,63 @@ export class Controller {
         }
         case 'media:download': {
           const { resultId, itemIds, format, kinds } = commandSchemas['media:download'].parse(input)
-          if (!this.plan || this.plan.result.id !== resultId) throw new Error('解析结果已过期，请重新解析')
-          const items = [...new Set(itemIds)].map(id => this.plan!.catalog.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item))
-          if (items.length !== new Set(itemIds).size) throw new Error('所选内容不存在')
+          const plan = this.planFor(resultId)
+          const items = [...new Set(itemIds)].map(id => plan.catalog.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item))
+          if (items.length !== new Set(itemIds).size) throw new Error(i18n.t('desktop:errors.selectionMissing'))
           // The window keeps these from being picked; this keeps them from being queued however asked.
-          if (items.some(item => item.wall === 'purchase')) throw new Error('所选内容里有需要单独购买的，无法下载')
+          if (items.some(item => item.wall === 'purchase')) throw new Error(i18n.t('desktop:errors.needsPurchase'))
           // A tier is either one of the item's own, or on a listing one of the tiers read off its first
           // video - which a later video may lack, and is then downloaded at its best. Only the media
           // itself has a tier; audio and covers ignore it.
-          const offered = (item: typeof items[number]) => item.formats.some(entry => entry.id === format) || Boolean(this.plan?.result.listing && this.plan.result.formats?.some(entry => entry.id === format))
-          if (kinds.includes('video') && format !== 'best' && items.some(item => item.kind !== 'image' && !offered(item))) throw new Error('画质选项已失效')
+          const offered = (item: typeof items[number]) => item.formats.some(entry => entry.id === format) || Boolean(plan.result.listing && plan.result.formats?.some(entry => entry.id === format))
+          if (kinds.includes('video') && format !== 'best' && items.some(item => item.kind !== 'image' && !offered(item))) throw new Error(i18n.t('desktop:errors.qualityExpired'))
           // Each kind asked for is queued on its own, from the items it applies to: a picture has no
           // audio, and is skipped for it rather than failing the rest.
-          const enqueue = (from: ParsePlan, picked: typeof items) => kinds.reduce((sum, kind) => {
-            const applicable = kind === 'audio' ? picked.filter(item => item.kind !== 'image') : picked
-            return applicable.length ? sum + this.queue.enqueue(from, applicable, kind === 'video' ? format : 'best', kind === 'audio', kind === 'cover') : sum
-          }, 0)
+          const enqueue = (from: ParsePlan, picked: typeof items) => {
+            for (const kind of kinds) {
+              const applicable = kind === 'audio' ? picked.filter(item => item.kind !== 'image') : picked
+              if (applicable.length) this.queue.enqueue(from, applicable, kind === 'video' ? format : 'best', kind === 'audio', kind === 'cover', jobIds)
+            }
+          }
           // A whole collection picked from a catalogue (a 短剧 from the 短剧 list) is not a file: it is
           // walked now, every page, and each of its items queued as a task of its own - one batch and
           // one directory per collection.
-          const plan = this.plan
           const whole = items.filter(item => plan.sources.get(item.id)?.kind === 'collection')
           const files = items.filter(item => !whole.includes(item))
           // Anything already waiting to be downloaded is left to do it, so the reply reports what this
           // actually started rather than what was asked for.
-          added = files.length ? enqueue(plan, files) : 0
+          if (files.length) enqueue(plan, files)
           for (const item of whole) {
             const source = plan.sources.get(item.id)
             if (source?.kind !== 'collection') continue
             const expanded = await this.parser.expand(source.url, this.profile(), new AbortController().signal)
-            added += enqueue(expanded, expanded.result.items)
+            enqueue(expanded, expanded.result.items)
           }
+          added = jobIds.length
           break
         }
+        case 'cli:hello': return { ok: true, state: this.state(), version: app.getVersion() }
+        case 'cli:parse': {
+          const { url, page } = commandSchemas['cli:parse'].parse(input)
+          try {
+            const plan = await this.parser.parse(url, this.profile(), AbortSignal.timeout(300_000), page > 1 ? { page } : {})
+            // The window reads a listing's tiers in the background once the listing is on screen; the
+            // command line has no screen to fill in later, so it waits for them before it answers.
+            if (!plan.result.formats) plan.result.formats = await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined })
+            this.detached.set(plan.result.id, plan)
+            for (const id of [...this.detached.keys()].slice(0, -DETACHED)) this.detached.delete(id)
+            return { ok: true, state: this.state(), result: plan.result }
+          } catch (error) {
+            log.error(`命令行解析失败 ${url}`, error)
+            const refused = refusal(error, url)
+            return { ok: false, message: refused.message || String(error), wall: refused.wall, verify: refused.verify, loginUrl: refused.loginUrl }
+          }
+        }
+        case 'cli:install': await this.commandLine.install(); break
+        case 'cli:uninstall': await this.commandLine.uninstall(); break
         case 'media:preview': {
           const { resultId, itemId } = commandSchemas['media:preview'].parse(input)
-          if (!this.plan || this.plan.result.id !== resultId) throw new Error('解析结果已过期，请重新解析')
+          if (!this.plan || this.plan.result.id !== resultId) throw new Error(i18n.t('desktop:errors.parseExpired'))
           const page = previewPage(this.plan, itemId)
           const window = this.window()
           if (!window || window.isDestroyed()) break
@@ -264,9 +326,9 @@ export class Controller {
         case 'preview:close': this.browser.closePreview(); break
         case 'settings:save': {
           const settings = { ...settingsSchema.parse(input), browserProfileId: this.store.data.settings.browserProfileId }
-          if (settings.browserProfileId && !this.profiles.some(profile => profile.id === settings.browserProfileId)) throw new Error('浏览器配置已变化，请刷新')
+          if (settings.browserProfileId && !this.profiles.some(profile => profile.id === settings.browserProfileId)) throw new Error(i18n.t('desktop:errors.profileChanged'))
           const reschedule = settings.concurrency !== this.store.data.settings.concurrency || settings.speedLimit !== this.store.data.settings.speedLimit
-          this.store.data.settings = { ...settings, downloadDirectory: this.store.data.settings.downloadDirectory }; this.store.save(); setVerbose(settings.verboseLogging); if (reschedule) this.queue.restartActive(); else this.queue.pump(); break
+          this.store.data.settings = { ...settings, downloadDirectory: this.store.data.settings.downloadDirectory }; this.store.save(); setVerbose(settings.verboseLogging); setLocale(settings.locale); await this.syncControl(); if (reschedule) this.queue.restartActive(); else this.queue.pump(); break
         }
         case 'settings:directory': {
           const result = await dialog.showOpenDialog(this.window()!, { properties: ['openDirectory', 'createDirectory'], defaultPath: this.store.data.settings.downloadDirectory })
@@ -280,25 +342,25 @@ export class Controller {
           if (action === 'audio') { this.queue.audio(id); break }
           if (!['open', 'reveal', 'copy-link', 'open-page', 'copy-path', 'login'].includes(action)) { this.queue.action(id, action as 'pause' | 'resume' | 'retry' | 'cancel'); break }
           const job = this.queue.jobs.find(item => item.id === id)
-          if (!job) throw new Error('下载任务不存在')
+          if (!job) throw new Error(i18n.t('queue:errors.jobNotFound'))
           if (action === 'copy-link') { await clipboard.writeText(job.url); break }
           // The page the job failed on is where the platform's own sign-in prompt is.
           if (action === 'login') { this.browser.openLogin(/^https?:\/\//i.test(job.url) ? job.url : '', () => void this.afterLogin()); break }
           // Only ever the page the job was made from, which this client fetched itself and which the
           // schema for a pasted link has already held to http(s).
           if (action === 'open-page') {
-            if (!/^https?:\/\//i.test(job.url)) throw new Error('这个任务没有可打开的网页链接')
+            if (!/^https?:\/\//i.test(job.url)) throw new Error(i18n.t('desktop:errors.noPageLink'))
             await shell.openExternal(job.url); break
           }
           // These speak for a file on disk, so all want one that is there and is the job's own.
           const file = job.files[0]
-          if (!file || job.status !== 'completed' || path.dirname(path.resolve(file)) !== path.resolve(job.directory)) throw new Error('找不到已完成的文件')
+          if (!file || job.status !== 'completed' || path.dirname(path.resolve(file)) !== path.resolve(job.directory)) throw new Error(i18n.t('desktop:errors.noCompletedFile'))
           if (action === 'copy-path') await clipboard.writeText(file)
           else if (action === 'open') {
             // The system's own default application for the file. It reports a failure as a message
             // rather than throwing - no application for the type, or the file gone since.
             const failure = await shell.openPath(file)
-            if (failure) throw new Error(`无法打开文件：${failure}`)
+            if (failure) throw new Error(i18n.t('desktop:errors.openFailed', { reason: failure }))
           }
           else shell.showItemInFolder(file)
           break
@@ -314,7 +376,7 @@ export class Controller {
         case 'media:cover': {
           const { url, title } = commandSchemas['media:cover'].parse(input)
           const extension = /\.(jpe?g|png|webp|gif|avif)(\?|$|@)/i.exec(new URL(url).pathname + new URL(url).search)?.[1]?.toLowerCase().replace('jpeg', 'jpg') || 'jpg'
-          const name = `${title.replace(/[<>:"/\\|?*]|\p{Cc}/gu, '_').trim().slice(0, 80) || '封面'}.${extension}`
+          const name = `${title.replace(/[<>:"/\\|?*]|\p{Cc}/gu, '_').trim().slice(0, 80) || i18n.t('desktop:coverFilename')}.${extension}`
           const chosen = await dialog.showSaveDialog(this.window()!, { defaultPath: path.join(this.store.data.settings.downloadDirectory, name) })
           if (chosen.canceled || !chosen.filePath) break
           // Through the client's own session, so a cover the platform only serves to its own visitors
@@ -324,7 +386,7 @@ export class Controller {
         }
         case 'jobs:files': {
           const job = this.queue.jobs.find(item => item.id === commandSchemas['jobs:files'].parse(input).id)
-          if (!job) throw new Error('下载任务不存在')
+          if (!job) throw new Error(i18n.t('queue:errors.jobNotFound'))
           files = await Promise.all(job.files.map(async file => {
             const found = await stat(file).catch(() => undefined)
             return { path: file, exists: Boolean(found?.isFile()), size: found?.isFile() ? found.size : undefined }
@@ -351,7 +413,7 @@ export class Controller {
         case 'update:install': this.updates.install(); break
       }
       if (!quiet) log.debug(`${command} ${Date.now() - started}ms`)
-      this.emit(); return { ok: true, state: this.state(), added, files }
+      this.emit(); return { ok: true, state: this.state(), added, files, jobIds }
     } catch (error) {
       const message = redact(error instanceof Error ? error.message : String(error))
       // The renderer shows this to the user, and until now that was the only place it went: a failure
@@ -361,5 +423,5 @@ export class Controller {
       this.emit(); return { ok: false, message }
     }
   }
-  stop(): void { this.parsing?.abort(); this.queue.stop(); this.browser.close() }
+  stop(): void { this.parsing?.abort(); this.queue.stop(); this.browser.close(); this.control.stop() }
 }

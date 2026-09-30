@@ -12,6 +12,7 @@
 //
 // Checked against the live site on 2026-09-23: the shape below is what the album page's own request
 // gets back, anonymously. A reply that is not it still makes the adapter stand down.
+import { i18n } from '../../../shared/i18n'
 import { LoginRequired } from '../login'
 import { isRecord, onePage, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 
@@ -49,7 +50,7 @@ export function entryOf(article: Article): ListingEntry | undefined {
     // The article's own message id, so the same article keeps its id across pages.
     id: `${article.msgid || address}-${article.itemidx || '1'}`,
     url: address.replace(/&amp;/g, '&'),
-    title: article.title?.trim() || '公众号文章',
+    title: article.title?.trim() || i18n.t('errors:weixin.article'),
     thumbnail: (article.cover_img_1_1 || article.cover_img || '').replace(/^http:\/\//, 'https://') || undefined,
     // An article is 图文: whatever media is inside it is found when that article is parsed.
     kind: 'image',
@@ -76,10 +77,10 @@ export const weixin: ProfileAdapter = {
   entryUrl(url) { return url.href },
   async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
     if (isHomepage(url)) {
-      throw new Error('微信公众号的历史消息列表只存在于微信客户端内，网页上没有这个入口，客户端拿不到。可以改用公众号的「合集」链接（地址里带 album_id），或者逐篇粘贴文章链接。')
+      throw new Error(i18n.t('errors:weixin.history'))
     }
     const source = albumOf(url)
-    if (!source) throw new Error('链接中没有合集编号')
+    if (!source) throw new Error(i18n.t('errors:listing.noCollectionId'))
     // The album pages by cursor: the next page starts after the msgid and itemidx of the last article
     // shown, which is what the album page itself sends (measured 2026-09-23). An offset is not a cursor
     // - 'begin_msgid=10' answers with no article_list at all.
@@ -97,10 +98,10 @@ export const weixin: ProfileAdapter = {
       if (response.status >= 400 || !isRecord(reply) || !isRecord(reply.getalbum_resp)) return undefined
       body = reply
       const ret = body.base_resp?.ret
-      if (ret) throw new Error(`微信接口返回 ${ret}${body.base_resp?.errmsg ? `：${body.base_resp.errmsg}` : ''}`)
+      if (ret) throw new Error(body.base_resp?.errmsg ? i18n.t('errors:weixin.apiMessage', { code: ret, message: body.base_resp.errmsg }) : i18n.t('errors:weixin.api', { code: ret }))
       const found = body.getalbum_resp?.article_list
       if (!Array.isArray(found)) return undefined
-      if (!found.length && reached === 1) throw new LoginRequired('没有读到这个合集里的文章。请打开登录窗口完成验证后重试。')
+      if (!found.length && reached === 1) throw new LoginRequired(i18n.t('errors:weixin.empty'))
       list = found
       const last = found.at(-1)
       if (!last?.msgid) break
@@ -110,7 +111,7 @@ export const weixin: ProfileAdapter = {
     }
     const entries = list.map(entryOf).filter((entry): entry is ListingEntry => Boolean(entry))
     const title = body.getalbum_resp?.album_info?.title?.trim() || body.getalbum_resp?.base_info?.title?.trim()
-    return onePage('articles', title || '公众号合集', entries, {
+    return onePage('articles', title || i18n.t('errors:weixin.collection'), entries, {
       index: page, size: COUNT, hasMore: body.getalbum_resp?.continue_flag === '1',
     })
   },

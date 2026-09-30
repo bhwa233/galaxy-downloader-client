@@ -14,6 +14,7 @@
 // 20 kept on the page it was measured on). Signed out, X serves a different front end (x-web) with no
 // query ids at all, so this stands down and the page is swept instead. Every step still stands down
 // rather than insisting: no token, no operation id, or a reply that is not this shape.
+import { i18n } from '../../../shared/i18n'
 import { LoginRequired } from '../login'
 import { isRecord, onePage, type Evaluate, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 
@@ -139,13 +140,13 @@ export const x: ProfileAdapter = {
   entryUrl(url) { return `${HOST}/${handleOf(url)}` },
   async fetchPage({ url, page, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
     const handle = handleOf(url)
-    if (!handle) throw new Error('链接中没有用户名')
+    if (!handle) throw new Error(i18n.t('errors:listing.noUsername'))
     // Without a way to read the page there is nothing to read the token or the operation ids from,
     // and neither can be invented here.
     if (!evaluate) return undefined
     // Not httpOnly, because X's own scripts read it to put it on every request they make.
     const token = await evaluate<string>(`(document.cookie.match(/(?:^|; )ct0=([^;]+)/) || [])[1] || ''`).catch(() => '')
-    if (!token) throw new LoginRequired('X 没有给这个访客发出请求令牌，通常是还没有登录。请打开登录窗口完成登录后重试。')
+    if (!token) throw new LoginRequired(i18n.t('errors:x.noToken'))
     const ids = await operationIds(evaluate, signal)
     // The operation ids were not where this expects them. That is this adapter being out of date with
     // X's bundle rather than X refusing, so the address goes back to the ordinary route.
@@ -160,7 +161,7 @@ export const x: ProfileAdapter = {
     const profile = await lookup.json().catch(() => undefined) as { data?: { user?: { result?: { rest_id?: string } } } } | undefined
     if (lookup.status >= 400 || !isRecord(profile) || !isRecord(profile.data)) return undefined
     const rest = profile.data.user?.result?.rest_id
-    if (!rest) throw new LoginRequired('没有读到这个账号。它可能不存在，也可能只对已登录的访客可见。请打开登录窗口完成登录后重试。')
+    if (!rest) throw new LoginRequired(i18n.t('errors:x.noAccount'))
 
     const { from, at } = resume(handle, page)
     let cursor = from
@@ -172,15 +173,15 @@ export const x: ProfileAdapter = {
       const response = await call('UserMedia', { userId: rest, count: COUNT, includePromotedContent: false, withQuickPromoteEligibilityTweetFields: false, withVoice: true, withV2Timeline: true, ...(cursor ? { cursor } : {}) }, FEATURES)
       const body = await response.json().catch(() => undefined) as { data?: unknown; errors?: { message?: string }[] } | undefined
       if (response.status >= 400 || !isRecord(body)) return undefined
-      if (body.errors?.length) throw new Error(`X 接口返回拒绝：${body.errors[0]?.message || '未说明原因'}`)
+      if (body.errors?.length) throw new Error(i18n.t('errors:x.refused', { reason: body.errors[0]?.message || i18n.t('errors:x.noReason') }))
       if (!isRecord(body.data)) return undefined
       more = harvest(body.data, handle, entries)
       if (more) walked?.cursors.set(reached, more)
       if (reached === page || !more) break
       cursor = more
     }
-    if (!entries.size && page === 1) throw new LoginRequired('这个时间线没有读到任何带媒体的帖子。可能是受保护的账号，也可能需要登录后才能看到。请打开登录窗口完成登录后重试。')
-    return onePage('posts', `${handle} 的媒体`, [...entries.values()], { index: page, size: COUNT, hasMore: Boolean(more) })
+    if (!entries.size && page === 1) throw new LoginRequired(i18n.t('errors:x.empty'))
+    return onePage('posts', i18n.t('errors:x.media', { handle }), [...entries.values()], { index: page, size: COUNT, hasMore: Boolean(more) })
   },
 }
 
@@ -207,10 +208,10 @@ export const xPost: ProfileAdapter = {
   entryUrl(url) { return url.href },
   async fetchPage({ url, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
     const id = postIdOf(url)
-    if (!id) throw new Error('链接中没有帖子编号')
+    if (!id) throw new Error(i18n.t('errors:listing.noPostId'))
     if (!evaluate) return undefined
     const token = await evaluate<string>(`(document.cookie.match(/(?:^|; )ct0=([^;]+)/) || [])[1] || ''`).catch(() => '')
-    if (!token) throw new LoginRequired('X 没有给这个访客发出请求令牌，通常是还没有登录。请打开登录窗口完成登录后重试。')
+    if (!token) throw new LoginRequired(i18n.t('errors:x.noToken'))
     const ids = await operationIds(evaluate, signal)
     if (!ids.TweetResultByRestId) return undefined
     const variables = { tweetId: id, withCommunity: false, includePromotedContent: false, withVoice: false }

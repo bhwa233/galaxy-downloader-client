@@ -7,6 +7,7 @@
 // hands the address back and the ordinary engine route runs, which is exactly what happens today. It
 // can be wrong; it cannot make things worse than not having it. Once someone runs a real profile
 // through it, this paragraph should be replaced by what the response actually looked like.
+import { i18n } from '../../../shared/i18n'
 import { LoginRequired } from '../login'
 import { isRecord, onePage, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 
@@ -51,7 +52,7 @@ export function entryOf(status: Status): ListingEntry | undefined {
   return {
     id, url: `https://weibo.com/${uid}/${id}`,
     // A 微博 has no title, only its text. Cut to something that reads as a row rather than a paragraph.
-    title: status.text_raw?.trim().split('\n')[0].slice(0, 80) || `微博 ${id}`,
+    title: status.text_raw?.trim().split('\n')[0].slice(0, 80) || i18n.t('errors:weibo.post', { id }),
     thumbnail: https(cover) || undefined,
     kind: video ? 'video' : 'image',
     duration: count(status.page_info?.media_info?.duration),
@@ -67,7 +68,7 @@ export const weibo: ProfileAdapter = {
   entryUrl(url) { return `https://weibo.com/u/${uidOf(url)}` },
   async fetchPage({ url, page, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
     const uid = uidOf(url)
-    if (!uid) throw new Error('链接中没有用户 ID')
+    if (!uid) throw new Error(i18n.t('errors:listing.noUserId'))
     // The two headers the profile page's own request carries (captured 2026-09-23). Without them the
     // endpoint answers '403 Forbidden' as HTML rather than a feed. The token is the readable
     // 'XSRF-TOKEN' cookie, which is where the page's own scripts take it from.
@@ -86,11 +87,11 @@ export const weibo: ProfileAdapter = {
     // A feed key that is present but not a list is again a shape this does not understand.
     if (!Array.isArray(list)) return undefined
     // An empty first page from a profile that exists is 微博 answering a visitor it does not know.
-    if (!list.length && page === 1) throw new LoginRequired('微博没有返回任何微博。请打开登录窗口完成登录后重试。')
+    if (!list.length && page === 1) throw new LoginRequired(i18n.t('errors:weibo.empty'))
     const entries = list.map(entryOf).filter((entry): entry is ListingEntry => Boolean(entry))
     const author = list.find(status => status.user?.screen_name)?.user?.screen_name
     const total = count(body.data.total_number)
-    return onePage('posts', author ? `${author}的微博` : undefined, entries, {
+    return onePage('posts', author ? i18n.t('errors:weibo.posts', { author }) : undefined, entries, {
       index: page, size: PAGE_SIZE, total,
       // Counted against what the feed held, not against what survived the filter: a page of text-only
       // posts is a page with nothing to download, not the end of the profile.

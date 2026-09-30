@@ -1,3 +1,4 @@
+import { i18n } from '../../../shared/i18n'
 import type { Settings } from '../../../shared/contracts'
 import { seconds } from './text'
 import { onePage, type Fetcher, type Fingerprint, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
@@ -16,8 +17,7 @@ let cached: Keys | undefined
 // Accept-Language: a request that asks for Japanese in one field and Chinese in another is a client
 // contradicting itself.
 const SCRIPTS: Record<Settings['locale'], { language: string; script: string }> = {
-  zh: { language: 'zh', script: 'Hans' }, 'zh-tw': { language: 'zh', script: 'Hant' },
-  en: { language: 'en', script: 'Latn' }, ja: { language: 'ja', script: 'Jpan' },
+  zh: { language: 'zh', script: 'Hans' }, en: { language: 'en', script: 'Latn' },
 }
 
 const base64 = (value: string) => Buffer.from(value, 'utf8').toString('base64').replace(/=+$/, '')
@@ -68,7 +68,7 @@ async function mixin(fetch: Fetcher, storage: Record<string, string> | undefined
     const body = await response.json() as { data?: { wbi_img?: { img_url?: string; sub_url?: string } } }
     keys = { image: keyOf(body.data?.wbi_img?.img_url || ''), sub: keyOf(body.data?.wbi_img?.sub_url || '') }
   }
-  if (!keys.image || !keys.sub) throw new Error('未能取得 wbi 签名密钥')
+  if (!keys.image || !keys.sub) throw new Error(i18n.t('errors:bilibili.wbiKeys'))
   cached = { mixin: mixinKey(keys.image, keys.sub), at: Date.now() }
   return cached.mixin
 }
@@ -88,7 +88,7 @@ function entryOf(video: Video): ListingEntry | undefined {
   if (!video.bvid) return undefined
   const cover = (video.pic || '').replace(/^http:\/\//, 'https://').replace(/^\/\//, 'https://')
   return {
-    id: video.bvid, url: `https://www.bilibili.com/video/${video.bvid}`, title: video.title?.trim() || `哔哩哔哩视频 ${video.bvid}`,
+    id: video.bvid, url: `https://www.bilibili.com/video/${video.bvid}`, title: video.title?.trim() || i18n.t('errors:bilibili.video', { id: video.bvid }),
     thumbnail: cover || undefined, kind: 'video', duration: seconds(video.length),
     views: count(video.play), danmaku: count(video.video_review), comments: count(video.comment),
     author: video.author?.trim() || undefined, publishedAt: video.created || undefined,
@@ -118,10 +118,10 @@ export const bilibili: ProfileAdapter = {
   },
   async fetchPage({ url, page, fetch, locale, fingerprint, storage, signal }: PageRequest): Promise<ListingPage> {
     const mid = midOf(url)
-    if (!mid) throw new Error('链接中没有 UID')
+    if (!mid) throw new Error(i18n.t('errors:listing.noUid'))
     // Nothing to tell 风控 about the graphics stack, so this route is closed before it is tried and the
     // walk belongs in a window, where the values exist.
-    if (!fingerprint) throw new Error('未能取得浏览器指纹')
+    if (!fingerprint) throw new Error(i18n.t('errors:listing.fingerprint'))
     const query = signQuery({
       mid, pn: page, ps: PAGE_SIZE, tid: 0, special_type: '', order: 'pubdate', index: 0, keyword: '',
       order_avoided: 'true', platform: 'web', web_location: LOCATION,
@@ -135,13 +135,13 @@ export const bilibili: ProfileAdapter = {
       referrer: `https://space.bilibili.com/${mid}/upload/video`, signal,
     })
     // Risk control answers with an HTML challenge page rather than JSON; that is a closed route, not a reply.
-    const body = await response.json().catch(() => { throw new VerificationRequired('哔哩哔哩返回了验证页面而不是列表数据。请打开验证页面完成验证后重试。') }) as SearchResponse
+    const body = await response.json().catch(() => { throw new VerificationRequired(i18n.t('errors:bilibili.verification')) }) as SearchResponse
     // -352 and -799 are the risk-control rejections; both mean this route is closed for now.
-    if (body.code) throw new Error(`哔哩哔哩接口返回 ${body.code}${body.message ? `：${body.message}` : ''}`)
+    if (body.code) throw new Error(body.message ? i18n.t('errors:bilibili.apiMessage', { code: body.code, message: body.message }) : i18n.t('errors:bilibili.api', { code: body.code }))
     const videos = body.data?.list?.vlist || []
     const entries = videos.map(entryOf).filter((entry): entry is ListingEntry => Boolean(entry))
     const total = body.data?.page?.count
     const author = videos.find(video => video.author)?.author
-    return onePage('uploads', author ? `${author}的投稿` : undefined, entries, { index: page, size: PAGE_SIZE, total, hasMore: total === undefined ? entries.length === PAGE_SIZE : page * PAGE_SIZE < total })
+    return onePage('uploads', author ? i18n.t('errors:bilibili.uploads', { author }) : undefined, entries, { index: page, size: PAGE_SIZE, total, hasMore: total === undefined ? entries.length === PAGE_SIZE : page * PAGE_SIZE < total })
   },
 }

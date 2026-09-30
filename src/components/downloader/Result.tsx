@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { Check, Copy, Download, ExternalLink, FolderOpen, Image as ImageIcon, ImageDown, LayoutGrid, Link as LinkIcon, List, ListChecks, Music2, Play, Search, Video, X } from 'lucide-react'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Badge } from '@/components/ui/badge'
@@ -12,8 +14,8 @@ import { toast } from '@/components/ui/toast'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Choice } from './Choice'
-import { fixableBySignIn, wallTitles } from './walls'
-import { formatBytes } from '@/lib/utils'
+import { fixableBySignIn, wallTitle } from './walls'
+import { formatBytes, platformLabel } from '@/lib/utils'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { downloadKinds, type ClientState, type DownloadKind, type MediaItem, type MediaResult, type Settings } from '../../../shared/contracts'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -28,7 +30,8 @@ type Actions = {
   shift: (event: React.MouseEvent) => void
   sizeOf: (item: MediaItem) => string | undefined
   downloadOne: (item: MediaItem, kind: DownloadKind) => void
-  copy: (text: string, what: string) => void
+  // The text, and what to say once it is on the clipboard.
+  copy: (text: string, done: string) => void
   open: (url: string) => void
   saveCover: (item: MediaItem) => void
   preview: (item: MediaItem) => void
@@ -39,21 +42,21 @@ type Actions = {
 }
 type ViewProps = { items: MediaItem[]; actions: Actions }
 // How far back 时间 reaches, in days; 'all' does not filter.
-const PERIODS = [{ value: 'all', label: '全部时间' }, { value: '7', label: '一周内' }, { value: '30', label: '一个月内' }, { value: '90', label: '三个月内' }, { value: '365', label: '一年内' }]
-const kindNames: Record<DownloadKind, string> = { video: '视频', audio: '音频', cover: '封面' }
+const PERIODS = [{ value: 'all', key: 'all' }, { value: '7', key: 'week' }, { value: '30', key: 'month' }, { value: '90', key: 'quarter' }, { value: '365', key: 'year' }] as const
+type T = TFunction<['result', 'common']>
 // A picture is already on screen as its cover, and a locked item would not play for this account.
 const previewable = (item: MediaItem) => item.kind !== 'image' && !item.wall
 const hasCover = (item: MediaItem) => Boolean(item.thumbnail && /^https?:\/\//.test(item.thumbnail))
 // Under 只看图片 a video stands in as its cover, downloaded as one. It keeps its own shape, so the
 // cover is shown whole rather than cropped square.
-const asPicture = (item: MediaItem, actions: Actions) => actions.pictures && item.kind !== 'image'
-  ? { duration: undefined, label: '封面', size: undefined, onPreview: undefined }
+const asPicture = (item: MediaItem, actions: Actions, t: T) => actions.pictures && item.kind !== 'image'
+  ? { duration: undefined, label: t('common:kinds.cover'), size: undefined, onPreview: undefined }
   : { size: actions.sizeOf(item), onPreview: previewable(item) ? () => actions.preview(item) : undefined }
 
 // An item behind a wall - a paid 短剧 episode - is listed so the whole show reads as it is, but cannot
 // be picked. The card carries the reason; a click, which is the user trying, says it as a toast.
-const lockedProps = (item: MediaItem) => item.wall
-  ? { locked: wallTitles[item.wall], onLocked: () => toast.add({ type: 'info', title: wallTitles[item.wall!], description: `「${item.title.slice(0, 40)}」不能下载。` }) }
+const lockedProps = (item: MediaItem, t: T) => item.wall
+  ? { locked: wallTitle(item.wall), onLocked: () => toast.add({ type: 'info', title: wallTitle(item.wall!), description: t('locked', { title: item.title.slice(0, 40) }) }) }
   : {}
 
 // Right-clicking a card. What acts on the item comes first, then the selection, then its addresses. A
@@ -61,6 +64,7 @@ const lockedProps = (item: MediaItem) => item.wall
 // out of the layout, so wrapping a grid cell does not become a cell; it is also where a Shift+click is
 // noticed before the checkbox inside acts on it.
 function ItemMenu({ item, actions, children }: { item: MediaItem; actions: Actions; children: React.ReactNode }) {
+  const { t } = useTranslation(['result', 'common'])
   const url = item.url || actions.page
   const picked = actions.selected.includes(item.id)
   const cover = item.thumbnail && /^https?:\/\//.test(item.thumbnail) ? item.thumbnail : undefined
@@ -68,45 +72,48 @@ function ItemMenu({ item, actions, children }: { item: MediaItem; actions: Actio
     <ContextMenuTrigger render={<div className="contents" onClickCapture={actions.shift} onMouseDownCapture={event => { if (event.shiftKey) event.preventDefault() }} />}>{children}</ContextMenuTrigger>
     <ContextMenuContent className="w-48">
       {!item.wall && <>
-        {previewable(item) && <ContextMenuItem onClick={() => actions.preview(item)}><Play />预览</ContextMenuItem>}
+        {previewable(item) && <ContextMenuItem onClick={() => actions.preview(item)}><Play />{t('preview')}</ContextMenuItem>}
         <ContextMenuSub>
-          <ContextMenuSubTrigger><Download />下载这一项</ContextMenuSubTrigger>
+          <ContextMenuSubTrigger><Download />{t('menu.downloadOne')}</ContextMenuSubTrigger>
           <ContextMenuSubContent className="w-36">
-            <ContextMenuItem onClick={() => actions.downloadOne(item, 'video')}>{item.kind === 'image' ? <><ImageIcon />图片</> : <><Video />视频</>}</ContextMenuItem>
-            {item.kind !== 'image' && <ContextMenuItem onClick={() => actions.downloadOne(item, 'audio')}><Music2 />音频</ContextMenuItem>}
-            {cover && <ContextMenuItem onClick={() => actions.downloadOne(item, 'cover')}><ImageDown />封面</ContextMenuItem>}
+            <ContextMenuItem onClick={() => actions.downloadOne(item, 'video')}>{item.kind === 'image' ? <><ImageIcon />{t('common:kinds.picture')}</> : <><Video />{t('common:kinds.video')}</>}</ContextMenuItem>
+            {item.kind !== 'image' && <ContextMenuItem onClick={() => actions.downloadOne(item, 'audio')}><Music2 />{t('common:kinds.audio')}</ContextMenuItem>}
+            {cover && <ContextMenuItem onClick={() => actions.downloadOne(item, 'cover')}><ImageDown />{t('common:kinds.cover')}</ContextMenuItem>}
           </ContextMenuSubContent>
         </ContextMenuSub>
         <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => actions.toggle(item.id, !picked)}>{picked ? <><X />取消选中</> : <><Check />选中</>}</ContextMenuItem>
-        {actions.rangeTo && <ContextMenuItem onClick={() => actions.rangeTo!(item.id)}><ListChecks />选中到这里</ContextMenuItem>}
+        <ContextMenuItem onClick={() => actions.toggle(item.id, !picked)}>{picked ? <><X />{t('menu.deselect')}</> : <><Check />{t('menu.select')}</>}</ContextMenuItem>
+        {actions.rangeTo && <ContextMenuItem onClick={() => actions.rangeTo!(item.id)}><ListChecks />{t('menu.selectToHere')}</ContextMenuItem>}
         <ContextMenuSeparator />
       </>}
-      <ContextMenuItem onClick={() => actions.copy(url, '链接')}><LinkIcon />复制链接</ContextMenuItem>
-      <ContextMenuItem onClick={() => actions.copy(item.title, '标题')}><Copy />复制标题</ContextMenuItem>
-      {cover && <ContextMenuItem onClick={() => actions.copy(cover, '封面地址')}><ImageIcon />复制封面地址</ContextMenuItem>}
-      {cover && <ContextMenuItem onClick={() => actions.saveCover(item)}><ImageDown />保存封面…</ContextMenuItem>}
-      <ContextMenuItem onClick={() => actions.open(url)}><ExternalLink />打开原网页</ContextMenuItem>
+      <ContextMenuItem onClick={() => actions.copy(url, t('common:linkCopied'))}><LinkIcon />{t('common:copyLink')}</ContextMenuItem>
+      <ContextMenuItem onClick={() => actions.copy(item.title, t('copied.title'))}><Copy />{t('menu.copyTitle')}</ContextMenuItem>
+      {cover && <ContextMenuItem onClick={() => actions.copy(cover, t('copied.cover'))}><ImageIcon />{t('menu.copyCover')}</ContextMenuItem>}
+      {cover && <ContextMenuItem onClick={() => actions.saveCover(item)}><ImageDown />{t('menu.saveCover')}</ContextMenuItem>}
+      <ContextMenuItem onClick={() => actions.open(url)}><ExternalLink />{t('common:openPage')}</ContextMenuItem>
     </ContextMenuContent>
   </ContextMenu>
 }
-const qualityLabel = (formats: MediaItem['formats'], kind: MediaItem['kind']) => formats.length ? `${formats.length} 种画质` : kind === 'image' ? '原始图片' : kind === 'audio' ? '音频' : '最佳画质'
+const qualityLabel = (formats: MediaItem['formats'], kind: MediaItem['kind'], t: T) => formats.length ? t('quality.count', { count: formats.length }) : kind === 'image' ? t('quality.original') : kind === 'audio' ? t('common:kinds.audio') : t('quality.best')
 function ThumbnailGrid({ items, actions }: ViewProps) {
+  const { t } = useTranslation(['result', 'common'])
   return <MediaGrid minWidth="11rem" className="select-none">{items.map(({ id, formats: _formats, wall: _wall, ...shown }, index) =>
     <ItemMenu key={id} item={items[index]} actions={actions}>
-      <MediaCard {...shown} {...lockedProps(items[index])} {...asPicture(items[index], actions)} selected={actions.selected.includes(id)} onSelectedChange={checked => actions.toggle(id, checked)} />
+      <MediaCard {...shown} {...lockedProps(items[index], t)} {...asPicture(items[index], actions, t)} selected={actions.selected.includes(id)} onSelectedChange={checked => actions.toggle(id, checked)} />
     </ItemMenu>)}</MediaGrid>
 }
 function ItemList({ items, actions }: ViewProps) {
+  const { t } = useTranslation(['result', 'common'])
   return <div className="flex flex-col gap-2 select-none">{items.map(({ id, formats, wall: _wall, ...shown }, index) =>
     <ItemMenu key={id} item={items[index]} actions={actions}>
-      <MediaRow {...shown} {...lockedProps(items[index])} {...asPicture(items[index], actions)} selected={actions.selected.includes(id)} onSelectedChange={checked => actions.toggle(id, checked)} trailing={<Badge variant="outline">{actions.pictures ? shown.kind === 'image' ? '原始图片' : '封面' : qualityLabel(formats, shown.kind)}</Badge>} />
+      <MediaRow {...shown} {...lockedProps(items[index], t)} {...asPicture(items[index], actions, t)} selected={actions.selected.includes(id)} onSelectedChange={checked => actions.toggle(id, checked)} trailing={<Badge variant="outline">{actions.pictures ? shown.kind === 'image' ? t('quality.original') : t('common:kinds.cover') : qualityLabel(formats, shown.kind, t)}</Badge>} />
     </ItemMenu>)}</div>
 }
 export function Result({ result, parse, settings, send, login, connecting, close }: {
   result: MediaResult; parse: ClientState['parse']; settings: Settings; send: Send
   login: (url?: string) => void; connecting: boolean; close: () => void
 }) {
+  const { t } = useTranslation(['result', 'common'])
   const [submitting, setSubmitting] = useState(false)
   // The first item comes picked, so a single video is ready to download without a click and a listing
   // starts somewhere rather than at nothing; 全选 covers everything loaded when they want all of it.
@@ -214,7 +221,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
     const bitrate = picked ? tier.bitrate : tier.preferredBitrate ?? tier.bitrate
     return bitrate && item.duration ? Math.round(bitrate * 1000 / 8 * item.duration) : undefined
   }
-  const sizeOf = (item: MediaItem) => { const bytes = bytesOf(item); return bytes ? `约 ${formatBytes(bytes)}` : undefined }
+  const sizeOf = (item: MediaItem) => { const bytes = bytesOf(item); return bytes ? t('about', { size: formatBytes(bytes) }) : undefined }
   // How many tasks each kind makes of what would be queued: a picture has no audio, and an item with
   // no cover address has no cover. What is left out is said in the bar, not discovered afterwards.
   const queuedItems = queueing.map(id => result.items.find(item => item.id === id)!)
@@ -228,8 +235,8 @@ export function Result({ result, parse, settings, send, login, connecting, close
   const pictured = queuedItems.filter(item => item.kind === 'image' || hasCover(item)).length
   const tasks = pictures ? pictured : kinds.reduce((sum, kind) => sum + counts[kind], 0)
   const skipped = pictures
-    ? pictured < queuedItems.length ? [`${queuedItems.length - pictured} 项没有封面`] : []
-    : kinds.filter(kind => counts[kind] < queuedItems.length).map(kind => `${queuedItems.length - counts[kind]} 项没有${kindNames[kind]}`)
+    ? pictured < queuedItems.length ? [t('missing.cover', { count: queuedItems.length - pictured })] : []
+    : kinds.filter(kind => counts[kind] < queuedItems.length).map(kind => t(`missing.${kind}`, { count: queuedItems.length - counts[kind] }))
   const selectAll = (checked: boolean) => { const ids = pickable.map(item => item.id); setSelected(current => checked ? [...new Set([...current, ...ids])] : current.filter(id => !ids.includes(id))) }
   const download = () => {
     if (submitting) return
@@ -246,8 +253,8 @@ export function Result({ result, parse, settings, send, login, connecting, close
         // Nothing added means every one of them was already on its way; saying so beats claiming
         // to have started downloads that were started earlier.
         const added = replies.reduce((sum, reply) => sum + (reply ? reply.added ?? 0 : 0), 0)
-        if (added) toast.add({ type: 'success', title: '已加入下载队列', description: `${added} 个任务已开始，可在全部任务中查看。${added < tasks ? `另有 ${tasks - added} 个已在队列中。` : ''}` })
-        else toast.add({ type: 'info', title: '已在下载队列中', description: `这 ${tasks} 个任务都已经在下载，没有重复添加。` })
+        if (added) toast.add({ type: 'success', title: t('toast.queued'), description: t('toast.started', { count: added }) + (added < tasks ? t('toast.alsoQueued', { count: tasks - added }) : '') })
+        else toast.add({ type: 'info', title: t('toast.inQueue'), description: t('toast.allInQueue', { count: tasks }) })
       })
       .finally(() => setSubmitting(false))
   }
@@ -259,8 +266,8 @@ export function Result({ result, parse, settings, send, login, connecting, close
     void send('media:download', { resultId: result.id, itemIds: [item.id], format: kind === 'video' ? tierFor([item]) : 'best', kinds: [kind] })
       .then(reply => {
         if (!reply) return
-        if (reply.added === 0) toast.add({ type: 'info', title: '已在下载队列中', description: `「${item.title.slice(0, 40)}」的${kindNames[kind]}已经在下载。` })
-        else toast.add({ type: 'success', title: `已加入下载队列（${kindNames[kind]}）`, description: item.title.slice(0, 60) })
+        if (reply.added === 0) toast.add({ type: 'info', title: t('toast.inQueue'), description: t('toast.oneInQueue', { title: item.title.slice(0, 40), kind: t(`common:kinds.${kind}`) }) })
+        else toast.add({ type: 'success', title: t('toast.queuedKind', { kind: t(`common:kinds.${kind}`) }), description: item.title.slice(0, 60) })
       })
   }
   const actions: Actions = {
@@ -269,7 +276,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
     shift: event => { shiftHeld.current = event.shiftKey },
     // Through the main process rather than navigator.clipboard, which a page loaded from file:// is not
     // a secure enough context to be given.
-    copy: (text, what) => void send('clipboard:write', { text }).then(ok => { if (ok) toast.add({ type: 'success', title: `${what}已复制` }) }),
+    copy: (text, done) => void send('clipboard:write', { text }).then(ok => { if (ok) toast.add({ type: 'success', title: done }) }),
     open: url => void send('shell:open', { url }),
     saveCover: item => void send('media:cover', { url: item.thumbnail!, title: item.title }),
     preview: item => void send('media:preview', { resultId: result.id, itemId: item.id }),
@@ -278,25 +285,25 @@ export function Result({ result, parse, settings, send, login, connecting, close
   // What the selection adds up to, from the items whose size could be estimated.
   const queuedBytes = queueing.reduce((sum, id) => sum + (bytesOf(result.items.find(item => item.id === id)!) || 0), 0)
   // No card of its own: the page is the new-task page and this is its result, so one title, one close.
-  return <section aria-label="解析结果" className="flex flex-col gap-4">
+  return <section aria-label={t('title')} className="flex flex-col gap-4">
     <div className="flex items-start gap-3 border-t pt-4">
       <div className="min-w-0 flex-1">
         <h2 className="line-clamp-2 font-medium break-words" title={result.title}>{result.title}</h2>
         <p className="text-xs text-muted-foreground">
-          {result.platform} · {pagination?.total ? `共 ${pagination.total} 项，已加载 ${inGroup.length} 项` : `${inGroup.length} 项`}
+          {platformLabel(result.platform)} · {pagination?.total ? t('loadedOf', { total: pagination.total, loaded: inGroup.length }) : t('common:items', { count: inGroup.length })}
         </p>
       </div>
       {searchable && <InputGroup className="w-44">
-        <InputGroupInput aria-label="按关键字筛选" placeholder="关键字…" value={keyword} onChange={event => setKeyword(event.target.value)} />
+        <InputGroupInput aria-label={t('keywordLabel')} placeholder={t('keywordPlaceholder')} value={keyword} onChange={event => setKeyword(event.target.value)} />
         <InputGroupAddon><Search /></InputGroupAddon>
       </InputGroup>}
-      {dated && <Choice className="w-28" label="发布时间" hideLabel value={period} options={PERIODS}
+      {dated && <Choice className="w-28" label={t('published')} hideLabel value={period} options={PERIODS.map(entry => ({ value: entry.value, label: t(`periods.${entry.key}`) }))}
         onChange={value => { setPeriod(value); setSince(value === 'all' ? undefined : Date.now() / 1000 - Number(value) * 86_400) }} />}
       <ToggleGroup spacing={0} variant="outline" value={[view]} onValueChange={value => { const next = value[0]; if (next && next !== view) void send('settings:save', { ...settings, resultView: next as Settings['resultView'] }) }}>
-        <ToggleGroupItem value="list" aria-label="结果列表视图"><List /></ToggleGroupItem>
-        <ToggleGroupItem value="grid" aria-label="结果缩略图视图"><LayoutGrid /></ToggleGroupItem>
+        <ToggleGroupItem value="list" aria-label={t('listView')}><List /></ToggleGroupItem>
+        <ToggleGroupItem value="grid" aria-label={t('gridView')}><LayoutGrid /></ToggleGroupItem>
       </ToggleGroup>
-      <Button variant="ghost" size="icon" aria-label="清除解析结果" title="清除解析结果" onClick={close}><X /></Button>
+      <Button variant="ghost" size="icon" aria-label={t('clearResult')} title={t('clearResult')} onClick={close}><X /></Button>
     </div>
     {/* Only where the same parse produced two listings - a 哔哩哔哩 video that is multi-part and also
         belongs to a collection. Switching sends no request: both arrived with the parse, and what was
@@ -308,15 +315,15 @@ export function Result({ result, parse, settings, send, login, connecting, close
       {/* 只看 only on a listing: a single work is not a batch and has nothing to filter. It narrows
           what is on screen, which is also what 全选 takes. */}
       {result.listing && <ToggleGroup spacing={0} variant="outline" size="sm" value={[only]} onValueChange={value => { const next = value[0]; if (next) setOnly(String(next)) }}>
-        <ToggleGroupItem value="all">全部</ToggleGroupItem>
-        <ToggleGroupItem value="video">视频</ToggleGroupItem>
-        <ToggleGroupItem value="image">图片</ToggleGroupItem>
+        <ToggleGroupItem value="all">{t('onlyAll')}</ToggleGroupItem>
+        <ToggleGroupItem value="video">{t('common:kinds.video')}</ToggleGroupItem>
+        <ToggleGroupItem value="image">{t('common:kinds.picture')}</ToggleGroupItem>
       </ToggleGroup>}
     </div>}
     {/* The engine stops a playlist at its own limit, so a list that reached it is only its front. */}
     {result.truncated && <Alert>
-      <AlertTitle>只列出了前 {result.truncated.shown} 条</AlertTitle>
-      <AlertDescription>{result.truncated.total ? `这个列表共 ${result.truncated.total} 条，解析到上限就停下了。` : '解析到条数上限就停下了，后面可能还有内容。'}要取更靠后的内容，请直接粘贴那一条的链接。</AlertDescription>
+      <AlertTitle>{t('truncated.title', { count: result.truncated.shown })}</AlertTitle>
+      <AlertDescription>{result.truncated.total ? t('truncated.total', { total: result.truncated.total }) : t('truncated.limit')}{t('truncated.hint')}</AlertDescription>
     </Alert>}
     {/* One block in the platform's own order. Each card says what it is, and 只看 splits by kind when
         wanted, so sections per kind only broke the order the listing came in. It grows with the page
@@ -324,21 +331,21 @@ export function Result({ result, parse, settings, send, login, connecting, close
         there is nothing below it to keep in reach, and the download bar stays pinned regardless. The
         padding keeps the selected card's ring from being clipped at the edge. */}
     <div className="-mx-1 flex flex-col gap-4 p-1">
-      {!visible.length && inGroup.length ? <p className="py-8 text-center text-sm text-muted-foreground">没有符合筛选条件的内容</p>
+      {!visible.length && inGroup.length ? <p className="py-8 text-center text-sm text-muted-foreground">{t('noMatch')}</p>
         : view === 'grid' ? <ThumbnailGrid items={visible} actions={actions} /> : <ItemList items={visible} actions={actions} />}
       {/* A result on screen with a message attached means the page the user asked for did not arrive.
           It is reported here, at the end of the list, next to the control they used. */}
       {parse.message && <Alert variant="destructive">
-        <AlertTitle>{parse.verify ? '需要完成验证' : (parse.wall && wallTitles[parse.wall]) || '加载更多未完成'}</AlertTitle>
+        <AlertTitle>{parse.verify ? t('common:verifyTitle') : (parse.wall && wallTitle(parse.wall)) || t('loadMoreFailed')}</AlertTitle>
         <AlertDescription>{parse.message}</AlertDescription>
         {(parse.verify || fixableBySignIn(parse.wall)) && <AlertAction>
           {/* The page is loaded again on its own once the window closes, so this is the only click. */}
-          <Button variant="outline" size="sm" disabled={connecting} onClick={() => login(parse.loginUrl || '')}>{parse.verify ? '打开验证页面' : '打开登录窗口'}</Button>
+          <Button variant="outline" size="sm" disabled={connecting} onClick={() => login(parse.loginUrl || '')}>{parse.verify ? t('common:openVerify') : t('common:openLogin')}</Button>
         </AlertAction>}
       </Alert>}
       {pagination?.hasMore && <div className="flex justify-center">
         <Button variant="outline" disabled={loading} onClick={loadMore}>
-          {loading ? <Spinner aria-hidden="true" /> : null}{loading ? '正在加载…' : '加载更多'}
+          {loading ? <Spinner aria-hidden="true" /> : null}{loading ? t('loading') : t('loadMore')}
         </Button>
       </div>}
     </div>
@@ -347,32 +354,32 @@ export function Result({ result, parse, settings, send, login, connecting, close
     <div className="sticky bottom-0 z-10 -mx-2 flex flex-wrap items-center gap-3 rounded-xl border bg-background/95 px-4 py-3 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80">
       {result.items.length > 1 && <Field orientation="horizontal" className="w-fit">
         <Checkbox id="result-select-all" checked={pageSelected} disabled={!pickable.length} onCheckedChange={checked => selectAll(checked === true)} />
-        <FieldLabel htmlFor="result-select-all" className="font-normal">全选</FieldLabel>
+        <FieldLabel htmlFor="result-select-all" className="font-normal">{t('selectAll')}</FieldLabel>
       </Field>}
       <span className="text-sm text-muted-foreground tabular-nums">
-        已选 {selectedItems.length}{result.items.length > 1 ? ` / ${pickable.length}` : ''}
-        {cap && selectedItems.length > cap ? `，将入队前 ${cap} 项` : ''}
-        {queuedBytes && kinds.includes('video') && !pictures ? ` · 约 ${formatBytes(queuedBytes)}` : ''}
-        {skipped.length ? `（${skipped.join('，')}，会跳过）` : ''}
+        {t('selected', { count: selectedItems.length })}{result.items.length > 1 ? ` / ${pickable.length}` : ''}
+        {cap && selectedItems.length > cap ? t('capNote', { count: cap }) : ''}
+        {queuedBytes && kinds.includes('video') && !pictures ? ` · ${t('about', { size: formatBytes(queuedBytes) })}` : ''}
+        {skipped.length ? t('skipped', { list: skipped.join(t('listSeparator')) }) : ''}
       </span>
       <div className="ml-auto flex flex-wrap items-center gap-3">
         {/* 下载内容: any combination of the media, its audio and its cover. Never empty - unticking the
             last one leaves it ticked. The audio format is 设置's, not chosen here. */}
         <Field className="w-36">
-          <FieldLabel className="sr-only">下载内容</FieldLabel>
+          <FieldLabel className="sr-only">{t('downloadContent')}</FieldLabel>
           <Select multiple disabled={pictures} value={kinds} onValueChange={next => { const list = next as DownloadKind[]; if (list.length) setKinds(downloadKinds.filter(kind => list.includes(kind))) }}>
-            <SelectTrigger aria-label="下载内容" className="w-full"><SelectValue>{() => pictures ? '图片' : kinds.map(kind => kindNames[kind]).join(' + ')}</SelectValue></SelectTrigger>
-            <SelectContent><SelectGroup>{downloadKinds.map(kind => <SelectItem key={kind} value={kind}>{kindNames[kind]}</SelectItem>)}</SelectGroup></SelectContent>
+            <SelectTrigger aria-label={t('downloadContent')} className="w-full"><SelectValue>{() => pictures ? t('common:kinds.picture') : kinds.map(kind => t(`common:kinds.${kind}`)).join(' + ')}</SelectValue></SelectTrigger>
+            <SelectContent><SelectGroup>{downloadKinds.map(kind => <SelectItem key={kind} value={kind}>{t(`common:kinds.${kind}`)}</SelectItem>)}</SelectGroup></SelectContent>
           </Select>
         </Field>
         {/* Always here, whatever is chosen: a control that does not apply says so by being disabled
             rather than by leaving a hole where it was. Only the media itself has a quality. */}
-        <Choice className="w-44" label="下载画质" hideLabel disabled={pictures || !kinds.includes('video')} value={format} onChange={setFormat} options={[{ value: 'best', label: reading ? '正在读取画质…' : '默认画质（按设置）' }, ...formats.map(item => ({ value: item.id, label: item.label || item.id }))]} />
-        <Button variant="ghost" size="sm" className="max-w-56 justify-start overflow-hidden text-muted-foreground" title={`保存到：${settings.downloadDirectory}（点击更改）`} onClick={() => void send('settings:directory', null)}>
+        <Choice className="w-44" label={t('quality.label')} hideLabel disabled={pictures || !kinds.includes('video')} value={format} onChange={setFormat} options={[{ value: 'best', label: reading ? t('quality.reading') : t('quality.default') }, ...formats.map(item => ({ value: item.id, label: item.label || item.id }))]} />
+        <Button variant="ghost" size="sm" className="max-w-56 justify-start overflow-hidden text-muted-foreground" title={t('saveTo', { dir: settings.downloadDirectory })} onClick={() => void send('settings:directory', null)}>
           <FolderOpen /><span className="truncate">{settings.downloadDirectory}</span>
         </Button>
         {/* Enqueueing says so and leaves the listing where it is: the tasks are there whenever they look. */}
-        <Button disabled={!queueing.length || submitting} onClick={download}><Download />{pictures ? `下载 ${tasks} 项图片` : kinds.length > 1 ? `下载 ${tasks} 个文件` : kinds[0] === 'video' ? `下载 ${tasks} 项` : `下载 ${tasks} 个${kindNames[kinds[0]]}`}</Button>
+        <Button disabled={!queueing.length || submitting} onClick={download}><Download />{pictures ? t('download.pictures', { count: tasks }) : kinds.length > 1 ? t('download.files', { count: tasks }) : kinds[0] === 'video' ? t('download.items', { count: tasks }) : kinds[0] === 'audio' ? t('download.audio', { count: tasks }) : t('download.cover', { count: tasks })}</Button>
       </div>
     </div>
   </section>

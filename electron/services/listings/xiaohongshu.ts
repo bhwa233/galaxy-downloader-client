@@ -2,6 +2,7 @@
 // outright. The listing has no route that can be walked politely - every API call is signed by
 // obfuscated script that only runs in the page, which leaves scraping the grid as the only way in, and
 // that is what its risk control is watching for. Kept here, whole, for the day that changes.
+import { i18n } from '../../../shared/i18n'
 import { countOf } from './text'
 import type { ListingEntry, ProfileAdapter } from './types'
 
@@ -26,7 +27,7 @@ export function entryOf(note: Note): ListingEntry | undefined {
     // The note page answers with an error unless it is given the access token the listing issued
     // alongside the id, so the token travels with the entry all the way to the download.
     url: `https://www.xiaohongshu.com/explore/${id}${token ? `?xsec_token=${encodeURIComponent(token)}&xsec_source=pc_user` : ''}`,
-    title: note.display_title?.trim() || `小红书笔记 ${id}`,
+    title: note.display_title?.trim() || i18n.t('errors:xiaohongshu.note', { id }),
     thumbnail: secure(cover?.url_default || cover?.url_pre || cover?.info_list?.find(item => item.url)?.url),
     kind: note.type === 'video' ? 'video' : 'image',
     // A note publishes its likes and nothing else: no play count, and no publish time in the listing.

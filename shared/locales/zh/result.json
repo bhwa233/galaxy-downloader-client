@@ -1,0 +1,85 @@
+{
+  "title": "解析结果",
+  "preview": "预览",
+  "openingPage": "正在打开页面…",
+  "about": "约 {{size}}",
+  "menu": {
+    "downloadOne": "下载这一项",
+    "select": "选中",
+    "deselect": "取消选中",
+    "selectToHere": "选中到这里",
+    "copyTitle": "复制标题",
+    "copyCover": "复制封面地址",
+    "saveCover": "保存封面…"
+  },
+  "copied": {
+    "title": "标题已复制",
+    "cover": "封面地址已复制"
+  },
+  "card": {
+    "select": "选择 {{title}}",
+    "preview": "预览 {{title}}"
+  },
+  "locked": "「{{title}}」不能下载。",
+  "quality": {
+    "count_other": "{{count}} 种画质",
+    "original": "原始图片",
+    "best": "最佳画质",
+    "label": "下载画质",
+    "reading": "正在读取画质…",
+    "default": "默认画质（按设置）"
+  },
+  "loadedOf": "共 {{total}} 项，已加载 {{loaded}} 项",
+  "keywordLabel": "按关键字筛选",
+  "keywordPlaceholder": "关键字…",
+  "published": "发布时间",
+  "periods": {
+    "all": "全部时间",
+    "week": "一周内",
+    "month": "一个月内",
+    "quarter": "三个月内",
+    "year": "一年内"
+  },
+  "listView": "结果列表视图",
+  "gridView": "结果缩略图视图",
+  "clearResult": "清除解析结果",
+  "onlyAll": "全部",
+  "truncated": {
+    "title_other": "只列出了前 {{count}} 条",
+    "total": "这个列表共 {{total}} 条，解析到上限就停下了。",
+    "limit": "解析到条数上限就停下了，后面可能还有内容。",
+    "hint": "要取更靠后的内容，请直接粘贴那一条的链接。"
+  },
+  "noMatch": "没有符合筛选条件的内容",
+  "loadMoreFailed": "加载更多未完成",
+  "loading": "正在加载…",
+  "loadMore": "加载更多",
+  "selectAll": "全选",
+  "selected": "已选 {{count}}",
+  "capNote_other": "，将入队前 {{count}} 项",
+  "skipped": "（{{list}}，会跳过）",
+  "listSeparator": "，",
+  "missing": {
+    "video_other": "{{count}} 项没有视频",
+    "audio_other": "{{count}} 项没有音频",
+    "cover_other": "{{count}} 项没有封面"
+  },
+  "downloadContent": "下载内容",
+  "saveTo": "保存到：{{dir}}（点击更改）",
+  "download": {
+    "pictures_other": "下载 {{count}} 项图片",
+    "files_other": "下载 {{count}} 个文件",
+    "items_other": "下载 {{count}} 项",
+    "audio_other": "下载 {{count}} 个音频",
+    "cover_other": "下载 {{count}} 个封面"
+  },
+  "toast": {
+    "queued": "已加入下载队列",
+    "queuedKind": "已加入下载队列（{{kind}}）",
+    "started_other": "{{count}} 个任务已开始，可在全部任务中查看。",
+    "alsoQueued_other": "另有 {{count}} 个已在队列中。",
+    "inQueue": "已在下载队列中",
+    "allInQueue_other": "这 {{count}} 个任务都已经在下载，没有重复添加。",
+    "oneInQueue": "「{{title}}」的{{kind}}已经在下载。"
+  }
+}

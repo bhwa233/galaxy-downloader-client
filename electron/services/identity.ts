@@ -16,7 +16,7 @@ export function chromeUserAgent(agent: string): string {
 }
 
 const LANGUAGES: Record<Settings['locale'], string> = {
-  zh: 'zh-CN,zh;q=0.9', 'zh-tw': 'zh-TW,zh;q=0.9,en;q=0.8', en: 'en-US,en;q=0.9', ja: 'ja,en-US;q=0.9,en;q=0.8',
+  zh: 'zh-CN,zh;q=0.9', en: 'en-US,en;q=0.9',
 }
 export const acceptLanguageFor = (locale: Settings['locale']): string => LANGUAGES[locale] || LANGUAGES.zh
 

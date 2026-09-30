@@ -6,6 +6,7 @@ import { findAdapter } from './listings'
 import { PACE, Pace, pause } from './listings/pace'
 import { LoginRequired } from './login'
 import { head, logger } from './log'
+import { i18n } from '../../shared/i18n'
 import type { Fetcher, Fingerprint, ListingGroup, ProfileAdapter } from './listings/types'
 
 // 'article' says the page is prose with media in it rather than a player page, which decides whether
@@ -165,7 +166,7 @@ export class EmbeddedBrowser {
       return
     }
     const window = new BrowserWindow({
-      title: '登录', width: 1100, height: 800, backgroundColor: '#ffffff',
+      title: i18n.t('errors:browser.loginTitle'), width: 1100, height: 800, backgroundColor: '#ffffff',
       webPreferences: { session: this.session, sandbox: true, contextIsolation: true, nodeIntegration: false },
     })
     // Platform login flows open their own windows; keep them in this one rather than dropping them.
@@ -368,7 +369,7 @@ export class EmbeddedBrowser {
   private async inspectNow(url: string, index: number, group: string | undefined, signal: AbortSignal): Promise<Listing | undefined> {
     signal.throwIfAborted()
     const adapter = findAdapter(url)
-    if (!adapter?.fetchPage) throw new Error('暂不支持这个平台的主页解析，请改用单个作品链接。')
+    if (!adapter?.fetchPage) throw new Error(i18n.t('errors:browser.profileUnsupported'))
     const address = adapter.entryUrl(new URL(url))
     const reused = this.open?.address === address && !this.open.window.isDestroyed()
     try { return await this.readListing(adapter, url, address, index, group, signal) }
@@ -438,7 +439,7 @@ export class EmbeddedBrowser {
     const entries = listing.groups.flatMap(group => group.entries)
     log.info(`[listing ${adapter.id} 第 ${index} 页] 预热 ${warmed - opened}ms · 加载 ${loaded - warmed}ms · 停顿 ${settled - loaded}ms · 取数 ${asked - settled}ms · 合计 ${asked - opened}ms · ${entries.length} 条`)
     return {
-      title: listing.title || '主页作品', kind: listing.kind || 'profile', groups: listing.groups, userAgent: this.userAgent,
+      title: listing.title || i18n.t('errors:browser.profileTitle'), kind: listing.kind || 'profile', groups: listing.groups, userAgent: this.userAgent,
       cookies: await this.cookiesFor([held.window.webContents.getURL(), ...relatedTo(url), ...entries.map(entry => entry.url)]),
     }
   }
@@ -527,7 +528,7 @@ function pageFetch(evaluate: <T>(expression: string) => Promise<T>): Fetcher {
     })()`)
     // A page that could not reach the host at all is a different thing from one that was refused, and
     // an adapter is owed the difference: a refusal it can read, or an error it cannot mistake for one.
-    if ('failed' in reply) { log.warn(`[fetch] ${method} ${address} 未发出 ${Date.now() - started}ms：${reply.failed}`); throw new Error(`页面内请求未发出：${reply.failed}`) }
+    if ('failed' in reply) { log.warn(`[fetch] ${method} ${address} 未发出 ${Date.now() - started}ms：${reply.failed}`); throw new Error(i18n.t('errors:browser.fetchFailed', { reason: reply.failed })) }
     const line = `[fetch] ${method} ${address} → ${reply.status} · ${reply.body.length} 字符 · ${Date.now() - started}ms`
     // Every listing API answers JSON. Anything else - a challenge page, an error page, a 412 - is the
     // thing a failed parse has to be diagnosed from, so its opening is kept.
