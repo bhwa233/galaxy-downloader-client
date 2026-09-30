@@ -142,7 +142,7 @@ export default function App() {
                 <Button type="button" size="lg" variant="outline" onClick={() => void paste()}><ClipboardPaste />粘贴链接</Button>
                 {state.parse.status === 'parsing'
                   ? <Button type="button" size="lg" variant="outline" onClick={() => void send('media:cancel', null)}><Spinner aria-hidden="true" />取消解析</Button>
-                  : <Button type="submit" size="lg" disabled={!url.trim()}>解析<kbd className="rounded border border-current/30 px-1 font-sans text-[11px] leading-4 opacity-70">Enter</kbd></Button>}
+                  : <Button type="submit" size="lg" disabled={!url.trim()}>解析<kbd aria-hidden="true" className="rounded border border-current/30 px-1 font-sans text-[11px] leading-4 opacity-70">Enter</kbd></Button>}
               </div>
             </form>
             {/* A message arriving alongside a result belongs to a page the user turned, and is shown
