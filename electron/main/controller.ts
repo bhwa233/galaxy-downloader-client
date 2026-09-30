@@ -141,7 +141,7 @@ export class Controller {
       const input = commandSchemas[command].parse(raw)
       switch (command) {
         case 'state:get': break
-        case 'clipboard:read': return { ok: true, state: this.state(), clipboardText: clipboard.readText().slice(0, 8192) }
+        case 'clipboard:read': return { ok: true, state: this.state(), clipboardText: (await clipboard.readText()).slice(0, 8192) }
         case 'browser:refresh': await this.refresh(); break
         case 'browser:login': {
           // The visible window shares its partition with the hidden one that parses, so the user
@@ -281,7 +281,7 @@ export class Controller {
           if (!['open', 'reveal', 'copy-link', 'open-page', 'copy-path', 'login'].includes(action)) { this.queue.action(id, action as 'pause' | 'resume' | 'retry' | 'cancel'); break }
           const job = this.queue.jobs.find(item => item.id === id)
           if (!job) throw new Error('下载任务不存在')
-          if (action === 'copy-link') { clipboard.writeText(job.url); break }
+          if (action === 'copy-link') { await clipboard.writeText(job.url); break }
           // The page the job failed on is where the platform's own sign-in prompt is.
           if (action === 'login') { this.browser.openLogin(/^https?:\/\//i.test(job.url) ? job.url : '', () => void this.afterLogin()); break }
           // Only ever the page the job was made from, which this client fetched itself and which the
@@ -293,7 +293,7 @@ export class Controller {
           // These speak for a file on disk, so all want one that is there and is the job's own.
           const file = job.files[0]
           if (!file || job.status !== 'completed' || path.dirname(path.resolve(file)) !== path.resolve(job.directory)) throw new Error('找不到已完成的文件')
-          if (action === 'copy-path') clipboard.writeText(file)
+          if (action === 'copy-path') await clipboard.writeText(file)
           else if (action === 'open') {
             // The system's own default application for the file. It reports a failure as a message
             // rather than throwing - no application for the type, or the file gone since.
@@ -336,7 +336,7 @@ export class Controller {
           await this.queue.remove(id, deleteFiles)
           break
         }
-        case 'clipboard:write': clipboard.writeText(commandSchemas['clipboard:write'].parse(input).text); break
+        case 'clipboard:write': await clipboard.writeText(commandSchemas['clipboard:write'].parse(input).text); break
         // The address has already been held to http(s) by its schema, so this cannot be asked to open
         // a file or hand anything to another scheme's handler.
         case 'shell:open': await shell.openExternal(commandSchemas['shell:open'].parse(input).url); break
