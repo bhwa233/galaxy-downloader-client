@@ -1,0 +1,930 @@
+{
+    "home": {
+        "title": "Select a Service",
+        "description": "Choose which service you want to download from.",
+        "bilibiliButton": "Bilibili Downloader",
+        "douyinButton": "Douyin Downloader"
+    },
+    "unified": {
+        "pageTitle": "Universal Media Downloader",
+        "pageDescription": "Paste a link to auto-detect the content and quickly download video, audio, pure music, image posts, and M3U8/HLS streams.",
+        "placeholder": "Paste link or share token here...",
+        "newBadge": "New: Douyin image notes",
+        "exampleLabel": "Paste example",
+        "exampleUrl": "https://www.bilibili.com/video/BV1Wv3ez2Ex8/"
+    },
+    "page": {
+        "feedback": "Have feedback or suggestions? Click the \"Feedback\" button in the top-right corner.",
+        "feedbackLinkText": "",
+        "openMenuLabel": "Open menu",
+        "switchLanguageLabel": "Switch language",
+        "copyrightVideo": "Copyright Notice: Video copyrights belong to relevant websites and authors",
+        "copyrightStorage": "This site does not provide or store any videos or images",
+        "copyrightYear": "Copyright © {year}",
+        "copyrightBilibiliRestriction": "⚠️ Copyrighted, paid, or member-only restricted content is not supported."
+    },
+    "form": {
+        "pasteButton": "Paste",
+        "downloadButton": "Parse",
+        "downloading": "Parsing..."
+    },
+    "errors": {
+        "emptyUrl": "URL cannot be empty.",
+        "downloadError": "An unknown error occurred during processing.",
+        "downloadFailed": "Processing failed",
+        "getVideoInfoFailed": "Failed to get video information, please try again later.",
+        "clipboardFailed": "Failed to read clipboard.",
+        "clipboardPermission": "Please check if clipboard permission is granted.",
+        "allImagesLoadFailed": "All images failed to load, unable to package download",
+        "packageFailed": "Packaging failed, please try again",
+        "confirmPartialDownload": "{failCount} images failed to load. Download remaining {successCount} images?",
+        "continue": "Continue",
+        "cancel": "Cancel",
+        "fileTooLarge": "File is too large, maximum 500MB supported",
+        "videoFileTooLarge": "Video file is too large, maximum 500MB supported",
+        "audioFileTooLarge": "Audio file is too large, maximum 100MB supported",
+        "totalSizeTooLarge": "Total file size exceeds 800MB",
+        "fileEmpty": "File is empty, please select a valid file",
+        "fileFormatNotSupported": "File format not supported, please upload MP4/WebM/MOV/MKV/AVI/MPEG video",
+        "audioFormatNotSupported": "Audio format not supported, please upload MP3/AAC/WAV/OGG/FLAC/M4A audio",
+        "fileReadFailed": "Failed to read file, please try again",
+        "noVideoSelected": "Please select a video file",
+        "noAudioSelected": "Please select an audio file",
+        "api": {
+            "BAD_REQUEST": "The request parameters are invalid.",
+            "INVALID_JSON": "The request body format is invalid.",
+            "UNSUPPORTED_PLATFORM": "This platform is not supported.",
+            "PLATFORM_MISMATCH": "The link does not match the selected download interface.",
+            "INVALID_DOWNLOAD_TYPE": "The download type is invalid.",
+            "INVALID_QUALITY": "The selected quality is invalid.",
+            "NOT_FOUND": "The resource does not exist or is no longer available.",
+            "DOWNLOAD_URL_NOT_FOUND": "No downloadable media link was found.",
+            "RATE_LIMITED": "Your request limit on this site has been reached. Please wait for it to reset.",
+            "UPSTREAM_RATE_LIMITED": "The upstream platform is restricting access or requires verification. Your request allowance on this site has not been exhausted.",
+            "UPSTREAM_ERROR": "The upstream platform request failed. Please try again later.",
+            "SERVICE_UNAVAILABLE": "The service is temporarily unavailable.",
+            "INTERNAL_ERROR": "An internal server error occurred.",
+            "FEEDBACK_SUBMIT_FAILED": "Failed to submit feedback.",
+            "MEDIA_PROCESSOR_INIT_FAILED": "Failed to initialize the media processor.",
+            "PARSE_FAILED": "Failed to parse the link. Please check whether it is valid."
+        }
+    },
+    "history": {
+        "title": "History",
+        "description": "History feature description",
+        "clear": "Clear",
+        "cleared": "History cleared",
+        "searchPlaceholder": "Search title...",
+        "noSearchResults": "No matching history records",
+        "viewSource": "View Source Link",
+        "redownload": "Re-parse",
+        "linkFilled": "Link filled",
+        "clickToRedownload": "Click parse button to start re-parsing",
+        "unknownTitle": "Unknown Title",
+        "platforms": {
+            "bilibili": "Bilibili",
+            "bilibiliTv": "Bilibili TV",
+            "douyin": "Douyin",
+            "kuaishou": "Kuaishou",
+            "youtube": "YouTube",
+            "telegram": "Telegram",
+            "wechat": "WeChat",
+            "niconico": "Niconico",
+            "xiaohongshu": "Xiaohongshu",
+            "tiktok": "TikTok",
+            "generic": "Web Video",
+            "unknown": "Unknown",
+            "instagram": "Instagram",
+            "x": "X",
+            "threads": "Threads",
+            "weibo": "Weibo",
+            "dailymotion": "Dailymotion",
+            "newgrounds": "Newgrounds",
+            "okru": "OK.ru",
+            "pinterest": "Pinterest",
+            "reddit": "Reddit",
+            "soundcloud": "SoundCloud",
+            "streamable": "Streamable",
+            "twitch": "Twitch",
+            "tumblr": "Tumblr",
+            "vk": "VK",
+            "vimeo": "Vimeo"
+        }
+    },
+    "toast": {
+        "linkFilled": "Link pasted.",
+        "douyinParseSuccess": "Successfully parsed",
+        "linkFilledForRedownload": "Link filled",
+        "clickToRedownloadDesc": "Click parse button to start re-parsing",
+        "installTitle": "Add to Home Screen",
+        "installDescription": "Install for quick one-tap access",
+        "installAction": "Install"
+    },
+    "metadata": {
+        "title": "sparkdownloader | Online Video, Audio, Image, HLS Downloader",
+        "description": "Free online media downloader for Bilibili, Douyin, Telegram, Threads, WeChat, Weibo, Niconico, Instagram, Xiaohongshu, TikTok, X, Reddit, Streamable, SoundCloud, Twitch, VK, OK.ru, Pinterest, Tumblr, Newgrounds, and HLS/M3U8 streams.",
+        "ogTitle": "sparkdownloader | Free Online Media Downloader",
+        "ogDescription": "Auto-detect links from supported video, audio, image, and HLS/M3U8 sources, then download media online without registration.",
+        "siteName": "sparkdownloader"
+    },
+    "common": {
+        "home": "Home",
+        "backToTop": "Back to top",
+        "relatedPages": "Related pages",
+        "privacy": "Privacy Policy",
+        "terms": "Terms of Use",
+        "contact": "Contact",
+        "trustAndPolicies": "Trust & Policies"
+    },
+    "contactPage": {
+        "metaTitle": "Contact | sparkdownloader",
+        "metaDescription": "Contact sparkdownloader for support, bug reports, feature requests, and SEO feedback.",
+        "title": "Contact",
+        "intro": "Use the channels below to report issues or request new features.",
+        "feedback": "Open Feedback Discussions",
+        "feedbackHint": "Best for public feature ideas, platform requests, and general questions.",
+        "github": "Open a GitHub Issue",
+        "githubHint": "Best for bug reports and feature requests."
+    },
+    "feedbackPage": {
+        "metaTitle": "Feedback | sparkdownloader",
+        "metaDescription": "Share public feedback and feature ideas for sparkdownloader.",
+        "title": "Feedback",
+        "privateFeedbackTitle": "Feedback via Email",
+        "privateFeedbackDescription": "You can also choose to submit your feedback by sending an email. To help us locate the issue faster, we recommend including the target URL, your device details, or relevant screenshots in your email.",
+        "emailAction": "Send Email",
+        "emailTemplateBody": "[Description]\nPlease briefly describe the issue or suggestion:\n\n[Target URL]\n(If applicable, provide the link you are trying to download)\n\n[Environment]\n(e.g., Win 11 / Chrome 120 / iOS 17)\n"
+    },
+    "privacyPage": {
+        "metaTitle": "Privacy Policy | sparkdownloader",
+        "metaDescription": "How sparkdownloader handles data, browser storage, analytics, and privacy protection.",
+        "title": "Privacy Policy",
+        "intro": "This page explains what data is processed when using the downloader.",
+        "points": [
+            "No account registration is required.",
+            "Download history is stored in your browser local storage.",
+            "The service does not store your private media files on this website.",
+            "Third-party services such as analytics or ads may collect usage data according to their own policies."
+        ],
+        "updated": "Last updated: February 18, 2026"
+    },
+    "termsPage": {
+        "metaTitle": "Terms of Use | sparkdownloader",
+        "metaDescription": "Usage terms, legal limitations, and user responsibilities for sparkdownloader.",
+        "title": "Terms of Use",
+        "intro": "By using this service, you agree to follow applicable copyright and platform rules.",
+        "points": [
+            "Use the tool only for lawful and authorized content access.",
+            "Do not use the service to bypass payment, membership, or copyright protection.",
+            "You are responsible for how downloaded files are used.",
+            "The service may change functionality at any time without prior notice."
+        ],
+        "updated": "Last updated: February 18, 2026"
+    },
+    "languages": {
+        "zh": "简体中文",
+        "zh-tw": "繁體中文",
+        "en": "English",
+        "ja": "日本語",
+        "es": "Español",
+        "ru": "Русский"
+    },
+    "douyin": {
+        "apiLimitDownload": "If automatic download fails, please click open link to download manually (download feature is in the bottom right corner of the video)"
+    },
+    "extractAudio": {
+        "button": "Extract Audio",
+        "loading": "Loading...",
+        "downloading": "Downloading {progress}%",
+        "downloadingWithSize": "Downloading {progress}% ({loaded} / {total})",
+        "converting": "Converting {progress}%",
+        "completed": "Extraction Complete",
+        "retry": "Retry",
+        "errorLoad": "Failed to load tools, please refresh and try again",
+        "errorDownload": "Failed to download video, please use backup link and extract with other tools",
+        "errorConvert": "Audio conversion failed, video format may not be supported",
+        "errorMemory": "Video file too large, browser memory insufficient, please use desktop tools"
+    },
+    "audioTool": {
+        "triggerButton": "Tools",
+        "title": "Tools",
+        "description": "Use the tools to extract audio or merge media files. Download starts automatically when processing finishes.",
+        "extractDescription": "Extract audio from a local video file and output MP3.",
+        "mergeDescription": "Choose one video file and one audio file, then output MP4.",
+        "placeholder": "Paste a video or post share link...",
+        "strategyHint": "Prefer native platform audio download; if unavailable, browser extraction will be used automatically.",
+        "pasteButton": "Paste",
+        "submitButton": "Start Extract",
+        "processingButton": "Processing...",
+        "statusIdle": "Select a video file to start extraction",
+        "statusMergeIdle": "Select both video and audio files to start merging",
+        "statusParsing": "Parsing...",
+        "statusPreparingMerge": "Downloading video and audio sources...",
+        "statusDirectDownloading": "Native audio detected, downloading...",
+        "statusFallbackExtracting": "Native audio not found, preparing browser extraction...",
+        "statusCompleted": "Done, download started",
+        "noAudioSource": "Parsed successfully, but no available audio or video source was found",
+        "noMergeSource": "Parsed successfully, but no video or audio source is available for merging",
+        "urlTab": "From URL",
+        "fileTab": "Extract Audio",
+        "mergeTab": "Merge Video + Audio",
+        "videoFile": "Video File",
+        "audioFile": "Audio File",
+        "dropHint": "Drop a file here, or click to select",
+        "fileSizeLimit": "Up to 500MB",
+        "fileSelected": "Selected: {name} ({size})",
+        "selectFileButton": "Select Video",
+        "changeFileButton": "Change Video",
+        "selectVideoButton": "Select Video",
+        "selectAudioButton": "Select Audio",
+        "videoSizeLimit": "Up to 500MB",
+        "audioSizeLimit": "Up to 100MB",
+        "videoSelected": "Selected: {name} ({size})",
+        "audioSelected": "Selected: {name} ({size})",
+        "mergeButton": "Start Merge",
+        "changeVideoButton": "Change Video",
+        "changeAudioButton": "Change Audio",
+        "closeButton": "Close",
+        "statusReadingFile": "Reading video…",
+        "statusFileReady": "Video ready. You can start extraction",
+        "statusReadingVideo": "Reading video…",
+        "statusReadingAudio": "Reading audio…",
+        "statusMerging": "Merging…"
+    },
+    "hlsDownload": {
+        "description": "HLS resources are transferred securely through the download service.",
+        "outputTitle": "Output title",
+        "outputPlaceholder": "Optional filename prefix",
+        "sourceUrl": "Source page or m3u8 URL",
+        "sourcePlaceholder": "Paste a page URL that resolves to an HLS playlist",
+        "refererUrl": "Optional referer override",
+        "refererPlaceholder": "Useful when the input is already an m3u8 playlist URL",
+        "segmentCount": "Segment count",
+        "segmentCountPlaceholder": "Leave empty to download all",
+        "resolveButton": "Resolve playlist",
+        "resolvingButton": "Resolving...",
+        "downloadButton": "Download in browser",
+        "downloadingButton": "Downloading...",
+        "statusLabel": "Status",
+        "idleStatus": "Ready. Resolve the playlist to start.",
+        "resolvingStatus": "Resolving page URL and playlist...",
+        "resolvedStatus": "Playlist resolved. Ready to download.",
+        "resolveFailedStatus": "Playlist resolution failed.",
+        "downloadingStatus": "Downloading {count} HLS resources in the browser...",
+        "downloadCompletedStatus": "Download finished. You can now close this dialog.",
+        "downloadFailedStatus": "Browser-side download failed.",
+        "largeVideoBrowserLimitedStatus": "This browser is not suitable for downloading this larger video. Please try Chrome or Edge.",
+        "progressLabel": "Progress",
+        "speedLabel": "Speed",
+        "etaLabel": "ETA",
+        "calculatingLabel": "Calculating",
+        "confirmCloseTitle": "Close download?",
+        "confirmCloseDescription": "Closing will stop the current download.",
+        "confirmCloseAction": "Close",
+        "resolvedPlaylist": "Resolved playlist",
+        "totalSegments": "Total segments: {count}",
+        "selectedSegments": "Selected now: {count}",
+        "encryptedLabel": "AES-128 encrypted",
+        "encryptedYes": "yes",
+        "encryptedNo": "no",
+        "encryptedHint": "AES-128 HLS encryption was detected. The browser downloader will fetch the key, decrypt segments, and merge them before saving.",
+        "previewSegmentUrls": "Preview segment URLs"
+    },
+    "guide": {
+        "quickStart": {
+            "title": "Easy 3-Step Download",
+            "steps": [
+                {
+                    "title": "Copy Media Link",
+                    "description": "Copy media links from supported platforms"
+                },
+                {
+                    "title": "Paste and Parse",
+                    "description": "Paste link in input box, click parse button"
+                },
+                {
+                    "title": "Select Download Type",
+                    "description": "Choose video, audio, or image download options to start downloading"
+                }
+            ]
+        },
+        "platformSupport": {
+            "title": "Platforms",
+            "bilibili": {
+                "name": "Bilibili",
+                "summary": "Video / Audio / Share Code",
+                "features": [
+                    "Video",
+                    "Audio",
+                    "Share Code"
+                ]
+            },
+            "bilibiliTv": {
+                "name": "Bilibili TV",
+                "summary": "Video / Audio",
+                "features": [
+                    "Video",
+                    "Audio"
+                ]
+            },
+            "douyin": {
+                "name": "Douyin",
+                "summary": "Video / Image Post / Audio",
+                "features": [
+                    "Video",
+                    "Image Post",
+                    "Audio"
+                ]
+            },
+            "hls": {
+                "name": "Video Sites",
+                "summary": "Streaming / Replays",
+                "features": [
+                    "Online Play",
+                    "Download"
+                ]
+            },
+            "youtube": {
+                "name": "YouTube",
+                "summary": "Video / Audio",
+                "features": [
+                    "Video",
+                    "Audio"
+                ]
+            },
+            "telegram": {
+                "name": "Telegram",
+                "summary": "Video / Message Link",
+                "features": [
+                    "Video",
+                    "Message Link"
+                ]
+            },
+            "wechat": {
+                "name": "WeChat",
+                "summary": "Article Videos / Multi-video",
+                "features": [
+                    "Article Videos",
+                    "Multi-video"
+                ]
+            },
+            "niconico": {
+                "name": "Niconico",
+                "summary": "Video / Audio",
+                "features": [
+                    "Video",
+                    "Audio"
+                ]
+            },
+            "xiaohongshu": {
+                "name": "Xiaohongshu",
+                "summary": "Video / Image Post",
+                "features": [
+                    "Video",
+                    "Image Post"
+                ]
+            },
+            "tiktok": {
+                "name": "TikTok",
+                "summary": "Video / Audio",
+                "features": [
+                    "Video",
+                    "Audio"
+                ]
+            },
+            "comingSoon": "More platforms coming soon",
+            "instagram": {
+                "name": "Instagram",
+                "summary": "Video / Image Post / Carousel",
+                "features": [
+                    "Video",
+                    "Image Post",
+                    "Carousel"
+                ]
+            },
+            "x": {
+                "name": "X",
+                "summary": "Video / Audio",
+                "features": [
+                    "Video",
+                    "Audio"
+                ]
+            },
+            "threads": {
+                "name": "Threads",
+                "summary": "Video / Image Post",
+                "features": [
+                    "Video",
+                    "Image Post"
+                ]
+            },
+            "weibo": {
+                "name": "Weibo",
+                "summary": "Video / Image Post / Multi-video",
+                "features": [
+                    "Video",
+                    "Image Post",
+                    "Multi-video"
+                ]
+            },
+            "vimeo": {
+                "name": "Vimeo",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "dailymotion": {
+                "name": "Dailymotion",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "streamable": {
+                "name": "Streamable",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "reddit": {
+                "name": "Reddit",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "newgrounds": {
+                "name": "Newgrounds",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "tumblr": {
+                "name": "Tumblr",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "pinterest": {
+                "name": "Pinterest",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "vk": {
+                "name": "VK",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "okru": {
+                "name": "OK.ru",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "twitch": {
+                "name": "Twitch",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "soundcloud": {
+                "name": "SoundCloud",
+                "summary": "Content Download",
+                "features": [
+                    "Content Download"
+                ]
+            },
+            "applePodcasts": {
+                "name": "Apple Podcasts",
+                "summary": "Public podcast audio / Episode playback and download",
+                "features": [
+                    "Public audio",
+                    "Episode playback",
+                    "Download"
+                ]
+            },
+            "kuaishou": { "name": "Kuaishou", "summary": "Video and image posts" },
+            "zhihu": { "name": "Zhihu", "summary": "Video posts" },
+            "generic": { "name": "Web / HLS", "summary": "Supported web videos and HLS streams" },
+            "bluesky": { "name": "Bluesky", "summary": "Video posts" },
+            "rumble": { "name": "Rumble", "summary": "Video posts" },
+            "snapchat": { "name": "Snapchat", "summary": "Spotlight videos" },
+            "coub": { "name": "Coub", "summary": "Video loops" },
+            "imgur": { "name": "Imgur", "summary": "Images and video posts" },
+            "odysee": { "name": "Odysee", "summary": "Video posts" },
+            "rutube": { "name": "Rutube", "summary": "Video and HLS streams" }
+        },
+        "linkFormats": {
+            "title": "Supported Link Formats",
+            "bilibili": {
+                "title": "🔗 Bilibili link examples:",
+                "examples": [
+                    "https://www.bilibili.com/video/BV1xx411c7mD",
+                    "https://b23.tv/BV1xx411c7mD"
+                ]
+            },
+            "douyin": {
+                "title": "🔗 Douyin link examples:",
+                "examples": [
+                    "https://www.douyin.com/video/7491698414288260387",
+                    "https://v.douyin.com/fiU6t9rA3QU"
+                ]
+            },
+            "telegram": {
+                "title": "🔗 Telegram link examples:",
+                "examples": [
+                    "https://t.me/zhijiang/8187",
+                    "https://t.me/europa_press/613"
+                ]
+            },
+            "tip": "Tip: Just copy the share link, no manual modification needed"
+        }
+    },
+    "todayStats": {
+        "title": "Parse Statistics",
+        "todayCountLabel": "Today",
+        "totalCountLabel": "Total"
+    },
+    "freeSupport": {
+        "title": "Permanently Free Service",
+        "features": {
+            "freeToUse": "Completely free to use",
+            "noRegistration": "No registration required",
+            "unlimitedDownloads": "Unlimited downloads"
+        },
+        "privacy": {
+            "title": "Privacy Protection Commitment",
+            "noUserRecords": "Server does not store user records",
+            "localStorage": "History stored in browser"
+        },
+        "revenue": {
+            "adsSupport": "This service is monetized through ads",
+            "serverCosts": "To support server and traffic costs"
+        }
+    },
+    "seo": {
+        "features": {
+            "en": [
+                "Extract MP3 audio from Bilibili videos",
+                "Download Douyin videos without watermark",
+                "Download Telegram public video posts",
+                "Download WeChat article videos",
+                "Download Niconico videos",
+                "Download Niconico audio",
+                "Download Instagram reels and posts",
+                "Download Instagram image posts",
+                "Extract audio from Instagram videos",
+                "Download Xiaohongshu image notes",
+                "Download Xiaohongshu videos",
+                "Extract audio from Xiaohongshu videos",
+                "Download TikTok videos without watermark",
+                "Download X videos",
+                "Extract audio from X videos",
+                "Auto-detect supported platforms",
+                "High-quality media downloads",
+                "Free online tool",
+                "No registration required",
+                "Support multiple media formats",
+                "Browser-based processing",
+                "Download Threads videos and image posts",
+                "Download Weibo videos and mixed-media posts"
+            ],
+            "zh": [
+                "提取哔哩哔哩视频MP3音频",
+                "下载抖音无水印视频",
+                "下载 Telegram 公开视频消息",
+                "下载Instagram Reels和帖子",
+                "下载Instagram图文帖子",
+                "提取Instagram视频音频",
+                "下载小红书图文笔记",
+                "下载小红书无水印视频",
+                "提取小红书视频音频",
+                "下载TikTok无水印视频",
+                "下载X视频",
+                "提取X视频音频",
+                "自动识别支持的平台",
+                "高清媒体内容下载",
+                "免费在线工具",
+                "无需注册",
+                "支持多种媒体格式",
+                "浏览器内处理",
+                "????????????????",
+                "下载 Threads 视频和图文帖子",
+                "下载微博视频、图文与混合媒体帖子"
+            ],
+            "zh-tw": [
+                "提取嗶哩嗶哩影片MP3音訊",
+                "下載抖音無浮水印影片",
+                "下載 Telegram 公開影片訊息",
+                "下載Instagram Reels與貼文",
+                "下載Instagram圖文貼文",
+                "提取Instagram影片音訊",
+                "下載小紅書圖文筆記",
+                "下載小紅書無浮水印影片",
+                "提取小紅書影片音訊",
+                "下載TikTok無浮水印影片",
+                "下載X影片",
+                "提取X影片音訊",
+                "自動識別支援的平台",
+                "高清媒體內容下載",
+                "免費線上工具",
+                "無需註冊",
+                "支援多種媒體格式",
+                "瀏覽器內處理",
+                "????????????????",
+                "下載 Threads 影片與圖文貼文",
+                "下載微博影片、圖文與混合媒體貼文"
+            ],
+            "ja": [
+                "Bilibili動画からMP3音声を抽出",
+                "Douyin動画をダウンロード",
+                "Telegramの公開動画メッセージをダウンロード",
+                "InstagramのReelsと投稿をダウンロード",
+                "Instagramの画像投稿をダウンロード",
+                "Instagram動画から音声を抽出",
+                "Xiaohongshuの画像ノートをダウンロード",
+                "Xiaohongshu動画をダウンロード",
+                "Xiaohongshu動画から音声を抽出",
+                "TikTok動画をダウンロード",
+                "X動画をダウンロード",
+                "X動画から音声を抽出",
+                "対応プラットフォームを自動判別",
+                "高品質なメディアダウンロード",
+                "無料のオンラインツール",
+                "登録不要",
+                "複数のメディア形式に対応",
+                "ブラウザ内で処理",
+                "Threads の動画と画像投稿をダウンロード",
+                "Weibo の動画・画像・混合メディア投稿をダウンロード"
+            ],
+            "es": [
+                "Extract MP3 audio from Bilibili videos",
+                "Download Douyin videos without watermark",
+                "Download Telegram public video posts",
+                "Download WeChat article videos",
+                "Download Niconico videos",
+                "Download Niconico audio",
+                "Download Instagram reels and posts",
+                "Download Instagram image posts",
+                "Extract audio from Instagram videos",
+                "Download Xiaohongshu image notes",
+                "Download Xiaohongshu videos",
+                "Extract audio from Xiaohongshu videos",
+                "Download TikTok videos without watermark",
+                "Download X videos",
+                "Extract audio from X videos",
+                "Auto-detect supported platforms",
+                "High-quality media downloads",
+                "Free online tool",
+                "No registration required",
+                "Support multiple media formats",
+                "Browser-based processing",
+                "Download Threads videos and image posts",
+                "Download Weibo videos and mixed-media posts"
+            ],
+            "ru": [
+                "Extract MP3 audio from Bilibili videos",
+                "Download Douyin videos without watermark",
+                "Download Telegram public video posts",
+                "Download WeChat article videos",
+                "Download Niconico videos",
+                "Download Niconico audio",
+                "Download Instagram reels and posts",
+                "Download Instagram image posts",
+                "Extract audio from Instagram videos",
+                "Download Xiaohongshu image notes",
+                "Download Xiaohongshu videos",
+                "Extract audio from Xiaohongshu videos",
+                "Download TikTok videos without watermark",
+                "Download X videos",
+                "Extract audio from X videos",
+                "Auto-detect supported platforms",
+                "High-quality media downloads",
+                "Free online tool",
+                "No registration required",
+                "Support multiple media formats",
+                "Browser-based processing",
+                "Download Threads videos and image posts",
+                "Download Weibo videos and mixed-media posts"
+            ]
+        },
+        "howTo": {
+            "title": {
+                "en": "How to download content from Bilibili, Douyin, Telegram, Threads, WeChat, Weibo, Niconico, Instagram, Xiaohongshu, TikTok, and X",
+                "zh": "如何下载哔哩哔哩、抖音、Telegram、Threads、微信公众号、微博、Niconico、Instagram、小红书、TikTok 和 X 内容",
+                "zh-tw": "如何下載嗶哩嗶哩、抖音、Telegram、Threads、微信公眾號、微博、Niconico、Instagram、小紅書、TikTok 與 X 內容",
+                "ja": "Bilibili・Douyin・Telegram・Threads・WeChat・Weibo・Niconico・Instagram・Xiaohongshu・TikTok・X のコンテンツをダウンロードする方法",
+                "es": "How to download content from Bilibili, Douyin, Telegram, Threads, WeChat, Weibo, Niconico, Instagram, Xiaohongshu, TikTok, and X",
+                "ru": "How to download content from Bilibili, Douyin, Telegram, Threads, WeChat, Weibo, Niconico, Instagram, Xiaohongshu, TikTok, and X"
+            },
+            "steps": {
+                "en": [
+                    {
+                        "name": "Copy link",
+                        "text": "Copy the video, post, image-post, mixed-media post, or article link from Bilibili, Douyin, Telegram, Threads, WeChat, Weibo, Niconico, Instagram, Xiaohongshu, TikTok, or X"
+                    },
+                    {
+                        "name": "Paste link",
+                        "text": "Paste the link into the input field on our website"
+                    },
+                    {
+                        "name": "Auto-detect",
+                        "text": "The tool will automatically detect the platform (Bilibili/Douyin/Telegram/Threads/WeChat/Weibo/Niconico/Instagram/Xiaohongshu/TikTok/X)"
+                    },
+                    {
+                        "name": "Download",
+                        "text": "Choose video, audio, or image download options to get your media content"
+                    }
+                ],
+                "zh": [
+                    {
+                        "name": "复制链接",
+                        "text": "从浏览器复制哔哩哔哩、抖音、Telegram、Threads、微信公众号、微博、Niconico、Instagram、小红书、TikTok 或 X 的视频、帖子、图文、混合媒体或文章链接"
+                    },
+                    {
+                        "name": "粘贴链接",
+                        "text": "将链接粘贴到网站的输入框中"
+                    },
+                    {
+                        "name": "自动识别",
+                        "text": "工具会自动识别平台（哔哩哔哩/抖音/Telegram/Threads/微信公众号/微博/Niconico/Instagram/小红书/TikTok/X）"
+                    },
+                    {
+                        "name": "下载",
+                        "text": "选择视频、音频或图片下载选项，获取对应内容"
+                    }
+                ],
+                "zh-tw": [
+                    {
+                        "name": "複製連結",
+                        "text": "從瀏覽器複製嗶哩嗶哩、抖音、Telegram、Threads、微信公眾號、微博、Niconico、Instagram、小紅書、TikTok 或 X 的影片、貼文、圖文、混合媒體或文章連結"
+                    },
+                    {
+                        "name": "貼上連結",
+                        "text": "將連結貼上到網站的輸入框中"
+                    },
+                    {
+                        "name": "自動識別",
+                        "text": "工具會自動識別平台（嗶哩嗶哩/抖音/Telegram/Threads/微信公眾號/微博/Niconico/Instagram/小紅書/TikTok/X）"
+                    },
+                    {
+                        "name": "下載",
+                        "text": "選擇影片、音訊或圖片下載選項，取得對應內容"
+                    }
+                ],
+                "ja": [
+                    {
+                        "name": "リンクをコピー",
+                        "text": "Bilibili、Douyin、Telegram、Threads、WeChat、Weibo、Niconico、Instagram、Xiaohongshu、TikTok、または X の動画・投稿・画像投稿・混合メディア投稿・記事リンクをコピーします"
+                    },
+                    {
+                        "name": "リンクを貼り付け",
+                        "text": "サイト上の入力欄にリンクを貼り付けます"
+                    },
+                    {
+                        "name": "自動判別",
+                        "text": "ツールがプラットフォームを自動で判別します（Bilibili / Douyin / Telegram / Threads / WeChat / Weibo / Niconico / Instagram / Xiaohongshu / TikTok / X）"
+                    },
+                    {
+                        "name": "ダウンロード",
+                        "text": "動画・音声・画像のダウンロード方法を選択してコンテンツを取得します"
+                    }
+                ],
+                "es": [
+                    {
+                        "name": "Copy link",
+                        "text": "Copy the video, post, image-post, mixed-media post, or article link from Bilibili, Douyin, Telegram, Threads, WeChat, Weibo, Niconico, Instagram, Xiaohongshu, TikTok, or X"
+                    },
+                    {
+                        "name": "Paste link",
+                        "text": "Paste the link into the input field on our website"
+                    },
+                    {
+                        "name": "Auto-detect",
+                        "text": "The tool will automatically detect the platform (Bilibili/Douyin/Telegram/Threads/WeChat/Weibo/Niconico/Instagram/Xiaohongshu/TikTok/X)"
+                    },
+                    {
+                        "name": "Download",
+                        "text": "Choose video, audio, or image download options to get your media content"
+                    }
+                ],
+                "ru": [
+                    {
+                        "name": "Copy link",
+                        "text": "Copy the video, post, image-post, mixed-media post, or article link from Bilibili, Douyin, Telegram, Threads, WeChat, Weibo, Niconico, Instagram, Xiaohongshu, TikTok, or X"
+                    },
+                    {
+                        "name": "Paste link",
+                        "text": "Paste the link into the input field on our website"
+                    },
+                    {
+                        "name": "Auto-detect",
+                        "text": "The tool will automatically detect the platform (Bilibili/Douyin/Telegram/Threads/WeChat/Weibo/Niconico/Instagram/Xiaohongshu/TikTok/X)"
+                    },
+                    {
+                        "name": "Download",
+                        "text": "Choose video, audio, or image download options to get your media content"
+                    }
+                ]
+            }
+        }
+    },
+    "result": {
+        "title": "Parse Result",
+        "downloadVideo": "Download Video",
+        "browserDownloadVideo": "Browser HLS",
+        "mergeDownloadVideo": "Download Complete Video",
+        "mergeDownloadVideoHint": "Audio and video will be merged before the download starts.",
+        "downloadAudio": "Download Audio",
+        "playVideo": "Play Video",
+        "playAudio": "Play Audio",
+        "sharePlayLink": "Share to Play",
+        "sharePlayLinkCopied": "Playback share link copied",
+        "previewPlayerTitle": "Inline Preview",
+        "previewPlayerClose": "Close Preview",
+        "sharePlayPlayerTitle": "Shared Video Playback",
+        "sharePlayUnavailable": "Direct playback is unavailable for this result. Please use download options.",
+        "originDownloadVideo": "Video Direct Link",
+        "originDownloadAudio": "Audio Direct Link",
+        "totalParts": "Total {count} parts",
+        "showAllParts": "Show all ({count} more)",
+        "collapseParts": "Collapse to first {count}",
+        "loadMoreItems": "Load more (+{count})",
+        "shownItems": "Showing {shown}/{total}",
+        "collectionSearchPlaceholder": "Search title...",
+        "collectionNoSearchResults": "No matching collection videos found",
+        "articleVideoList": "Article Videos",
+        "articleVideoCount": "Total {count} videos",
+        "articleVideoUntitled": "Video {index}",
+        "downloadImage": "Download Image",
+        "downloadCover": "Download Cover",
+        "coverLabel": "Cover",
+        "imageIndexLabel": "Image #{index}",
+        "imageAlt": "Image {index}",
+        "imageNote": "Image Note",
+        "imageCount": "Total {count} images",
+        "packaging": "Packaging",
+        "packageDownload": "Package Download",
+        "loading": "Loading",
+        "loadFailed": "Load Failed",
+        "viewLargeImage": "View Large Image",
+        "imageLoadingProgress": "Loading {loaded}/{total}",
+        "imageAutoLoadedTip": "💡 Images auto-loaded, click to download",
+        "packagingProgress": "Packaging image {current}/{total}",
+        "videoList": "Video List",
+        "videoCount": "{count} videos",
+        "pureMusicHint": "This content is pure music/audio. Download the audio file directly."
+    },
+    "changelog": {
+        "title": "Changelog"
+    },
+    "feedback": {
+        "title": "Feedback & Suggestions",
+        "triggerButton": "Feedback",
+        "typeLabel": "Feedback Type",
+        "typeRequired": "Please select a feedback type",
+        "types": {
+            "bug": "🐛 Bug Report",
+            "feature": "💡 Feature Request",
+            "other": "💬 Other Feedback"
+        },
+        "contentLabel": "Details",
+        "contentRequired": "Please provide details (at least 10 characters)",
+        "contentTooShort": "At least {min} characters are required",
+        "contentPlaceholder": {
+            "bug": "Please describe the issue, steps to reproduce, expected result...",
+            "feature": "Please describe the feature you'd like to see...",
+            "other": "Please share your thoughts..."
+        },
+        "contentCounter": "{current} / {max} characters",
+        "emailLabel": "Contact Email",
+        "emailPlaceholder": "your@email.com",
+        "emailInvalid": "Invalid email format",
+        "emailRequired": "Optional. Leave your email if you want a reply",
+        "emailHint": "Leave your email if you'd like us to follow up",
+        "diagnosticInfoHint": "Browser and system info will be included to help diagnose the issue.",
+        "cancelButton": "Cancel",
+        "submitButton": "Submit Feedback",
+        "submittingButton": "Submitting...",
+        "closeButton": "Close",
+        "successTitle": "Submitted Successfully!",
+        "successMessage": "Thank you for your feedback! We'll review every suggestion carefully.",
+        "successNote": "If you provided an email, we may contact you for more details.",
+        "errorTitle": "Submission Failed",
+        "errorMessage": "Failed to submit. Please check your connection and try again.",
+        "errorFallback": "You can also reach us through:",
+        "retryButton": "Retry",
+        "toastSuccess": "Feedback submitted successfully!",
+        "toastError": "Failed to submit, please try again"
+    }
+}

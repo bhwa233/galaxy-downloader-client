@@ -1,0 +1,79 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.bhwa233.galaxy-downloader",
+  "productName": "Galaxy Downloader",
+  "asar": true,
+  "electronLanguages": [
+    "zh-CN",
+    "en-US"
+  ],
+  "directories": {
+    "output": "release/${version}"
+  },
+  "files": [
+    "dist-electron",
+    "dist"
+  ],
+  "mac": {
+    "artifactName": "${name}_${version}_mac_${arch}.${ext}",
+    "target": [
+      {
+        "target": "dmg",
+        "arch": [
+          "arm64"
+        ]
+      },
+      {
+        "target": "zip",
+        "arch": [
+          "arm64"
+        ]
+      }
+    ]
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "${name}_${version}_win_${arch}.${ext}"
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "${name}_${version}_linux_${arch}.${ext}",
+    "category": "Network"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "bhwa233",
+    "repo": "galaxy-downloader-client",
+    "releaseType": "release",
+    "vPrefixedTagName": false
+  },
+  "extraResources": [
+    {
+      "from": "resources/engine",
+      "to": "engine",
+      "filter": [
+        "**/*"
+      ]
+    }
+  ]
+}
