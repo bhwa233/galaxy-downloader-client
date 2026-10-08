@@ -1,6 +1,6 @@
 {
   "name": "galaxy-downloader",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "Local-first media downloader with browser login-state support.",
   "license": "AGPL-3.0-only",

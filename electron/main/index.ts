@@ -54,7 +54,8 @@ else {
   }).catch(error => { log.error('启动失败', error); app.quit() })
 }
 function createWindow(): void {
-  window = new BrowserWindow({ title: 'Galaxy Downloader', width: 1200, height: 850, minWidth: 900, minHeight: 650, backgroundColor: '#f7f8fa', show: !background, webPreferences: { preload: path.join(root, 'dist-electron/preload/index.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } })
+  const iconPath = path.join(app.getAppPath(), app.isPackaged ? 'dist/tray.png' : 'public/tray.png')
+  window = new BrowserWindow({ title: 'Galaxy Downloader', icon: iconPath, width: 1200, height: 850, minWidth: 900, minHeight: 650, backgroundColor: '#f7f8fa', show: !background, webPreferences: { preload: path.join(root, 'dist-electron/preload/index.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event, url) => { if (url !== rendererUrl) event.preventDefault() })
   window.webContents.on('will-attach-webview', event => event.preventDefault())
