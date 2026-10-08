@@ -89,6 +89,22 @@ export class Parser {
   private async extract(request: EngineRequest, signal: AbortSignal): Promise<RawInfo> {
     const raw = await this.engine.request<RawInfo>(request, signal)
     const entries = flattenEntries(raw)
+    // Bilibili番剧 flat entries already carry the episode URLs needed by the download phase. A full
+    // fallback extraction would visit every episode while merely listing the season and quickly trips
+    // Bilibili risk control; the selected episode is resolved later by its own download task.
+    if (/\/bangumi\//i.test(request.url || '')) {
+      // Flat season entries often omit covers, while the season page embeds one shared poster. Read
+      // only that page metadata once; never expand the episode URLs during listing.
+      if (!raw.thumbnail && !raw.thumbnails?.length) {
+        try {
+          const response = await this.fetcher(request.url!, { headers: request.headers, signal })
+          const html = await response.text()
+          const cover = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i.exec(html)?.[1]
+          if (cover) raw.thumbnail = cover
+        } catch { /* The list remains usable without a cover if the metadata request is blocked. */ }
+      }
+      return raw
+    }
     // Bilibili 番剧 returns flat entries holding nothing but an id and a url, which would label every
     // episode with the series title. Pay for the full extraction only where the cheap listing is empty.
     if (entries.length > 1 && entries.filter(entry => entry.title).length * 2 < entries.length) {
@@ -96,8 +112,9 @@ export class Parser {
     }
     return raw
   }
-  private fromEngine(raw: RawInfo, request: EngineRequest, method: 'direct' | 'browser'): ParsePlan {
-    const result = mediaResult(raw, request.url!, method)
+  private fromEngine(raw: RawInfo, request: EngineRequest, method: 'direct' | 'browser', page = 1): ParsePlan {
+    const start = raw.entries ? (page - 1) * 100 + 1 : 1
+    const result = mediaResult(raw, request.url!, method, start)
     const entries = flattenEntries(raw)
     const parent = raw.webpage_url || raw.original_url || request.url
     return { result, catalog: new Map(result.items.map(item => [item.id, item])), sources: new Map(result.items.map((item, index): [string, DownloadSource] => {
@@ -227,14 +244,14 @@ export class Parser {
         cookies, headers: { 'User-Agent': userAgent },
       }
       let failure: unknown
-      try { return this.fromEngine(await this.extract(request, signal), request, 'direct') }
+      try { return this.fromEngine(await this.extract({ ...request, ...(request.url && page > 1 ? { playliststart: (page - 1) * 100 + 1, playlistend: page * 100 } : {}) }, signal), request, 'direct', page) }
       catch (error) { signal.throwIfAborted(); failure = error; log.info('引擎直连失败', error) }
       // Public media needs no login at all, so an unreadable cookie database must not decide its fate.
       if (request.profile && isCookieFailure(String(failure))) {
         this.cookiesUnavailable = true
-        const retry: EngineRequest = { ...request, profile: undefined }
+        const retry: EngineRequest = { ...request, profile: undefined, ...(page > 1 ? { playliststart: (page - 1) * 100 + 1, playlistend: page * 100 } : {}) }
         log.info('读不了浏览器 cookie，改为不带配置重试')
-        try { return this.fromEngine(await this.extract(retry, signal), retry, 'direct') }
+        try { return this.fromEngine(await this.extract(retry, signal), retry, 'direct', page) }
         catch (error) { signal.throwIfAborted(); failure = error; log.info('不带配置重试也失败', error) }
       }
       if (!needsBrowser(String(failure))) {

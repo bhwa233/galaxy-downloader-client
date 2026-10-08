@@ -219,7 +219,9 @@ export function Result({ result, parse, settings, send, login, connecting, close
     const picked = tier.id === format
     if (item.formats.length) return picked ? tier.size : tier.preferredSize ?? tier.size
     const bitrate = picked ? tier.bitrate : tier.preferredBitrate ?? tier.bitrate
-    return bitrate && item.duration ? Math.round(bitrate * 1000 / 8 * item.duration) : undefined
+    // A listing estimate is valid only when the sample exposes a measured bitrate. Never invent a
+    // size from a missing or zero bitrate; unknown is safer than a multi-GB display.
+    return bitrate && bitrate > 0 && item.duration && item.duration > 0 ? Math.round(bitrate * 1000 / 8 * item.duration) : undefined
   }
   const sizeOf = (item: MediaItem) => { const bytes = bytesOf(item); return bytes ? t('about', { size: formatBytes(bytes) }) : undefined }
   // How many tasks each kind makes of what would be queued: a picture has no audio, and an item with

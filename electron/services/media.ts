@@ -9,6 +9,8 @@ export type RawInfo = {
   extractor_key?: string; extractor?: string; vcodec?: string; entries?: RawInfo[]; playlist_index?: number; playlist_count?: number;
   formats?: RawFormat[]
 }
+
+const bestThumbnail = (value: RawInfo | undefined): string | undefined => value?.thumbnail || value?.thumbnails?.filter(item => item.url).sort((first, second) => (second.width || 0) - (first.width || 0))[0]?.url
 type RawFormat = { format_id: string; height?: number; fps?: number; format_note?: string; ext?: string; vcodec?: string; acodec?: string; has_drm?: boolean; filesize?: number; filesize_approx?: number; tbr?: number }
 
 // A stream's size as the platform states it - exact where it knows, approximate where it gives one -
@@ -17,6 +19,7 @@ function streamSize(format: RawFormat | undefined, duration: number | undefined)
   if (!format) return undefined
   if (format.filesize) return format.filesize
   if (format.filesize_approx) return format.filesize_approx
+  // yt-dlp's tbr is kbit/s; convert to bytes only once.
   return format.tbr && duration ? Math.round(format.tbr * 1000 / 8 * duration) : undefined
 }
 
@@ -71,7 +74,7 @@ function tiersOf(formats: RawFormat[], platform: string, duration?: number): Med
     const merged = format.acodec === 'none' ? audio : undefined
     const video = streamSize(format, duration)
     const size = video === undefined ? undefined : video + (streamSize(merged, duration) || 0)
-    const bitrate = format.tbr ? format.tbr + (merged?.tbr || 0) : size && duration ? size * 8 / 1000 / duration : undefined
+    const bitrate = format.tbr ? format.tbr + (merged?.tbr || 0) : undefined
     return { size, bitrate }
   }
   return [...byName.entries()].sort(([, first], [, second]) => (second.height || 0) - (first.height || 0) || (second.fps || 0) - (first.fps || 0))
@@ -148,14 +151,14 @@ function publishedAt(entry: RawInfo): number | undefined {
   return date ? Date.UTC(Number(date[1]), Number(date[2]) - 1, Number(date[3])) / 1000 : undefined
 }
 
-export function mediaResult(raw: RawInfo, url: string, method: MediaResult['method']): MediaResult {
+export function mediaResult(raw: RawInfo, url: string, method: MediaResult['method'], start = 1): MediaResult {
   const entries = flattenEntries(raw)
   const items: MediaItem[] = entries.map((entry, index) => ({
-    id: String(index + 1), title: entry.title || raw.title || i18n.t('errors:media.item', { index: index + 1 }), duration: entry.duration,
+    id: String(start + index), title: entry.title || i18n.t('errors:media.item', { index: start + index }), duration: entry.duration,
     views: entry.view_count, comments: entry.comment_count,
     author: entry.uploader || entry.channel || raw.uploader || raw.channel, publishedAt: publishedAt(entry) ?? publishedAt(raw),
     // Channel and playlist entries carry a thumbnails list instead of a single thumbnail.
-    thumbnail: entry.thumbnail || entry.thumbnails?.filter(item => item.url).sort((first, second) => (second.width || 0) - (first.width || 0))[0]?.url,
+    thumbnail: bestThumbnail(entry) || bestThumbnail(raw),
     kind: entry.vcodec === 'none' ? 'audio' : 'video',
     formats: tiersOf(entry.formats || [], platformOf(url), entry.duration),
   }))
@@ -164,8 +167,9 @@ export function mediaResult(raw: RawInfo, url: string, method: MediaResult['meth
   // 'playlistend' cuts it off there, and a YouTube Mix has no end to reach at all. Saying so is the
   // difference between a listing that is short and one the user is being shown only the front of.
   // The full length is reported where the platform gave one, and left off where it did not.
-  const truncated = raw.entries && items.length >= ENTRY_LIMIT ? { shown: items.length, total: raw.playlist_count } : undefined
-  return { id: randomUUID(), url, title: raw.title || items[0].title, platform: platformOf(url), method, items, truncated }
+  const paginated = Boolean(raw.entries && (raw.playlist_count !== undefined || entries.length >= ENTRY_LIMIT))
+  const group = paginated ? { id: 'playlist', title: raw.title || items[0].title, itemIds: items.map(item => item.id), pagination: { index: Math.floor((start - 1) / ENTRY_LIMIT) + 1, size: ENTRY_LIMIT, total: raw.playlist_count, hasMore: raw.playlist_count === undefined ? items.length === ENTRY_LIMIT : start - 1 + items.length < raw.playlist_count } } : undefined
+  return { id: randomUUID(), url, title: raw.title || items[0].title, platform: platformOf(url), method, listing: paginated ? 'collection' : undefined, groups: group ? [group] : undefined, items }
 }
 
 // Reading another browser's cookie database fails for reasons that say nothing about the media:

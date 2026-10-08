@@ -116,6 +116,7 @@
         "label": "Use auto-generated subtitles",
         "hint": "Fall back to the platform's speech-recognition subtitles when a language has no human-made ones."
       },
+      "normalize": { "label": "Normalize overlapping subtitle cues", "hint": "Join YouTube rolling caption fragments so one language does not render twice at once." },
       "hint": "Only works on platforms that provide subtitle tracks; best supported on YouTube and on Bilibili when signed in. When embedded in MP4, subtitles are converted to mov_text, which some players may not show."
     }
   },

@@ -2,14 +2,63 @@
 import json
 import os
 import sys
+import re
 from http.cookiejar import Cookie
 
 from yt_dlp import YoutubeDL
+from yt_dlp.postprocessor.common import PostProcessor
 from yt_dlp.version import __version__
 
 
 def emit(kind, **data):
     print(json.dumps({'kind': kind, **data}, ensure_ascii=False), flush=True)
+
+def normalize_subtitle_file(path):
+    with open(path, encoding='utf-8-sig') as subtitle:
+        text = subtitle.read()
+    blocks = re.split(r'\r?\n\s*\r?\n', text.strip())
+    cues = []
+    for block in blocks:
+        lines = [line.strip('\ufeff\r') for line in block.splitlines()]
+        timing = next((i for i, line in enumerate(lines) if '-->' in line), -1)
+        if timing < 0: continue
+        start, end = [part.strip() for part in lines[timing].split('-->', 1)]
+        body = ' '.join(line.strip() for line in lines[timing + 1:] if line.strip())
+        if body: cues.append((start, end, body))
+    if not cues: return
+    def stamp(value):
+        parts = value.replace(',', '.').split(':')
+        if len(parts) == 2:
+            h, m, rest = 0, parts[0], parts[1]
+        else:
+            h, m, rest = parts
+        if '.' in rest:
+            s, ms = rest.split('.', 1)
+        else:
+            s, ms = rest, '0'
+        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms.ljust(3, '0')[:3]) / 1000
+    cues.sort(key=lambda cue: stamp(cue[0]))
+    out = []
+    for index, (start, end, body) in enumerate(cues):
+        if index + 1 < len(cues):
+            next_start = cues[index + 1][0]
+            if stamp(end) > stamp(next_start): end = next_start
+        if stamp(end) > stamp(start): out.append(f'{len(out) + 1}\n{start.replace(".", ",")} --> {end.replace(".", ",")}\n{body}\n')
+    with open(path, 'w', encoding='utf-8', newline='\n') as subtitle:
+        subtitle.write('\n'.join(out))
+
+class NormalizeSubtitles(PostProcessor):
+    def __init__(self, ydl):
+        super().__init__(ydl)
+    def run(self, info):
+        for track in (info.get('requested_subtitles') or {}).values():
+            path = track.get('filepath')
+            if path and os.path.exists(path) and path.lower().endswith(('.srt', '.vtt')):
+                normalize_subtitle_file(path)
+                # The normalizer emits SRT regardless of the source subtitle container. Keep
+                # metadata aligned so the following embedder reads the rewritten file as SRT.
+                track['ext'] = 'srt'
+        return [], info
 
 
 class Logger:
@@ -110,6 +159,9 @@ def main():
                 options['postprocessors'].append({'key': 'EmbedThumbnail', 'already_have_thumbnail': save_thumbnail})
         if request.get('entry'):
             options['playlist_items'] = str(request['entry'])
+        elif request.get('playliststart') or request.get('playlistend'):
+            options['playliststart'] = request.get('playliststart', 1)
+            options['playlistend'] = request.get('playlistend', 100)
     files = []
     with YoutubeDL(options) as ydl:
         # Inject a domain-aware cookie jar from an authorized Chrome connection.
@@ -144,6 +196,10 @@ def main():
                                 files.append(saved)
                     return [], info
 
+            if request.get('subtitleNormalizeOverlaps') and subtitles != 'off':
+                # Subtitle files are written before post_process. Normalize them before
+                # yt-dlp converts or embeds the selected tracks.
+                ydl._pps['post_process'].insert(0, NormalizeSubtitles(ydl))
             ydl.add_post_processor(CaptureFile(ydl), when='after_move')
         info = ydl.extract_info(request['url'], download=operation == 'download')
         emit('result', result=ydl.sanitize_info(info) if operation == 'extract' else {'files': files})

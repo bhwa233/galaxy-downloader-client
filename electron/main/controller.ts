@@ -117,6 +117,9 @@ export class Controller {
   // is not a listing or has no video with a page of its own.
   private async readTiers(plan: ParsePlan): Promise<ParsePlan['result']['formats']> {
     if (!plan.result.listing) return undefined
+    // Engine playlists already carry per-entry formats when they have been fully extracted. Sampling
+    // the first episode again would repeat the same番剧 page request and can trigger Bilibili risk control.
+    if (plan.result.groups?.some(group => group.id === 'playlist')) return undefined
     const first = plan.result.items.find(item => item.kind === 'video' && !item.wall && item.url)
     if (!first?.url) return undefined
     const sample = await this.parser.parse(first.url, this.profile(), new AbortController().signal, { single: true })

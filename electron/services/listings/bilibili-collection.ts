@@ -51,6 +51,11 @@ function archiveOf(archive: Archive): ListingEntry | undefined {
 
 type Source = { mid: string; sid: string; type: 'season' | 'series' }
 
+function bangumiOf(url: URL): string | undefined {
+  if (!/(^|\.)bilibili\.com$/.test(url.hostname)) return undefined
+  return /^\/bangumi\/play\/ss(\d+)/.exec(url.pathname)?.[1]
+}
+
 // A 合集 lives under its author's space, in one of three shapes the site has used. '/lists/<sid>' is
 // today's; the two '/channel/...detail' forms are still handed out by older pages and shared links.
 export function sourceOf(url: URL): Source | undefined {
@@ -104,6 +109,33 @@ export const bilibiliCollection: ProfileAdapter = {
     if (!source) throw new Error(i18n.t('errors:listing.noCollectionId'))
     const group = await collectionGroup({ fetch, signal }, source, page, url.href)
     return { title: group.title, kind: 'collection', groups: [group] }
+  },
+}
+
+type BangumiEpisode = { id?: number; aid?: number; cid?: number; title?: string; long_title?: string; cover?: string; duration?: number; pub_time?: number }
+type BangumiResponse = { code?: number; message?: string; result?: { title?: string; cover?: string; total?: number; episodes?: BangumiEpisode[] } }
+
+export const bilibiliBangumi: ProfileAdapter = {
+  id: 'bilibili-bangumi',
+  matches(url) { return Boolean(bangumiOf(url)) },
+  entryUrl(url) { return url.href },
+  async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage> {
+    const season = bangumiOf(url)
+    if (!season) throw new Error(i18n.t('errors:listing.noCollectionId'))
+    const address = `${API}/pgc/view/web/season?season_id=${season}`
+    const body = await read<BangumiResponse>(fetch, address, url.href, signal)
+    const result = body.result
+    const PAGE = 100
+    const episodes = result?.episodes || []
+    const slice = episodes.slice((page - 1) * PAGE, page * PAGE)
+    const entries = slice.map((episode, index): ListingEntry | undefined => {
+      const id = episode.id || episode.aid
+      if (!id) return undefined
+      const cover = https(episode.cover || result?.cover || '')
+      return { id: String(id), url: `https://www.bilibili.com/bangumi/play/ep${id}`, title: episode.long_title?.trim() || episode.title?.trim() || `第 ${(page - 1) * PAGE + index + 1} 集`, thumbnail: cover || undefined, kind: 'video', duration: count(episode.duration), publishedAt: count(episode.pub_time) }
+    }).filter((entry): entry is ListingEntry => Boolean(entry))
+    const total = count(result?.total) ?? episodes.length
+    return { title: result?.title?.trim() || i18n.t('errors:bilibili.collection'), kind: 'collection', groups: [{ id: 'collection', title: result?.title?.trim() || i18n.t('errors:bilibili.collection'), directory: result?.title?.trim(), entries, pagination: { index: page, size: PAGE, total, hasMore: page * PAGE < total } }] }
   },
 }
 

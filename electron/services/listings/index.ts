@@ -1,5 +1,5 @@
 import { bilibili } from './bilibili'
-import { bilibiliCollection, bilibiliVideo } from './bilibili-collection'
+import { bilibiliBangumi, bilibiliCollection, bilibiliVideo } from './bilibili-collection'
 import { douyin, douyinCollection, douyinSeries, douyinVideo } from './douyin'
 import { instagram, instagramPost } from './instagram'
 import { weibo } from './weibo'
@@ -16,7 +16,7 @@ import type { ProfileAdapter } from './types'
 // video itself can say whether it has parts or a collection behind it, so it reads one and stands down
 // where there is nothing to list. See ProfileAdapter.fetchPage.
 export const adapters: ProfileAdapter[] = [
-  bilibili, bilibiliCollection, bilibiliVideo,
+  bilibili, bilibiliBangumi, bilibiliCollection, bilibiliVideo,
   douyin, douyinCollection, douyinVideo, douyinSeries,
   instagram, instagramPost, weibo, weixin, x, xPost, youtube,
 ]
