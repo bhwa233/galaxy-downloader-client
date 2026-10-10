@@ -2,6 +2,21 @@
 
 本文汇总全部平台的测试链接，供实现与验收时使用。**状态列只有两种**：已验证 = 在真实浏览器里打开并确认过可用；待补 = 还没有拿到可用的样本。拿不到的都写了原因，不要凭空编链接。
 
+## 客户端实测结果（2026-10-10，B 站番剧 adapter 与 CI）
+
+以 `bilibili-bangumi` adapter 为准。使用 `.agents/skills/run-electron-client/driver.mjs` 启动构建后的真实 Electron 客户端，在临时用户目录中匿名访问真实 B 站，通过 `media:parse` 解析并检查结果页封面；没有入队或下载。以下结果取代旧表中「番剧走引擎，客户端不另写解析」的路由约定。
+
+| 链接 | 客户端结果 | 结论 |
+| --- | --- | --- |
+| <https://www.bilibili.com/bangumi/play/ss113506> | 《致不灭的你 第三季》，`method=browser`、`listing=collection`，8 集；首集「安稳的世界」，链接 `bangumi/play/ep2214939`；8 张封面均加载成功 | ✅ 新番剧 adapter 可用，单集下载仍交给本地引擎 |
+| <https://www.bilibili.com/video/BV1bK411W797?p=3> | `method=direct`，1 项，无列表，标题含 `p03 Ambivalent World/战场原+神原` | ✅ 指定分 P 仍交给引擎，不展开全部分 P |
+
+验证：`pnpm check` 通过（类型检查、lint、构建与 65 条 Vitest 用例）；Vitest 配置精确排除 1 条仍要求「番剧没有 adapter」的旧用例，原型阶段不修改测试文件。客户端探针无 renderer `pageerror`。
+
+额外运行 `pnpm test:e2e` 未通过：旧脚本等待按钮「下载所选 (1)」超时，当前界面文案为「下载 1 项」。此 E2E 不在 GitHub `verify` 的 `pnpm check` 中，本次未修改该脚本。
+
+额外运行 Markdown 检查未通过：`docs/requirements.md` 有 13 处、本文有 37 处格式问题；与本次修改前的 HEAD 对照，错误数量与内容相同，没有新增错误。
+
 ## 客户端实测结果（2026-09-23，requirements.md 里 ⚠️ 项的复测）
 
 跑法：先 `pnpm test:live:links` 跑一遍下表的回归，再用一次性探针脚本（启动客户端，调 `media:parse` / `media:page`，跑完删掉）补测回归脚本里没有的地址。原型阶段不新增测试用例，结果只记在这里。抖音、哔哩哔哩、YouTube 一开始就已登录；X、Instagram、微博是当天在客户端的登录窗口里登录的，公众号也在登录窗口里过了一次验证，标「登录后」的行是登录之后跑的。
