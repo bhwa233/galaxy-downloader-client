@@ -1,0 +1,14 @@
+{
+  "title": "解析历史",
+  "summary_other": "{{count}} 条，仅保存在本机",
+  "searchLabel": "搜索解析历史",
+  "searchPlaceholder": "搜索标题…",
+  "clearTitle": "清空解析历史？",
+  "clearDescription_other": "只删除这 {{count}} 条解析记录，不影响下载任务和已下载的文件。",
+  "cleared": "解析历史已清空",
+  "noMatch": "没有匹配的解析记录",
+  "reparse": "重新解析",
+  "remove": "删除这条记录",
+  "single": "单条",
+  "listing": { "parts": "分P", "collection": "合集", "profile": "主页" }
+}

@@ -1,0 +1,127 @@
+{
+  "parse": {
+    "xiaohongshuProfile": "Xiaohongshu profiles can't be parsed yet. Use a link to a single note instead.",
+    "collectionEmpty": "Nothing in this collection can be downloaded: no episodes were read, or every episode must be bought separately",
+    "listingCollectionEmpty": "Nothing was read from this collection. Open the sign-in window, sign in or complete verification, then try again.",
+    "listingProfileEmpty": "No posts were read from this profile. Open the sign-in window, sign in or complete verification, then try again.",
+    "group": "Content",
+    "media": "Media",
+    "signIn": "Sign in with the in-app browser, then try again",
+    "challenge": "The platform sent this visit to a verification page, so the article itself didn't open. Open the sign-in window, complete verification (and sign in if needed), then try again.",
+    "pageEmptyKnown": "The page offered nothing to download. If it needs a sign-in to view, open the sign-in window, sign in or complete verification, then try again.",
+    "pageEmpty": "This page has nothing to download.",
+    "expired": "This parse result has expired. Parse the link again."
+  },
+  "browser": {
+    "loginTitle": "Sign in",
+    "profileUnsupported": "Profiles on this platform can't be parsed yet. Use a link to a single post instead.",
+    "profileTitle": "Profile posts",
+    "fetchFailed": "In-page request wasn't sent: {{reason}}"
+  },
+  "media": {
+    "invalidUrl": "Paste a valid http or https media link",
+    "unsupportedUrl": "Unsupported link format",
+    "nothingFound": "Nothing to download was found",
+    "item": "Media {{index}}",
+    "tier": {
+      "8k": "8K Ultra HD",
+      "4k": "4K Ultra HD",
+      "1080p60": "1080P60 High frame rate",
+      "1080p": "1080P HD",
+      "720p60": "720P60 High frame rate",
+      "720p": "720P HD",
+      "480p": "480P SD",
+      "360p": "360P Smooth"
+    }
+  },
+  "access": {
+    "encrypted": "This content is protected by platform encryption (DRM). Even an entitled account gets no usable stream. The client doesn't decrypt, so it can't be downloaded.",
+    "membership": "This content is for members only. Sign in with an entitled account in the in-app browser, then try again. Without a membership it can't be downloaded.",
+    "purchase": "This content must be bought separately. Sign in with the account that bought it in the in-app browser, then try again. Without a purchase it can't be fetched."
+  },
+  "listing": {
+    "noCollectionId": "The link has no collection ID",
+    "noVideoId": "The link has no video ID",
+    "noUid": "The link has no UID",
+    "noUserKey": "The link has no user identifier",
+    "noUserId": "The link has no user ID",
+    "noUsername": "The link has no username",
+    "noPostId": "The link has no post ID",
+    "noWorkId": "The link has no post ID",
+    "fingerprint": "Couldn't read the browser fingerprint"
+  },
+  "bilibili": {
+    "video": "Bilibili video {{id}}",
+    "verification": "Bilibili returned a verification page instead of the list. Open the verification page, complete it, then try again.",
+    "api": "Bilibili API returned {{code}}",
+    "apiMessage": "Bilibili API returned {{code}}: {{message}}",
+    "series": "Series",
+    "collection": "Collection",
+    "parts": "Parts",
+    "wbiKeys": "Couldn't get the WBI signing keys",
+    "uploads": "{{author}}'s uploads"
+  },
+  "douyin": {
+    "post": "Douyin post {{id}}",
+    "myProfile": "This is \"My profile\", so you need to sign in with the in-app browser first for it to be known whose it is. Open the sign-in window, sign in, then try again.",
+    "verification": "Douyin returned a verification page instead of the list. Open the verification page, complete it, then try again.",
+    "api": "Douyin API returned {{code}}",
+    "apiMessage": "Douyin API returned {{code}}: {{message}}",
+    "privateLikes": "This user hasn't made their likes public. The web page shows it empty too.",
+    "privateRecommended": "This user hasn't made their recommended list public. The web page shows it empty too.",
+    "noLikes": "No likes were read. The user may not have made them public, or a sign-in may be needed to see them. Open the sign-in window, sign in, then try again.",
+    "signInForMore": "Douyin only shows posts beyond page {{page}} to signed-in visitors. Open the sign-in window, sign in, then try again.",
+    "posts": "{{author}}'s posts",
+    "likes": "{{author}}'s likes",
+    "recommended": "{{author}}'s recommended",
+    "collectionEmpty": "No posts were read from this collection. Open the sign-in window, sign in, then try again.",
+    "authorCollection": "{{author}}'s collection",
+    "collection": "Collection",
+    "show": "Short drama {{id}}",
+    "episodes_one": " ({{count}} episode)",
+    "episodes_other": " ({{count}} episodes)",
+    "showsEmpty": "No short dramas were read. Open the sign-in window, sign in, then try again.",
+    "shows": "Douyin short dramas"
+  },
+  "instagram": {
+    "profileSignIn": "Instagram requires a sign-in to view this profile. Open the sign-in window, sign in, then try again.",
+    "profileEmpty": "No posts were read from this profile. It may be private, or need a sign-in to view. Open the sign-in window, sign in, then try again.",
+    "posts": "{{user}}'s posts",
+    "reels": "{{user}}'s Reels",
+    "postSignIn": "Instagram requires a sign-in to view this post. Open the sign-in window, sign in, then try again."
+  },
+  "weibo": {
+    "post": "Weibo post {{id}}",
+    "empty": "Weibo returned no posts. Open the sign-in window, sign in, then try again.",
+    "posts": "{{author}}'s Weibo posts"
+  },
+  "weixin": {
+    "article": "WeChat Official Account article",
+    "history": "A WeChat Official Account's message history exists only inside the WeChat app. The web has no entry to it, so the client can't reach it. Use the account's collection link instead (its address contains album_id), or paste article links one at a time.",
+    "api": "WeChat API returned {{code}}",
+    "apiMessage": "WeChat API returned {{code}}: {{message}}",
+    "empty": "No articles were read from this collection. Open the sign-in window, complete verification, then try again.",
+    "collection": "WeChat Official Account collection"
+  },
+  "x": {
+    "noToken": "X didn't issue a request token to this visitor, usually because you aren't signed in. Open the sign-in window, sign in, then try again.",
+    "noAccount": "This account couldn't be read. It may not exist, or may only be visible to signed-in visitors. Open the sign-in window, sign in, then try again.",
+    "refused": "X API refused the request: {{reason}}",
+    "noReason": "no reason given",
+    "empty": "No posts with media were read from this timeline. The account may be protected, or a sign-in may be needed to see it. Open the sign-in window, sign in, then try again.",
+    "media": "{{handle}}'s media"
+  },
+  "xiaohongshu": {
+    "note": "Xiaohongshu note {{id}}"
+  },
+  "youtube": {
+    "video": "YouTube video {{id}}",
+    "short": "YouTube Short {{id}}",
+    "noData": "The channel page returned no list data. Consent or sign-in may be needed first",
+    "videos": "{{channel}}'s videos"
+  },
+  "contracts": {
+    "webLinkOnly": "Only web links can be opened",
+    "webImageOnly": "Only web images can be saved"
+  }
+}

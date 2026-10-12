@@ -38,3 +38,7 @@ test/screenshots
 resources/engine/
 engine-build/
 *.tsbuildinfo
+
+# Local agent tooling and scratch screenshots
+.claude/
+/*.png

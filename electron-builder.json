@@ -1,8 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.bhwa233.download-client",
-  "productName": "bhwa233 Download Client",
+  "appId": "com.bhwa233.galaxy-downloader",
+  "productName": "Galaxy Downloader",
   "asar": true,
+  "electronLanguages": [
+    "zh-CN",
+    "en-US"
+  ],
   "directories": {
     "output": "release/${version}"
   },
@@ -11,10 +15,20 @@
     "dist"
   ],
   "mac": {
-    "artifactName": "${productName}_${version}.${ext}",
+    "artifactName": "${name}_${version}_mac_${arch}.${ext}",
     "target": [
-      "dmg",
-      "zip"
+      {
+        "target": "dmg",
+        "arch": [
+          "arm64"
+        ]
+      },
+      {
+        "target": "zip",
+        "arch": [
+          "arm64"
+        ]
+      }
     ]
   },
   "win": {
@@ -26,7 +40,19 @@
         ]
       }
     ],
-    "artifactName": "${productName}_${version}.${ext}"
+    "artifactName": "${name}_${version}_win_${arch}.${ext}"
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "${name}_${version}_linux_${arch}.${ext}",
+    "category": "Network"
   },
   "nsis": {
     "oneClick": false,
@@ -37,7 +63,7 @@
   "publish": {
     "provider": "github",
     "owner": "bhwa233",
-    "repo": "bhwa233-download-api",
+    "repo": "galaxy-downloader-client",
     "releaseType": "release",
     "vPrefixedTagName": false
   },

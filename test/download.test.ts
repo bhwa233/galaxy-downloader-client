@@ -72,24 +72,34 @@ test('batch pause stops all pending work and resume completes intact files', asy
   await expect.poll(() => queue.jobs.every(job => job.status === 'completed')).toBe(true)
   for (const job of queue.jobs) expect(await readFile(job.files[0], 'utf8')).toBe('abcd')
 })
-test('profile jobs retain the selected post URL and download all its images after reparsing', async () => {
+test('a post that turns out to hold several media files becomes one task per file', async () => {
   const url = await server((req, res) => res.end(req.url))
   const dir = await directory()
   const store = new Store(dir, dir)
   const home = httpPlan(`${url}/home`)
-  home.result.profile = true
+  home.result.listing = 'profile'
   home.sources.set('1', { kind: 'engine', request: { operation: 'download', url: `${url}/post-42` } })
   const queue = new Queue(store, new Engine('', '', false), fetch, async job => {
+    // The job keeps the post's own address, which is the only thing the listing gave it.
     expect(job.url).toBe(`${url}/post-42`)
     const post = httpPlan(`${url}/image-a`)
-    post.result.items.push({ ...imageItem, id: 'different-id' })
+    post.result.items.push({ ...imageItem, id: 'different-id', title: '第二张' })
     post.sources.set('different-id', { kind: 'http', url: `${url}/image-b`, cookies: [], headers: {}, extension: 'jpg' })
     return post
   }, () => {})
+  cleanup.push(async () => queue.stop())
   queue.enqueue(home, [imageItem], 'best', false)
-  await expect.poll(() => queue.jobs[0].status).toBe('completed')
-  expect(await Promise.all(queue.jobs[0].files.map(file => readFile(file, 'utf8')))).toEqual(['/image-a', '/image-b'])
-  expect(queue.jobs[0].total).toBe(16)
+  // One row was ticked; two files came back, so there are two tasks - 2.4's "每个媒体文件一个任务".
+  await expect.poll(() => queue.jobs.length).toBe(2)
+  await expect.poll(() => queue.jobs.every(job => job.status === 'completed')).toBe(true)
+  const saved = await Promise.all(queue.jobs.map(async job => (await readFile(job.files[0], 'utf8'))))
+  expect(saved.sort()).toEqual(['/image-a', '/image-b'])
+  // Each task holds exactly its own file, and each is a row that can be paused or deleted on its own.
+  expect(queue.jobs.every(job => job.files.length === 1)).toBe(true)
+  expect(queue.jobs.map(job => job.title).sort()).toEqual(['图片', '第二张'])
+  // They are one batch, so the whole post can still be acted on at once.
+  expect(new Set(queue.jobs.map(job => job.batchId)).size).toBe(1)
+  expect(queue.jobs[0].batchId).toBeTruthy()
 })
 test('restart only restores interrupted work when enabled, preserving explicitly paused jobs', async () => {
   const dir = await directory()

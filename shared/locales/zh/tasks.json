@@ -1,0 +1,94 @@
+{
+  "pause": "暂停",
+  "resume": "继续",
+  "revealFile": "打开文件位置",
+  "open": "打开",
+  "copyPath": "复制文件路径",
+  "downloadCover": "下载封面",
+  "downloadAudio": "下载音频",
+  "removeRecordMenu": "删除记录…",
+  "thisParse": "这次解析",
+  "batchMenu": "整批：{{title}}",
+  "batchLabel": "批次：{{title}}",
+  "batch": {
+    "pause": "暂停整批",
+    "resume": "继续整批",
+    "retry": "重试整批",
+    "cancel": "取消整批",
+    "removeMenu": "删除整批…",
+    "remove": "删除整批"
+  },
+  "removeDialog": {
+    "title": "删除这条任务记录？",
+    "withFiles": "{{title}} — 下载的文件会一并移入回收站。",
+    "keepFiles": "{{title}} — 磁盘中的文件会保留。",
+    "confirm": "删除记录"
+  },
+  "removeBatchDialog": {
+    "title": "删除这一批任务记录？",
+    "withFiles": "{{title}} 的全部任务 — 它们下载的文件会一并移入回收站。",
+    "keepFiles": "{{title}} 的全部任务 — 磁盘中的文件会保留。"
+  },
+  "alsoDeleteFiles": "同时删除已下载的文件",
+  "keep": "保留",
+  "preparing": "正在准备…",
+  "completedAt": "完成于 {{time}}",
+  "remaining": "剩余 {{time}}",
+  "viewTask": "查看任务 {{title}}",
+  "failures": {
+    "resuming": { "title": "下载中断，稍后自动续传", "hint": "会在上面的时间后从断点继续，也可以现在就重试。" },
+    "noSpace": { "title": "磁盘空间不足", "hint": "清理出空间，或在设置中换一个下载目录，然后重试。" },
+    "permission": { "title": "没有写入权限", "hint": "在设置中换一个下载目录，或检查这个目录的权限，然后重试。" },
+    "expired": { "title": "媒体地址失效或被拒绝", "hint": "重试会重新解析作品、换一个新的地址。反复出现时，可能需要在应用内浏览器重新登录。" },
+    "network": { "title": "网络连接出错", "hint": "检查网络或系统代理后重试；网络慢时可以在设置中加长连接超时。" },
+    "convert": { "title": "合并或转换失败", "hint": "在设置 → 工具与更新里检查 FFmpeg 是否可用，然后重试。" },
+    "generic": { "title": "下载失败", "hint": "可以直接重试；反复失败时，导出诊断日志便于排查。" }
+  },
+  "files": {
+    "empty": "文件保存后会显示在这里。暂停和取消会保留已下载的部分文件。",
+    "checking": "正在检查…",
+    "saved": "已保存",
+    "missing": "文件不存在，可能已被移动或删除"
+  },
+  "inspector": {
+    "title": "任务详情",
+    "description": "查看文件、下载状态和活动记录。",
+    "actionFailed": "操作未完成"
+  },
+  "tabs": {
+    "overview": "概览",
+    "files": "文件",
+    "log": "活动日志"
+  },
+  "fields": {
+    "progress": "进度",
+    "platformKind": "平台 / 类型",
+    "method": "解析方式",
+    "author": "作者",
+    "publishedAt": "发布时间",
+    "duration": "时长",
+    "stats": "播放 / 弹幕 / 评论 / 点赞",
+    "source": "来源",
+    "directory": "保存目录",
+    "downloaded": "已下载",
+    "speed": "当前速度",
+    "eta": "剩余时间",
+    "autoResume": "自动续传",
+    "createdAt": "创建时间",
+    "completedAt": "完成时间"
+  },
+  "methods": {
+    "browser": "应用内浏览器",
+    "local": "本地解析"
+  },
+  "noData": "尚无数据",
+  "attempts_other": "{{count}} 次",
+  "openFolder": "打开下载目录",
+  "logNote": "显示最近 150 条记录，敏感请求信息已隐藏。",
+  "logEmpty": "暂无活动记录",
+  "exportLog": "导出诊断日志",
+  "limit": {
+    "label": "单任务限速（KiB/s）",
+    "description": "0 为不限速。下载中请先暂停，修改后继续任务。"
+  }
+}

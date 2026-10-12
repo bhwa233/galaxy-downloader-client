@@ -15,7 +15,9 @@ test('real engine parses and downloads a local video, persists history, and isol
   const server = createServer((req, res) => { res.setHeader('content-type', 'video/mp4'); res.setHeader('content-length', bytes.length); if (req.method === 'HEAD') res.end(); else res.end(bytes) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   await writeFile(path.join(directory, 'state.json'), JSON.stringify({ version: 1, settings: { downloadDirectory: directory }, jobs: [] }))
-  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '', CLIENT_TEST_DATA: directory }
+  // Windows treats an empty value as set, which would start Electron as plain Node and never open a window.
+  const env = { ...process.env, CLIENT_TEST_DATA: directory }
+  delete env.ELECTRON_RUN_AS_NODE
   let app = await electron.launch({ args: ['.', '--no-sandbox'], cwd: root, env })
   try {
     let page = await app.firstWindow()
@@ -28,6 +30,8 @@ test('real engine parses and downloads a local video, persists history, and isol
     await page.getByRole('textbox', { name: '媒体链接' }).fill(`http://127.0.0.1:${(server.address() as { port: number }).port}/sample.mp4`)
     await expect(page.getByRole('button', { name: '解析', exact: true })).toBeEnabled({ timeout: 30_000 })
     await page.getByRole('button', { name: '解析', exact: true }).click()
+    // The first item comes selected, so a single result is ready to download without picking anything.
+    // The wait is for the parse itself, which is what takes the time here.
     await page.getByRole('button', { name: '下载所选 (1)' }).click({ timeout: 40_000 })
     await page.getByRole('button', { name: /^已完成/ }).click()
     await expect(page.getByRole('button', { name: '打开文件位置' })).toBeVisible({ timeout: 40_000 })
@@ -38,7 +42,7 @@ test('real engine parses and downloads a local video, persists history, and isol
     await page.getByRole('button', { name: /^查看任务/ }).click()
     await expect(page.getByRole('heading', { name: '任务详情' })).toBeVisible()
     await page.screenshot({ path: 'test-results/task-detail.png', fullPage: true })
-    await page.getByRole('button', { name: '活动日志', exact: true }).click()
+    await page.getByRole('tab', { name: '活动日志', exact: true }).click()
     await expect(page.locator('.activity-log')).toContainText('下载完成')
     await page.getByRole('button', { name: 'Close', exact: true }).click()
     await page.getByRole('button', { name: '卡片视图' }).click()
@@ -46,19 +50,23 @@ test('real engine parses and downloads a local video, persists history, and isol
     await expect(page.getByRole('heading', { name: '没有匹配的任务' })).toBeVisible()
     await page.getByRole('textbox', { name: '搜索任务' }).fill('')
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    await page.getByRole('button', { name: '下载', exact: true }).click()
+    await page.getByRole('tab', { name: '下载', exact: true }).click()
     await page.getByRole('spinbutton', { name: '同时下载任务数' }).fill('1')
     await page.getByRole('button', { name: '保存设置' }).click()
     await expect(page.getByRole('status')).toHaveText('设置已保存')
     await page.screenshot({ path: 'test-results/settings.png', fullPage: true })
-    await page.getByRole('button', { name: '外观', exact: true }).click()
+    await page.getByRole('tab', { name: '外观', exact: true }).click()
     await page.getByRole('combobox', { name: '主题', exact: true }).click()
     await page.getByRole('option', { name: '夜间', exact: true }).click()
     await page.getByRole('button', { name: '保存设置' }).click()
     await expect(page.locator('html')).toHaveClass('dark')
-    await page.getByRole('button', { name: '切换浅色主题', exact: true }).click()
+    await page.getByRole('combobox', { name: '主题', exact: true }).click()
+    await page.getByRole('option', { name: '浅色', exact: true }).click()
+    await page.getByRole('button', { name: '保存设置' }).click()
     await expect(page.locator('html')).not.toHaveClass('dark')
-    await page.getByRole('button', { name: '切换夜间主题', exact: true }).click()
+    await page.getByRole('combobox', { name: '主题', exact: true }).click()
+    await page.getByRole('option', { name: '夜间', exact: true }).click()
+    await page.getByRole('button', { name: '保存设置' }).click()
     await expect(page.locator('html')).toHaveClass('dark')
     await page.getByRole('button', { name: /^已完成/ }).click()
     expect(errors).toEqual([])

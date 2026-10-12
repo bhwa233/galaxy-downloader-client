@@ -1,0 +1,99 @@
+{
+  "title": "Parse result",
+  "preview": "Preview",
+  "openingPage": "Opening page…",
+  "about": "≈ {{size}}",
+  "menu": {
+    "downloadOne": "Download this item",
+    "select": "Select",
+    "deselect": "Deselect",
+    "selectToHere": "Select up to here",
+    "copyTitle": "Copy title",
+    "copyCover": "Copy cover URL",
+    "saveCover": "Save cover…"
+  },
+  "copied": {
+    "title": "Title copied",
+    "cover": "Cover URL copied"
+  },
+  "card": {
+    "select": "Select {{title}}",
+    "preview": "Preview {{title}}"
+  },
+  "locked": "“{{title}}” can't be downloaded.",
+  "quality": {
+    "count_one": "{{count}} quality",
+    "count_other": "{{count}} qualities",
+    "original": "Original image",
+    "best": "Best quality",
+    "label": "Download quality",
+    "reading": "Reading qualities…",
+    "default": "Default quality"
+  },
+  "loadedOf": "{{loaded}} of {{total}} loaded",
+  "keywordLabel": "Filter by keyword",
+  "keywordPlaceholder": "Keyword…",
+  "published": "Published",
+  "periods": {
+    "all": "Any time",
+    "week": "Past week",
+    "month": "Past month",
+    "quarter": "Past 3 months",
+    "year": "Past year"
+  },
+  "listView": "List view",
+  "gridView": "Thumbnail view",
+  "clearResult": "Clear parse result",
+  "onlyAll": "All",
+  "truncated": {
+    "title_one": "Only the first {{count}} entry is listed",
+    "title_other": "Only the first {{count}} entries are listed",
+    "total": "This list has {{total}} entries; parsing stopped at the limit.",
+    "limit": "Parsing stopped at the entry limit; there may be more after it.",
+    "hint": " To get a later one, paste its own link."
+  },
+  "noMatch": "Nothing matches the filters",
+  "loadMoreFailed": "Couldn't load more",
+  "loading": "Loading…",
+  "loadMore": "Load more",
+  "selectAll": "Select all",
+  "selected": "Selected {{count}}",
+  "capNote_one": ", only the first {{count}} will be queued",
+  "capNote_other": ", only the first {{count}} will be queued",
+  "skipped": " ({{list}}; will be skipped)",
+  "listSeparator": ", ",
+  "missing": {
+    "video_one": "{{count}} item has no video",
+    "video_other": "{{count}} items have no video",
+    "audio_one": "{{count}} item has no audio",
+    "audio_other": "{{count}} items have no audio",
+    "cover_one": "{{count}} item has no cover",
+    "cover_other": "{{count}} items have no cover"
+  },
+  "downloadContent": "Download content",
+  "saveTo": "Save to: {{dir}} (click to change)",
+  "download": {
+    "pictures_one": "Download {{count}} image",
+    "pictures_other": "Download {{count}} images",
+    "files_one": "Download {{count}} file",
+    "files_other": "Download {{count}} files",
+    "items_one": "Download {{count}} item",
+    "items_other": "Download {{count}} items",
+    "audio_one": "Download {{count}} audio file",
+    "audio_other": "Download {{count}} audio files",
+    "cover_one": "Download {{count}} cover",
+    "cover_other": "Download {{count}} covers"
+  },
+  "toast": {
+    "queued": "Added to the download queue",
+    "queuedKind": "Added to the download queue ({{kind}})",
+    "started_one": "{{count}} task started. See it in All tasks.",
+    "started_other": "{{count}} tasks started. See them in All tasks.",
+    "alsoQueued_one": " {{count}} more was already in the queue.",
+    "alsoQueued_other": " {{count}} more were already in the queue.",
+    "inQueue": "Already in the download queue",
+    "allInQueue_one": "This task is already downloading; nothing was added twice.",
+    "allInQueue_other": "All {{count}} tasks are already downloading; nothing was added twice.",
+    "oneInQueue": "“{{title}}” ({{kind}}) is already downloading."
+  }
+}

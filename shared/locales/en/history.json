@@ -1,0 +1,16 @@
+{
+  "title": "Parse history",
+  "summary_one": "{{count}} entry, kept on this computer only",
+  "summary_other": "{{count}} entries, kept on this computer only",
+  "searchLabel": "Search parse history",
+  "searchPlaceholder": "Search titles…",
+  "clearTitle": "Clear parse history?",
+  "clearDescription_one": "Only this {{count}} entry is removed. Download tasks and downloaded files are not affected.",
+  "clearDescription_other": "Only these {{count}} entries are removed. Download tasks and downloaded files are not affected.",
+  "cleared": "Parse history cleared",
+  "noMatch": "No matching entries",
+  "reparse": "Parse again",
+  "remove": "Delete this entry",
+  "single": "Single item",
+  "listing": { "parts": "Parts", "collection": "Collection", "profile": "Profile" }
+}

@@ -16,6 +16,9 @@ concurrency:
 jobs:
   validate:
     name: Validate Pull Request
+    # Lockfiles are for maintainers to change, not outside contributors - except Dependabot, whose
+    # every update is a lockfile change and would otherwise always be refused.
+    if: ${{ github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - name: Detect Changed Files

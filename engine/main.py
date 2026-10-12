@@ -2,15 +2,63 @@
 import json
 import os
 import sys
+import re
 from http.cookiejar import Cookie
 
 from yt_dlp import YoutubeDL
-from yt_dlp.cookies import extract_cookies_from_browser
+from yt_dlp.postprocessor.common import PostProcessor
 from yt_dlp.version import __version__
 
 
 def emit(kind, **data):
     print(json.dumps({'kind': kind, **data}, ensure_ascii=False), flush=True)
+
+def normalize_subtitle_file(path):
+    with open(path, encoding='utf-8-sig') as subtitle:
+        text = subtitle.read()
+    blocks = re.split(r'\r?\n\s*\r?\n', text.strip())
+    cues = []
+    for block in blocks:
+        lines = [line.strip('\ufeff\r') for line in block.splitlines()]
+        timing = next((i for i, line in enumerate(lines) if '-->' in line), -1)
+        if timing < 0: continue
+        start, end = [part.strip() for part in lines[timing].split('-->', 1)]
+        body = ' '.join(line.strip() for line in lines[timing + 1:] if line.strip())
+        if body: cues.append((start, end, body))
+    if not cues: return
+    def stamp(value):
+        parts = value.replace(',', '.').split(':')
+        if len(parts) == 2:
+            h, m, rest = 0, parts[0], parts[1]
+        else:
+            h, m, rest = parts
+        if '.' in rest:
+            s, ms = rest.split('.', 1)
+        else:
+            s, ms = rest, '0'
+        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms.ljust(3, '0')[:3]) / 1000
+    cues.sort(key=lambda cue: stamp(cue[0]))
+    out = []
+    for index, (start, end, body) in enumerate(cues):
+        if index + 1 < len(cues):
+            next_start = cues[index + 1][0]
+            if stamp(end) > stamp(next_start): end = next_start
+        if stamp(end) > stamp(start): out.append(f'{len(out) + 1}\n{start.replace(".", ",")} --> {end.replace(".", ",")}\n{body}\n')
+    with open(path, 'w', encoding='utf-8', newline='\n') as subtitle:
+        subtitle.write('\n'.join(out))
+
+class NormalizeSubtitles(PostProcessor):
+    def __init__(self, ydl):
+        super().__init__(ydl)
+    def run(self, info):
+        for track in (info.get('requested_subtitles') or {}).values():
+            path = track.get('filepath')
+            if path and os.path.exists(path) and path.lower().endswith(('.srt', '.vtt')):
+                normalize_subtitle_file(path)
+                # The normalizer emits SRT regardless of the source subtitle container. Keep
+                # metadata aligned so the following embedder reads the rewritten file as SRT.
+                track['ext'] = 'srt'
+        return [], info
 
 
 class Logger:
@@ -36,15 +84,6 @@ def main():
         return
     profile = request.get('profile')
     logger = Logger()
-    if operation == 'cookies':
-        cookies = extract_cookies_from_browser(profile['browser'], profile['path'], logger) if profile else []
-        hosts = request.get('hosts', [])
-        emit('result', result=[{
-            'name': c.name, 'value': c.value, 'domain': c.domain, 'path': c.path,
-            'secure': c.secure, 'expires': c.expires or -1,
-        } for c in cookies if not c.is_expired() and any(
-            host == c.domain.lstrip('.') or (c.domain.startswith('.') and host.endswith(c.domain)) for host in hosts)])
-        return
     options = {
         'logger': logger, 'quiet': True, 'no_warnings': False,
         'socket_timeout': request.get('timeout', 30), 'retries': request.get('retries', 3), 'fragment_retries': request.get('retries', 3),
@@ -64,13 +103,16 @@ def main():
         options['extract_flat'] = 'in_playlist'
     if request.get('headers'):
         options['http_headers'] = request['headers']
-    if request.get('proxy'):
-        options['proxy'] = request['proxy']
     if profile:
         options['cookiesfrombrowser'] = (profile['browser'], profile['path'], None, None)
     if operation == 'download':
         options.update({
             'outtmpl': request['output'], 'continuedl': True, 'overwrites': False,
+            # One long-lived connection for a whole file is what gets cut: a 334 MiB download was
+            # measured dying at 90% when a CDN edge tired of it, and the read timeout that follows
+            # costs the whole attempt. Asking for it in ranges means a cut loses one range, not the
+            # transfer, and the next one opens a fresh connection.
+            'http_chunk_size': 10 * 1024 * 1024,
             'windowsfilenames': True, 'restrictfilenames': False,
             'format': request.get('format', 'bv*+ba/b'), 'merge_output_format': 'mp4/mkv',
             'progress_hooks': [lambda d: emit('progress', status=d['status'],
@@ -99,8 +141,27 @@ def main():
                 options['postprocessors'].append({'key': 'FFmpegEmbedSubtitle', 'already_have_subtitle': False})
             else:
                 options['postprocessors'].append({'key': 'FFmpegSubtitlesConvertor', 'format': 'srt'})
+        # Covers. One flag writes the picture, one post-processor puts it inside the media file, and
+        # they are independent: embedding without keeping asks yt-dlp to delete the picture afterwards,
+        # which 'already_have_thumbnail' is how it is told not to.
+        save_thumbnail = bool(request.get('saveThumbnail'))
+        embed_thumbnail = bool(request.get('embedThumbnail'))
+        if save_thumbnail or embed_thumbnail:
+            options['writethumbnail'] = True
+            options.setdefault('postprocessors', [])
+            # Conversion has to happen before the picture is embedded, or the original travels inside
+            # the media file while the converted one sits beside it.
+            if request.get('thumbnailFormat') == 'jpg':
+                options['postprocessors'].append({'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg', 'when': 'before_dl'})
+            if embed_thumbnail:
+                # Appended last so it runs after FFmpegExtractAudio: an audio file that does not exist
+                # yet has nowhere to put a cover.
+                options['postprocessors'].append({'key': 'EmbedThumbnail', 'already_have_thumbnail': save_thumbnail})
         if request.get('entry'):
             options['playlist_items'] = str(request['entry'])
+        elif request.get('playliststart') or request.get('playlistend'):
+            options['playliststart'] = request.get('playliststart', 1)
+            options['playlistend'] = request.get('playlistend', 100)
     files = []
     with YoutubeDL(options) as ydl:
         # Inject a domain-aware cookie jar from an authorized Chrome connection.
@@ -125,8 +186,20 @@ def main():
                             saved = track.get('filepath')
                             if saved and saved not in files and os.path.exists(saved):
                                 files.append(saved)
+                    # Same for the cover picture: a file the client does not know about is one it will
+                    # not clean up when the task is deleted and will not show in the file list. Embed
+                    # without save deletes it, which is what the existence check is for.
+                    if save_thumbnail:
+                        for picture in (info.get('thumbnails') or []):
+                            saved = picture.get('filepath')
+                            if saved and saved not in files and os.path.exists(saved):
+                                files.append(saved)
                     return [], info
 
+            if request.get('subtitleNormalizeOverlaps') and subtitles != 'off':
+                # Subtitle files are written before post_process. Normalize them before
+                # yt-dlp converts or embeds the selected tracks.
+                ydl._pps['post_process'].insert(0, NormalizeSubtitles(ydl))
             ydl.add_post_processor(CaptureFile(ydl), when='after_move')
         info = ydl.extract_info(request['url'], download=operation == 'download')
         emit('result', result=ydl.sanitize_info(info) if operation == 'extract' else {'files': files})
