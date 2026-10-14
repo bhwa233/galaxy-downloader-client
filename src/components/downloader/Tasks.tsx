@@ -41,7 +41,7 @@ function Actions({ job, send }: { job: Job; send: Send }) {
   </>
   if (job.status === 'completed') return <Button variant="ghost" size="icon" title={t('revealFile')} aria-label={t('revealFile')} disabled={busy} onClick={() => run('reveal')}><FolderOpen /></Button>
   const resume = job.status === 'paused'
-  const label = resume ? t('resume') : t('common:retry')
+  const label = job.burnRestartRequired ? t('restartBurn') : resume ? t('resume') : t('common:retry')
   return <Button variant="ghost" size="icon" title={label} aria-label={label} disabled={busy} onClick={() => run(resume ? 'resume' : 'retry')}>{resume ? <Play /> : <RotateCcw />}</Button>
 }
 // Right-clicking a task. The row already carries the one action its state calls for; this is where the
@@ -78,8 +78,8 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
           <ContextMenuItem onClick={() => run('pause')}><Pause />{t('pause')}</ContextMenuItem>
           <ContextMenuItem onClick={() => run('cancel')}><X />{t('common:cancel')}</ContextMenuItem>
         </>}
-        {job.status === 'paused' && <ContextMenuItem onClick={() => run('resume')}><Play />{t('resume')}</ContextMenuItem>}
-        {(job.status === 'failed' || job.status === 'cancelled') && <ContextMenuItem onClick={() => run('retry')}><RotateCcw />{t('common:retry')}</ContextMenuItem>}
+        {job.status === 'paused' && <ContextMenuItem onClick={() => run('resume')}><Play />{t(job.burnRestartRequired ? 'restartBurn' : 'resume')}</ContextMenuItem>}
+        {(job.status === 'failed' || job.status === 'cancelled') && <ContextMenuItem onClick={() => run('retry')}><RotateCcw />{job.burnRestartRequired ? t('restartBurn') : t('common:retry')}</ContextMenuItem>}
         <ContextMenuItem variant="destructive" onClick={() => { setWithFiles(false); setRemoving(true) }}><Trash2 />{t('removeRecordMenu')}</ContextMenuItem>
         {/* The batch this task was queued with. Everything above stays available on the task itself:
             acting on the batch is doing the same thing to each of them, not taking their controls away. */}
@@ -138,8 +138,9 @@ function Metrics({ job }: { job: Job }) {
   const { t } = useTranslation(['tasks', 'common'])
   return <div className="flex flex-wrap justify-between gap-3 text-xs tabular-nums text-muted-foreground">
     <span>{job.downloaded !== undefined ? formatBytes(job.downloaded) : '—'}{job.total ? ` / ${formatBytes(job.total)}` : ''}</span>
-    <span>{job.status === 'running' ? job.speed ? `${formatBytes(job.speed)}/s` : t('preparing') : job.status === 'completed' ? job.completedAt ? t('completedAt', { time: localTime(job.completedAt) }) : '' : `${Math.round(job.progress * 100)}%`}</span>
+    <span>{job.status === 'running' ? job.stage && job.stage !== 'download' ? `${t(`stages.${job.stage}`)}${job.processingProgress !== undefined ? ` ${Math.round(job.processingProgress * 100)}%` : ''}` : job.speed ? `${formatBytes(job.speed)}/s` : t('preparing') : job.status === 'completed' ? job.completedAt ? t('completedAt', { time: localTime(job.completedAt) }) : '' : `${Math.round(job.progress * 100)}%`}</span>
     {job.status === 'running' && job.eta !== undefined && <span>{t('remaining', { time: formatDuration(job.eta) })}</span>}
+    {job.status === 'running' && job.stage && job.stage !== 'download' && <span>{job.processingEta === undefined ? t('estimating') : t('estimatedRemaining', { time: formatDuration(job.processingEta) })}</span>}
   </div>
 }
 export function TaskCard({ job, send, select, view = 'list', density = 'comfortable' }: { job: Job; send: Send; select: () => void; view?: Settings['view']; density?: Settings['density'] }) {
@@ -160,8 +161,10 @@ export function TaskCard({ job, send, select, view = 'list', density = 'comforta
       {heading}
       <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
       {/* A finished task has nothing left to measure; a full bar on every row of the list was noise. */}
-      {job.status !== 'completed' && <Progress value={job.progress * 100} className="h-1.5" />}
+      {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
       <Metrics job={job} />
+      {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
+      {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
       <div className="flex justify-end gap-1"><Actions job={job} send={send} /></div>
     </CardContent>
@@ -173,8 +176,10 @@ export function TaskCard({ job, send, select, view = 'list', density = 'comforta
     <ItemContent className="gap-1.5">
       <ItemTitle className="w-full">{heading}</ItemTitle>
       <ItemDescription>{subtitle}</ItemDescription>
-      {job.status !== 'completed' && <Progress value={job.progress * 100} className="h-1.5" />}
+      {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
       <Metrics job={job} />
+      {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
+      {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
     </ItemContent>
     <ItemActions><Actions job={job} send={send} /></ItemActions>
@@ -183,8 +188,9 @@ export function TaskCard({ job, send, select, view = 'list', density = 'comforta
 // What a failure was and what to do about it. A permission wall is known for certain, from the engine's
 // own wording, and its message already says what to do. Anything else is read off the error the way a
 // user would read it; where nothing matches, the error is shown as it is with the general advice.
-type FailureKind = 'resuming' | 'noSpace' | 'permission' | 'expired' | 'network' | 'convert'
+type FailureKind = 'resuming' | 'burnRestart' | 'noSpace' | 'permission' | 'expired' | 'network' | 'convert'
 const FAILURES: { pattern: RegExp; kind: FailureKind }[] = [
+  { pattern: /自动重新合成|restarting subtitle processing automatically/i, kind: 'burnRestart' },
   { pattern: /自动续传|resuming automatically/i, kind: 'resuming' },
   { pattern: /ENOSPC|no space|not enough (disk )?space|insufficient (disk )?space|disk full|磁盘空间/i, kind: 'noSpace' },
   { pattern: /EACCES|EPERM|EROFS|permission denied|access (is )?denied|read-only file system|not writable|拒绝访问/i, kind: 'permission' },
@@ -202,10 +208,10 @@ function Failure({ job, send }: { job: Job; send: Send }) {
   const retry = job.status === 'failed' || job.status === 'cancelled'
   return <Alert variant="destructive">
     <AlertTitle>{title}</AlertTitle>
-    <AlertDescription className="break-words"><p>{job.error}</p>{hint && <p>{hint}</p>}</AlertDescription>
+    <AlertDescription className="break-words"><p>{job.error}</p>{hint && <p>{hint}</p>}{job.burnRestartRequired && kind !== 'burnRestart' && <p>{t('burnRestart.hint')}</p>}</AlertDescription>
     {(login || retry) && <div className="mt-2 flex flex-wrap gap-2">
       {login && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'login' })}><LogIn />{t('common:openLogin')}</Button>}
-      {retry && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'retry' })}><RotateCcw />{t('common:retry')}</Button>}
+      {retry && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'retry' })}><RotateCcw />{job.burnRestartRequired ? t('restartBurn') : t('common:retry')}</Button>}
     </div>}
   </Alert>
 }
@@ -260,9 +266,12 @@ export function TaskInspector({ job, send, close, error }: { job?: Job; send: Se
             </TabsList>
             <TabsContent value="overview" className="flex flex-col gap-4">
               {job.error && <Failure job={job} send={send} />}
-              <Progress value={job.progress * 100} />
+              {job.burnRestartRequired && !job.error && <Alert><AlertTitle>{t('burnRestart.title')}</AlertTitle><AlertDescription>{t('burnRestart.hint')}</AlertDescription></Alert>}
+              {job.warnings?.map(warning => <Alert key={warning}><AlertTitle>{t('subtitleWarning')}</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
+              <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} />
+              {job.status === 'running' && job.stage && job.stage !== 'download' && <p className="text-sm text-muted-foreground">{t(`stages.${job.stage}`)}</p>}
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm [&_dt]:text-muted-foreground">
-                <dt>{t('fields.progress')}</dt><dd className="tabular-nums">{Math.round(job.progress * 100)}%</dd>
+                <dt>{t('fields.progress')}</dt><dd className="tabular-nums">{Math.round((job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100)}%</dd>
                 <dt>{t('fields.platformKind')}</dt><dd>{platformLabel(job.platform)} / {t(`common:kinds.${job.kind || 'video'}`)}</dd>
                 <dt>{t('fields.method')}</dt><dd>{job.method === 'browser' ? t('methods.browser') : t('methods.local')}</dd>
                 {/* What the platform said about the media when it was parsed; older jobs carry none of it. */}
@@ -275,6 +284,7 @@ export function TaskInspector({ job, send, close, error }: { job?: Job; send: Se
                 <dt>{t('fields.downloaded')}</dt><dd className="tabular-nums">{job.downloaded !== undefined ? formatBytes(job.downloaded) : t('noData')}{job.total ? ` / ${formatBytes(job.total)}` : ''}</dd>
                 <dt>{t('fields.speed')}</dt><dd className="tabular-nums">{job.status === 'running' && job.speed ? `${formatBytes(job.speed)}/s` : '—'}</dd>
                 {job.status === 'running' && job.eta !== undefined && <><dt>{t('fields.eta')}</dt><dd className="tabular-nums">{formatDuration(job.eta)}</dd></>}
+                {job.status === 'running' && job.stage && job.stage !== 'download' && <><dt>{t('fields.processingEta')}</dt><dd className="tabular-nums">{job.processingEta === undefined ? t('estimating') : formatDuration(job.processingEta)}</dd></>}
                 {/* Breaks picked up again on their own since the last time it finished or was retried by hand. */}
                 {job.attempts ? <><dt>{t('fields.autoResume')}</dt><dd className="tabular-nums">{t('attempts', { count: job.attempts })}</dd></> : null}
                 <dt>{t('fields.createdAt')}</dt><dd>{localTime(job.createdAt)}</dd>

@@ -11,10 +11,13 @@
     "splitItem": "One media file of the post",
     "settingsChanged": "Download settings changed; waiting to continue",
     "autoResume": "Resuming automatically",
+    "awaitingBurnRestart": "Waiting to restart subtitle processing from the beginning using downloaded media",
+    "autoBurnRestart": "Restarting subtitle processing automatically using downloaded media",
     "preparing": "Parsing the post and preparing the download",
     "coverSaved": "Cover saved",
     "fileStart": "Downloading file {{index}} of {{total}}",
     "tierMissing": "This video lacks the selected quality; downloading the best available instead",
+    "audioTierMissing": "This item lacks the selected audio track; downloading the best audio instead",
     "completed": "Download complete"
   },
   "errors": {
@@ -30,6 +33,7 @@
     "pauseBeforeLimit": "Pause the task before changing its speed limit",
     "interrupted": "Download interrupted",
     "autoResume": "{{error}} (resuming automatically in {{seconds}}s, attempt {{attempt}}/{{total}})",
+    "autoBurnRestart": "{{error}} (restarting subtitle processing automatically in {{seconds}}s, attempt {{attempt}}/{{total}})",
     "noCover": "This post has no cover address",
     "contentChanged": "The content has changed; parse again",
     "noFilesReturned": "The engine returned no saved files",

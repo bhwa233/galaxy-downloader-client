@@ -166,7 +166,7 @@ export default function App() {
             {!state.parse.result && <History entries={state.history} send={send} parsing={state.parse.status === 'parsing'}
               reparse={address => { setUrl(address); void send('media:parse', { url: address }) }} />}
           </div> : <>
-          <Card>
+          <Card className="shrink-0">
             <CardHeader>
               <CardTitle>{title}</CardTitle>
               <CardDescription>{t('common:items', { count: jobs.length })}</CardDescription>

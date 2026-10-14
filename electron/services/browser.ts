@@ -1,4 +1,4 @@
-import { BrowserWindow, WebContentsView, session, type Rectangle, type Session, type WebContents } from 'electron'
+import { BrowserWindow, WebContentsView, net, session, type Rectangle, type Session, type WebContents } from 'electron'
 import type { ListingKind, Settings } from '../../shared/contracts'
 import type { Cookie } from './engine'
 import { acceptLanguageFor, chromeUserAgent, clientHints, fetchMetadata, relatedTo } from './identity'
@@ -143,6 +143,30 @@ export class EmbeddedBrowser {
   // Every request the client makes outside a page goes through here, so that it leaves from the same
   // session - the same cookies, agent and headers - as the pages the user signed in on.
   async fetch(address: string, init?: RequestInit): Promise<Response> { return await this.session.fetch(address, init) }
+  // session.fetch loses the final URL and rejects manual redirects. ClientRequest exposes the
+  // Location in its redirect event, using the same partition without loading the destination page.
+  async redirect(address: string, method: 'HEAD' | 'GET', signal: AbortSignal): Promise<string | undefined> {
+    const bounded = AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+    bounded.throwIfAborted()
+    return await new Promise((resolve, reject) => {
+      const request = net.request({ url: address, method, session: this.session, useSessionCookies: true, redirect: 'manual' })
+      let settled = false
+      const finish = (target?: string, error?: unknown) => {
+        if (settled) return
+        settled = true
+        bounded.removeEventListener('abort', abort)
+        if (error) reject(error)
+        else resolve(target)
+        request.abort()
+      }
+      const abort = () => finish(undefined, bounded.reason)
+      bounded.addEventListener('abort', abort, { once: true })
+      request.on('error', error => finish(undefined, error))
+      request.on('redirect', (_status, _method, target) => finish(target))
+      request.on('response', () => finish())
+      request.end()
+    })
+  }
   // How many sites the partition holds cookies for. Cookies are not proof of a login - a visited page
   // hands out visitor cookies too - so this is reported as sites with a session, never as "signed in".
   async sites(): Promise<number> {

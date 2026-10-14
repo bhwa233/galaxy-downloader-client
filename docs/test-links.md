@@ -2,6 +2,56 @@
 
 本文汇总全部平台的测试链接，供实现与验收时使用。**状态列只有两种**：已验证 = 在真实浏览器里打开并确认过可用；待补 = 还没有拿到可用的样本。拿不到的都写了原因，不要凭空编链接。
 
+## 客户端实测结果（2026-10-13，平台原始音轨音质选择）
+
+之前结果页只显示视频画质，选音频后禁用画质菜单，引擎也始终覆盖成 `bestaudio/best`。现在解析保留独立的 `audioFormats`（格式 ID、编码/容器、平台报告的码率与大小），音频模式显示「音质（原始音轨）」；音视频同时下载时两个菜单分别生效。合集复用已有的首条视频采样请求取得音轨，翻页保留所选音轨。只有真实可用的源音轨会显示，默认「最高音质」，不提供凭空创建的码率档位。
+
+`audioFormatId` 由主进程验证是否属于当前解析结果，再作为音频任务的 `format` 持久化；队列重新解析并确认音轨存在后传给本地引擎，缺失时记录提示并回落到最高音质。导出格式继续遵循设置里的 `audioFormat`：`best` 保留原始音轨，mp3/m4a/flac 是单独的转换设置；转码时不把原始文件大小当成导出大小。
+
+以真实 Windows Electron 客户端解析 <https://b23.tv/uU1hUUC>，合集仍为 64 条、视频画质仍为 4 档；首条「娃娃脸【灰泽满Hazel】」（`BV1cyba6eEAv`）实际提供三档 M4A/AAC：`30280` 160.679 kbps、`30232` 122.981 kbps、`30216` 65.728 kbps。菜单显示「最高音质」与约 161 / 123 / 66 kbps 三档。
+
+单条回归：`BV1bK411W797?p=3` 仍只解析 1 项，视频画质为 3 档，独立音轨为 AAC 约 177 / 133 / 67 kbps；通过当前客户端 `cli:parse` 验证，没有替换用户窗口的合集结果。
+
+一次性 Playwright 探针在临时用户目录中，通过真实结果页的菜单选择音轨并点击「下载 1 个音频」；输出仅放在临时下载目录，`audioFormat=best`，关闭封面嵌入。没有向用户任务列表添加验证任务。
+
+| 所选源音轨 | 真实文件 | 验证 |
+| --- | --- | --- |
+| `30216`，约 66 kbps | M4A，986,258 字节，120 秒，文件平均码率 65,750 bit/s | AAC、48 kHz、双声道；日志确认不转码，FFmpeg 完整解码退出 0；估算 985,920 字节，误差 0.034% |
+| `30280`，约 161 kbps | M4A，2,410,527 字节，120 秒，文件平均码率 160,701 bit/s | AAC、48 kHz、双声道；日志确认不转码，FFmpeg 完整解码退出 0；估算 2,410,185 字节，误差 0.014% |
+
+不存在于解析结果中的 `audioFormatId` 被主进程拒绝，未创建任务；renderer `pageerror` 为 0。`pnpm check` 通过（typecheck、lint、65 条现有单测通过 / 1 跳过、build）。一次性探针已删除，没有新增或修改测试用例。截图：`test-results/driver/audio-source-30216.png`、`test-results/driver/audio-source-30280.png`。
+
+## 客户端实测结果（2026-10-13，全部任务滚动）
+
+在用户正在运行的真实 Electron 窗口复现：任务外层 `Card` 在纵向 flex 容器里默认收缩，卡片实际高度 667 像素、内容高度超过 2200 像素；卡片自身的 `overflow-hidden` 裁掉任务，页面 `main` 的可视高度与内容高度均为 747 像素，即使设 `scrollTop=500` 也停在 0。
+
+为 `src/App.tsx` 中任务页外层卡片增加 `shrink-0`，使其按任务内容撑开，由现有 `main overflow-auto` 滚动。这处布局由全部任务、下载中、已完成共用。
+
+构建后仅重载原窗口 renderer，主进程与下载队列继续运行。一次性 Playwright 探针连接这个客户端自己的调试端口，使用真实鼠标滚轮验证当前 21 条任务；没有新增、删除或暂停任务，视图切换验证后恢复原设置，探针已删除。
+
+| 视图 | 滚轮结果 | 滚到底部结果 |
+| --- | --- | --- |
+| 列表 | `scrollTop=600`；页面高 747、内容高 2274 像素 | `scrollTop=1527`，最后一条完整可见 |
+| 卡片 | `scrollTop=600`；页面高 747、内容高 4561 像素 | `scrollTop=3814`，最后一条完整可见 |
+
+`pnpm check` 通过（typecheck、lint、65 条现有单测通过 / 1 跳过、build）。没有新增或修改测试用例。截图：`test-results/driver/tasks-scroll-before.png`、`test-results/driver/tasks-scroll-list-bottom.png`、`test-results/driver/tasks-scroll-grid-bottom.png`。
+
+## 客户端实测结果（2026-10-13，B 站分享短链所属合集）
+
+修复前，<https://b23.tv/uU1hUUC> 只显示「暖暖【灰泽满Hazel】」单条视频。短链实际跳到 `BV1kwa86KEmG`，所属合集是「Hazel歌切」（season `8865032`，64 条）。Electron `session.fetch` 跟随跳转后 `Response.url` 为空，`redirect: manual` 又报 `Redirect was cancelled`，导致地址没有进入合集适配器；分享地址自动携带的 `p=1` 也被旧逻辑当成指定分 P，跳过合集。
+
+现在通过客户端 `persist:media` 会话的 `net.request` 重定向事件读目标地址，最多追踪 10 跳，每次请求最多 15 秒，并响应解析取消；失败时仍回落到原地址。单 P 视频携带 `p=1` 时读取所属合集，真正的多 P 视频指定 `p=1` 或更高分 P 时仍只解析对应分 P。
+
+验证使用运行中的真实 Windows 客户端命令行通道，以及项目 `run-electron-client/driver.mjs` 在临时用户目录启动的真实 Electron 窗口，只解析，不入队下载；一次性网络诊断脚本已删除，没有新增或修改测试用例。
+
+| 链接 | 客户端结果 | 结论 |
+| --- | --- | --- |
+| <https://b23.tv/uU1hUUC> | `method=browser`、`listing=collection`，合集组「Hazel歌切」；三页分别 30、30、4 条，共 64 条，无重复，包含分享视频 `BV1kwa86KEmG`；窗口累计加载 30 → 60 → 64，末页 `hasMore=false`；首批 30 张封面全部加载成功；无 renderer `pageerror` | ✅ 短链与单 P 分享链接的所属合集可显示、翻页 |
+| <https://www.bilibili.com/video/BV1bK411W797?p=1> | 1 项，无列表，标题含 `p01 Staple Stable/战场原+羽川` | ✅ 真正多 P 视频仍只解析指定的第一 P |
+| <https://www.bilibili.com/video/BV1bK411W797?p=3> | 1 项，无列表，标题含 `p03 Ambivalent World/战场原+神原` | ✅ 更高分 P 的单条解析保持可用 |
+
+`pnpm typecheck`、`pnpm lint`、`pnpm build` 通过；`pnpm test` 为 65 通过、1 跳过。`pnpm test:e2e` 仍因现有脚本等待旧按钮「下载所选 (1)」40 秒超时而失败，当前按钮是「下载 1 项」，未修改测试文件。结果页截图：`test-results/driver/bilibili-share-collection.png`、`test-results/driver/bilibili-share-collection-all.png`。
+
 ## 客户端实测结果（2026-10-10，B 站番剧 adapter 与 CI）
 
 以 `bilibili-bangumi` adapter 为准。使用 `.agents/skills/run-electron-client/driver.mjs` 启动构建后的真实 Electron 客户端，在临时用户目录中匿名访问真实 B 站，通过 `media:parse` 解析并检查结果页封面；没有入队或下载。以下结果取代旧表中「番剧走引擎，客户端不另写解析」的路由约定。
@@ -217,3 +267,180 @@ X 的视频与图片两种帖子形态都有了样本，链接由使用者提供
 | 测试与文档 | 远端已有对应内容和后续更新；旧 E2E 的按钮名称问题已单独记录，不以合并旧分支方式处理 |
 
 远端还包含双语界面、CLI、解析历史、媒体预览、批次管理、字幕与封面处理等后续改动。功能分支保留不动；Git 会继续显示其历史尚未合入，但这不代表其功能缺失。
+
+
+## 2026-10-13：可配置软字幕、硬字幕与中英双语
+
+实现入口：设置 → 文件与媒体 → 字幕；解析结果下载区域可临时覆盖字幕模式和语言。任务保存所选配置，下载覆盖不会修改默认设置。软字幕和硬字幕均输出 MP4；独立文件与关闭模式保留平台原媒体容器。
+
+### 本地完整链路与打包引擎验证
+
+使用临时 Playwright `_electron` 探针操作真实构建后的客户端，访问本机 HTTP 字幕页面，走实际解析器 → 队列 → yt-dlp → FFmpeg，未替换 IPC、解析器、下载器或 FFmpeg。临时页面提供 6 秒 VP9/Opus 视频与两份时间边界不一致的中英文 VTT（中文 0–1.5、1.5–4、4–6 秒；英文 0–2.5、2.5–6 秒）。另运行 `pnpm engine:build`，客户端自动使用 `resources/engine/media-engine.exe` 和打包字体完成验证。探针脚本执行后删除，没有新增或修改测试规格。
+
+| 检查 | 结果 |
+| --- | --- |
+| 设置默认模式/语言、下载时覆盖 | 设置保存硬字幕/英文，下载区域选择软字幕/双语；入队任务使用覆盖值，默认设置保持不变 |
+| 软字幕 × 英文、中文、中英双语 | 三种均完成；视频保留 VP9，音频由 Opus 转为 AAC；字幕为 mov_text |
+| 双语软字幕轨道 | 中文（zho）、英文（eng）、中文 + English 三轨，双语轨 default；不是两条语言轨要求播放器同时开启 |
+| 软字幕不重编码视频 | 提取原 WebM 与软字幕 MP4 的视频包数据 SHA-256 均为 `28ce06c7b5488be350588ac1a6a18b341abd4d79998c7fbd1e3a2eef5cdf087b` |
+| 硬字幕 × 英文、中文、中英双语 | 三种均完成；H.264/AAC MP4，无可关闭字幕轨；抽帧目视确认白字黑描边、中文无方框、中文在上英文在下 |
+| 双语对齐 | 生成 0–1.5、1.5–2.5、2.5–4、4–6 秒四段，按时间边界组合文本 |
+| 独立双语字幕 | 原 WebM + 中文、英文、双语三份 SRT，文件列表记录全部产物 |
+| 关闭字幕 | 原 WebM，不生成字幕或执行字幕合成 |
+| 缺少中文、全部无字幕 | 分别使用英文烧录、输出无字幕 MP4；任务完成并展示对应提示 |
+| 字幕 CDN 返回 403 | 页面仍列出字幕，但字幕下载被拒绝；视频仍保存为无字幕 MP4，任务提示字幕缺失 |
+| 阶段与进度 | 实际收到 download、subtitles、embed、burn、convert 阶段；后处理独立显示进度，结束后任务 completed |
+| 重启持久化 | 重启后保留 11 条完成任务及硬字幕/英文默认配置；没有 renderer pageerror |
+| 字体缺失失败与重试 | 单独使用真实后处理器使字体目录不可用：失败保留视频和 SRT；恢复字体目录后同素材成功合成；路径含中文和单引号可处理 |
+| MP4 不支持源编码 | VP8 素材首次复制封装失败后自动转 H.264，MP4 成功保存 |
+| 语言选择 | 人工 en-US 优先于自动 en；中文只取 zh-Hans 一条，不下载全部翻译轨；这是本地选择器探针，不是 YouTube 在线实测 |
+
+本机证据保存在忽略的 `test-results/subtitles/`：`summary.json`、`settings.png`、`download-options.png`、`completed.png`、`bilingual-frame.png`、`output/`；网络尝试另存 `youtube-network.json`。
+
+### 真实 YouTube 与检查限制
+
+真实地址：`https://www.youtube.com/watch?v=jNQXAC9IVRw`。本机 Python 引擎网页/API 请求均返回 `[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol`。真实 Electron 客户端同地址解析 35 秒未完成后主动取消；本机旧代理地址 127.0.0.1:7897 没有监听。没有更改系统代理设置。因此 YouTube 在线字幕/自动翻译获取仍未验证，本地合成验证不能替代真实 YouTube 验证；网络恢复后应以有人工英文字幕、自动字幕、中文字幕/平台翻译字幕的视频分别复验。
+
+`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm engine:build` 通过；Vitest 65 项通过、1 项跳过。首次 `pnpm lint` 通过；末次检查时另一个并行工作留下的未跟踪 `.probe-audio.mjs` 触发 window/setTimeout 的 no-undef，未改动该探针，使用 `pnpm lint --ignore-pattern .probe-audio.mjs` 检查源码通过。`pnpm test:e2e` 仍在原有 `下载所选 (1)` 按钮选择器等待 40 秒后失败，当前真实按钮为 `下载 1 项`；按原型约束未修改测试，临时真实客户端探针使用当前按钮完成上述验证。构建仅有现存 bundle 大小提示。
+
+
+## 2026-10-13 18:42：YouTube 媒体 403 原任务修复与双语实测
+
+用户链接：`https://www.youtube.com/watch?v=m53ysyhjDJs`，标题 `How Kaz Nejatian Is Rebuilding Opendoor`。原任务 `3e1ddfb8-0816-4988-813d-a0e53c2f1656` 已取得中英文字幕，但媒体格式 `399+251-20` 每次立即返回 `unable to download video data: HTTP Error 403: Forbidden`，20/60 秒的自动续传始终重复同一失败。
+
+定位证据：读取原任务日志，连接正在运行的客户端（其自身 Electron 的调试端口，不连接外部 Chrome），观察主进程传给引擎的实际参数。原请求来自客户端 persist:media 的 7 个访客 cookie，没有 Google/YouTube 登录 cookie，没有 Authorization。原样重放仍返回 403；匿名请求同一画质/音轨完整成功。携带访客会话时，1 KiB 范围请求可能得到 206，但实际大分段请求可返回 403，不能把小范围 HEAD/GET 成功当作可下载证明。本文不能据此确定 YouTube 内部具体是哪种风控规则或某一个 cookie 导致拒绝。
+
+修复：`engine/main.py` 将下载器初始化与后处理挂接复用。只有 YouTube/youtu.be、下载视频数据的 HTTP 403、请求携带浏览器身份且没有登录 cookie/Authorization 时，立即建立新的匿名下载器重新解析并重试一次。只移除本次引擎调用的浏览器 cookie/profile，不修改 Chromium 的 persist:media、外部浏览器数据或用户设置；保持原格式选择、质量上限、音轨、字幕、输出命名及续传配置。登录/会员内容的授权会话不走匿名回退。失败仍交给原队列错误与续传机制处理。
+
+实际通过原客户端的“重试”操作完成，不手工修改 state.json、不把独立探针的文件伪装成完成任务。18:41:22 原媒体请求再次 403 后，日志出现 `YouTube 媒体请求返回 403，使用匿名会话重新解析并重试。`；匿名会话下载 139.99 MiB 视频与 21.23 MiB 原音轨，使用原来已下载的中英文字幕，18:42:47 任务进入 completed，warnings 为空。
+
+| 产物检查 | 实际结果 |
+| --- | --- |
+| 文件 | `C:/Users/40417/Downloads/How Kaz Nejatian Is Rebuilding Opendoor-3e1ddfb8.mp4` |
+| 文件大小 | 188,768,302 字节（约 180.0 MiB） |
+| 时长、分辨率 | 00:28:33.31，1920×1080，24 fps |
+| 视频/音频 | 保留 AV1 视频，AAC 192 kbps、48 kHz、双声道 |
+| 字幕 | 中文、English、中文 + English 三条 mov_text；双语轨 default |
+| 双语正文 | 从 MP4 导出双语轨，确认同一 cue 中中文在前、英文在后；不依赖外置 SRT |
+| 完整性 | FFmpeg 解码最后 3 秒音视频（1710 秒开始），退出码 0，无解码错误 |
+| 队列 | 原任务 completed、文件路径记录正确、无字幕警告 |
+
+没有新增或修改测试规格。诊断脚本已删除；脱敏原任务结果和导出的字幕证据位于忽略的 `test-results/youtube-403/client-retry.json`、`actual-bilingual.srt`。此结果补足前一节 YouTube 网络验证限制；早先 `jNQXAC9IVRw` 的 TLS 失败不应与本次媒体 403 混为一谈。
+
+本次修复后 `pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`pnpm engine:build` 均通过；Vitest 65 项通过、1 项跳过。现有 E2E 的旧按钮选择器问题仍按前文记录，本次未修改测试。
+
+
+## 2026-10-14：真实 YouTube 双语硬字幕 1 分钟效果验证
+
+来源仍为 `https://www.youtube.com/watch?v=m53ysyhjDJs`。临时 `_electron` 探针启动真实用户目录的客户端，在实际窗口选择「硬字幕（固定显示）」+「中英双语」并点击「下载 1 项」，新任务 ID `3c4ee3ad-94f6-4591-934f-3cb410e53394`。默认设置保持软字幕/双语。再次遇到访客媒体 403 后，引擎匿名回退成功；139.99 MiB 视频、21.23 MiB 原音轨和中英文字幕均已从真实站点下载，进入 burn 阶段。
+
+用户随后明确只烧录 1 分钟，因此通过客户端暂停完整的 28 分钟任务，保留原素材与字幕。将这次真实下载的 MKV 前 60 秒无损裁剪，在临时探针中调用生产实现 `SubtitleProcessor`，采用与客户端下载相同的硬字幕处理器、Noto Sans CJK SC、CRF 20 / medium、中文在上英文在下；没有用图片文字覆盖模拟效果。此预览是离线处理刚刚真实下载的素材，完整任务仍为 paused，未伪造 completed 状态。
+
+| 检查 | 结果 |
+| --- | --- |
+| 文件 | `C:/Users/40417/Downloads/How Kaz Nejatian Is Rebuilding Opendoor-双语硬字幕-1分钟-3c4ee3ad.mp4` |
+| 时长/画面 | 00:01:00.00，1920×1080，24 fps |
+| 编码 | H.264 High、yuv420p，AAC 48 kHz 双声道 |
+| 文件大小 | 19,098,152 字节，约 18.2 MiB |
+| 硬字幕确认 | 容器只有视频和音频，没有字幕轨；20 秒、45 秒直接从视频抽帧，均有中文在上、英文在下的白字黑描边字幕，中文字体正常 |
+| 完整解码 | 对全部 60 秒音视频执行 FFmpeg `-f null -`，退出码 0，无解码错误 |
+| 合成耗时 | 77.7 秒，无字幕警告 |
+| 原任务/设置 | 完整任务 paused；默认字幕模式 embed、语言 bilingual 保持不变 |
+
+证据在忽略的 `test-results/hard-youtube/minute/summary.json`、`frame-20s.png`、`frame-45s.png`，下载配置截图在 `test-results/hard-youtube/options.png`。临时 Node/Python 探针执行后删除，没有新增或修改测试规格，也没有更改产品代码。此检查验证真实素材的单语言/双语生产处理链中的双语硬字幕效果，不等同于完整 28 分钟硬字幕产物验收。
+
+
+## 2026-10-14：B 站固定字幕样式参考下载与观察（方案阶段）
+
+用户提供 `https://www.bilibili.com/video/BV11ipB6rEho/` 并确认字幕样式固定，允许使用 downloader 下载查看；仍要求开始实现前不生成产品代码。本次仅下载、抽帧观察与记录，没有修改字幕实现或测试规格。
+
+通过 Galaxy Downloader 本地 CLI/控制通道解析。此视频属于 869 条目的合集，指定 BV 号位于第 29 页第 29 条；准确按 `BV11ipB6rEho` 选择这一条，字幕模式临时设为 off，以保存参考原画面。任务 `9f6fbd27-478c-493e-bfa1-3d59432babfb` 于 09:46:21 completed，下载器实际合并 `30080+30280`。
+
+产物：`C:/Users/40417/Downloads/心理·情感·人文健康/[附文稿] 关于锻炼，你被灌输的最大谎言（请改做这个） _ 香农·里奇博士-9f6fbd27.mp4`，274,272,783 字节，00:47:25.68，1920×1080、29.97 fps，H.264/AAC。没有独立字幕轨，但直接从视频抽帧可见双语字幕，确认参考为画面内的硬字幕。
+
+检查 15、45、120、900、1800 秒五个时间点，证据为忽略的 `test-results/subtitle-reference/frame-*.png` 和 `summary.json`。共同外观：中文在上、英文在下；两种语言均为大号粗体无衬线白字；深色较厚描边，并有轻微偏移阴影；字幕在底部居中，位置稳定、行间紧凑、长句保留明显的大字号。仅凭编码后的视频不能确认作者使用的具体字体文件。
+
+方案结论（待实现）：固定为这一套样式，不增加字号、描边、间距或位置配置项；两种语言分别控制字重/字号/行位置，随输出分辨率等比缩放。以后仍以相同的 1 分钟素材对比参考帧校准。此次没有实施这些样式调整。
+
+运行恢复说明：此前保留的临时 Electron 实例出现 console EPIPE，造成 CLI 请求异常等待；恢复测试实例后正常完成下载，结束时通过 driver quit 正常关闭，以避免悬空的输出管道再次产生错误。任务、登录数据与用户默认设置保留。
+
+## 2026-10-14：固定参考硬字幕样式实现与验证
+
+用户授权实现后，硬字幕固定为参考视频的近似样式：Noto Sans CJK SC Bold、白字、深色描边 3、半透明轻微阴影 1.5、底部居中、留白 80。以画面短边 1080 为基准，中文 ASS 字号 64、英文 60；两种语言按各自时间边界进入同一排版块，中文在上、英文在下。单语言在底部显示，双语暂时缺一行时保留行位。没有添加字号、字体、位置等 UI 设置。
+
+当前 FFmpeg 的 libass 对没有空格的中文不会自动折行，因此按固定字体的保守宽度加入中文断行及超长单词断行，再交给 libass 排版。检查了英文、中文、双语、临时缺行、长句、720p、1080×1920 竖屏和 ASS 命令文本转义的实际渲染；长句字号保持固定，两种语言分开排版，检查帧无重叠或边缘裁切。字体日志确认使用打包的 `NotoSansCJKsc-Bold`，并非系统合成粗体。编码后的参考视频无法证明其原始字体，因此不声称字体完全相同。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 1 分钟样片来源 | 原 YouTube 任务 `3c4ee3ad-94f6-4591-934f-3cb410e53394` 的真实素材，裁剪前 60 秒，通过生产 `SubtitleProcessor` 处理 |
+| 样片 | `C:/Users/40417/Downloads/How Kaz Nejatian Is Rebuilding Opendoor-双语硬字幕-固定样式-1分钟.mp4` |
+| 产物 | 00:01:00.00、1920×1080、24 fps、H.264 High / yuv420p、AAC 48 kHz 双声道；19,111,557 字节，约 18.2 MiB |
+| 完整性和外观 | 全部 60 秒完整解码退出码 0；20 / 45 秒直接从最终 MP4 抽帧可见双语粗体白字、描边阴影；只有音视频轨，无独立字幕轨 |
+| 处理耗时 | 合成加完整解码 83.9 秒，无字幕警告 |
+| 真实客户端在线下载 | `_electron` 启动真实用户目录，通过客户端 `media:parse` / `media:download` 下载 `https://www.youtube.com/watch?v=jNQXAC9IVRw`，指定 burn / bilingual |
+| 在线任务结果 | `df2f947d-62a5-4df3-97a3-28f57f89cb85` 于 10:17:40 completed；中文和英文字幕均成功下载并烧录，warnings 为空；最终 `Me at the zoo-df2f947d.mp4` 完整解码通过，6 秒抽帧可见固定双语样式 |
+| 设置与原任务 | 默认配置仍为 embed / bilingual；28 分钟原任务仍 paused，没有把样片伪装成完整下载任务；renderer pageerror 为空 |
+| 软字幕回归 | 对同一真实视频的完整中英 SRT 再执行时间轴合并，与此前保存的双语 SRT 逐条比较相同 |
+| 字体打包 | 引擎构建成功，源目录和 `resources/engine/fonts/` 中 Bold 字体 SHA256 一致；打包引擎 version 请求成功。未重新生成完整安装包 |
+
+`pnpm typecheck`、`pnpm lint`、`pnpm build`、`pnpm engine:build` 通过。`pnpm test` 首次在并行编码/构建期间出现已有 `test/pace.test.ts` 计时断言失败；单独重跑 65 项通过、1 项跳过。`pnpm test:e2e` 重现已有 `下载所选 (1)` 旧按钮选择器的 40 秒等待失败，按原型要求未修改测试。实际客户端在线下载已完成上述验证。
+
+证据位于忽略的 `test-results/hard-youtube/fixed-style/`：`summary.json`、`client-job.json`、`encoded-frame-20s.png`、`encoded-frame-45s.png`、`real-client-frame.png`、`layout-*.png`；客户端截图为 `test-results/driver/fixed-subtitles-completed.png`。Playwright 会清空其整个 test-results 输出目录，因此本次最终抽帧证据在 E2E 运行后重新生成；下载目录中的用户样片和原素材保持完整。临时样式探针已删除，没有新增或修改测试规格。
+
+## 2026-10-14：长字幕分页、烧录恢复说明与预计时间
+
+用户授权增加三项：超长字幕分段、明确烧录中断后从头重新合成、显示烧录预计剩余时间。没有新增或修改 Vitest / Playwright / live 测试规格；使用临时探针调用生产处理器并驱动真实 Electron 用户目录，完成后删除探针。
+
+**长字幕**：每种语言最多显示两行，双语最多四行。每条源字幕先按固定字号换行，再将超出的行按正文长度分配到原 cue 的时间范围；随后合并语言时间边界，避免另一种语言换句时让长句重新分页。源字幕重叠时再限制合并后的显示行数。ASS 采用明确换行，保持固定字号；短到无法用 ASS 的厘秒精度安排全部段落时明确失败并保留素材。
+
+将真实 YouTube 字幕前 30 条连成 20 秒的长段落作为压力输入：1920×1080 下中文 6 页、英文 8 页；1080×1920 下中文 11 页、英文 15 页。验证分页前后非空白正文完全相同，首尾时间保持 0 / 20000 ms，各页连续、每种语言最多两行；再使英文每两秒换句，验证中文分页顺序没有重复或漏字。横竖屏在 2 / 9 / 17 秒实际用 FFmpeg / libass 渲染，最多四行，无画面边缘裁切或两种语言重叠。这是压力探针输入，不代表原视频存在这样的超长 cue；分段不改变平台字幕的翻译质量。
+
+**1 分钟真实素材**：对原任务 `3c4ee3ad-94f6-4591-934f-3cb410e53394` 的真实 MKV 前 60 秒调用生产 `SubtitleProcessor`。生成 `C:/Users/40417/Downloads/How Kaz Nejatian Is Rebuilding Opendoor-双语硬字幕-分页版-1分钟.mp4`，19,111,557 字节；完整解码通过，warnings 为空，20 / 45 秒最终视频抽帧显示正常。最终验证运行烧录耗时约 101.0 秒，含解码与抽帧的探针总耗时 104.9 秒；期间有其他客户端操作与编码竞争 CPU，耗时不能视作固定转换比例。
+
+**预计时间**：处理进度事件新增 ETA，按本次 FFmpeg 已输出视频时间 / 单调时钟实际耗时估算速度，并平滑更新；包括启动和停顿时间，不把 FFmpeg 两次批量进度输出之间的瞬时差值当作编码速度。前三秒没有估计，客户端显示正在估算；有估计后列表、卡片与详情显示预计剩余时间，结束、失败、暂停及应用重启清除旧值。1 分钟探针首次 burn 事件 eta 为 null，3.45 秒开始产生估计；95% 前最后一次预计剩余 6 秒，实际剩余约 7 秒。估计随负载及素材复杂度变化，不保证准确倒计时。
+
+**真实客户端暂停与重启**：通过真实窗口打开上述原 YouTube 任务详情，点击「重新合成字幕」，日志确认 MKV 和 SRT 已存在并复用。烧录进度从 0 开始，在客户端观察到预计剩余时间；暂停后 `burnRestartRequired=true`、processingEta 清空，详情显示从头重新合成说明，暂停状态不再显示正在烧录。关闭并重新启动客户端后提示仍在，再次从 0 合成。最后于 11:16:58 保留 paused，原 MKV 大小与修改时间保持完整，没有烧完整的 28 分钟视频；renderer pageerror 为空。
+
+**自动失败恢复与完成清理**：真实客户端下载 `https://www.youtube.com/watch?v=jNQXAC9IVRw`，新英文硬字幕任务 `c13803a9-98e9-4917-b04d-05cb71e14bee`。在 burn 阶段暂停后，临时使开发引擎粗体字体不可用并继续；失败消息为「20 秒后自动重新合成字幕，第 1/2 次」，详情标题为「字幕烧录中断，稍后自动重新合成」，按钮为「重新合成字幕」，没有把烧录重试称为自动续传。恢复字体后自动重试复用已下载的 MKV / SRT，于 11:13:01 completed，重新合成标记、ETA、处理阶段均清除，warnings 为空；最终 `Me at the zoo-c13803a9.mp4` 完整解码通过。粗体字体已恢复，源目录与打包目录 SHA256 一致。临时探针首次在子进程尚未停止时尝试继续，收到已有的正在停止提示；等待停止后复用同一短任务完成上述验证。
+
+证据位于忽略的 `test-results/subtitle-upgrades/`：`pagination.json`、`landscape-*.png`、`portrait-*.png`、`render.json`、`client.json`、`estimating.png`、`burn-eta.png`、`paused.png`、`reopened.png`、`automatic-retry.json`、`automatic-restart.png`、`retry-completed.png`。
+
+`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`pnpm engine:build` 通过，Vitest 65 项通过、1 项跳过。`pnpm test:e2e` 仍在原有 `下载所选 (1)` 旧按钮选择器等待 40 秒后失败，实际按钮为 `下载 1 项`；没有修改测试规格，真实客户端流程按上文验证。shadcn CLI 的 info 命令因现有 SDK / zod 子路径不匹配失败，直接检查项目配置并复用已有 Alert / Button / Sheet，没有增加组件或修改依赖。未生成或验证完整安装包。
+
+## 2026-10-14：用户明确授权修复现有 E2E，完整流程通过
+
+用户本轮明确要求修复「E2E 仍因已有旧按钮选择器失败」，因此仅更新已有 `test/e2e/e2e.spec.ts`，没有新增测试用例；本轮授权优先于原型阶段禁止修改测试的默认约束。
+
+下载按钮选择器由 `下载所选 (1)` 改为当前 `下载 1 项`，使用 exact 匹配。继续执行后发现原用例的逐字节文件校验与默认软字幕重封装冲突；这个用例验证原始文件完整性，因此在隔离测试配置中明确关闭字幕，保留原有文件字节一致校验。用 `Buffer.equals` 比较完整字节，避免失败时打印数万行二进制差异。没有更改产品的字幕默认值或跳过原有断言。
+
+实际命令：`pnpm test:e2e --output=test-results/e2e-selector-fix`。构建和类型检查通过，完整 Playwright Electron 用例 **1 passed（20.6 秒）**。覆盖真实引擎解析、本地 HTTP 媒体下载与字节一致、renderer 无 Node / 通用 IPC 能力、非法命令拒绝、任务详情与完成日志、搜索、卡片视图、并发配置保存、深浅主题切换以及重启后的任务 / 设置恢复；没有 renderer pageerror。此用例使用隔离的临时用户目录与本地 HTTP fixture，不替代前文真实站点字幕验证。
+
+指定独立输出目录避免 Playwright 清空已有字幕探针证据；截图仍按用例保存于 `test-results/home.png`、`task-detail.png`、`settings.png`、`client.png`。此前旧选择器失败的记录为历史结果，此处通过结果取代当前 E2E 阻塞状态。
+
+## 2026-10-14：YouTube 音轨列表按语言整理
+
+用户反馈截图中大量 OPUS 码率相近的选项，并明确暂缓升版本、先修音轨。检查真实 `https://www.youtube.com/watch?v=m53ysyhjDJs`，平台返回 21 种音频语言，每种 5 个可用音质档位，共 105 个可用音频格式。此前全部混入一个下拉且不显示语言，造成大量选项看起来重复；并非 105 种不同音质。
+
+现实现：音频语言与音质分别选择，默认「美国英语 · 原声」，原声排首位，其他语言按本地化名称排序；音质菜单仅列当前语言的档位。标签显示真实编码、音质档位与码率，单语言来源不显示语言下拉；音视频同时下载时说明这些选项用于单独保存的音频文件。切换语言重置音质为该语言最高音质，语言和字幕语言相互独立。主进程按语言、编码、真实质量、声道、采样率及解说类别整理重复格式，优先普通动态范围版本，保留不同语言和有意义的档位。
+
+音频语言写入任务快照并参与音频任务去重；主进程校验所选格式与语言一致。YouTube 的数字后缀格式 ID 可以随视频或解析会话改变，因此引擎对指定格式及最高音质回退都加所选语言约束；语言不可用时明确失败，避免静默下载其他配音。编码或档位不可用仍可回落该语言最高音质。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 原声菜单 | 6 个选项：最高音质（当前语言）、OPUS 高音质 104 kbps、AAC 高音质 129 kbps、OPUS 标准音质 58 kbps、OPUS 低音质 49 kbps、AAC 低音质 49 kbps |
+| 日语菜单 | 切换日语后仍为 6 个选项，码率来自日语格式；没有把其他语言混进音质菜单 |
+| 真实客户端在线下载 | 隔离临时用户目录启动真实 Electron，解析同一 YouTube 地址，实际选择日语 AAC 高音质，再以仅音频方式下载 |
+| 下载结果 | 任务 `72eef74c-a617-4c53-8c47-0ba3c9d8ca69` completed，audioLanguage 为 ja、所选格式 `140-9`；引擎日志明确下载 `140-9`，27,710,707 字节 M4A，warnings 为空，完整 FFmpeg 解码通过，无 renderer pageerror |
+| 编号变化回退 | 以真实平台格式表调用生产 yt-dlp 选择器：指定英文编号但要求日语时回退到日语 `251-10`；最高音质日语也选 `251-10`。该捕获中编号与上述下载会话不同，所选语言仍一致；要求不存在的 zh 得到空选集，不回落其他语言 |
+| 重复与平台回归 | 在真实格式表中追加同档 DRC 副本，生产 mediaResult 保留普通版本且仍为 105 个；独立 Bilibili 三档 AAC 66 / 123 / 161 kbps 的临时 metadata 探针全部保留；英文界面的音质和语言标签正确。这两项为临时元数据探针，不声称本轮重新在线下载 Bilibili |
+| 中文原声标记 | 实际中文提取结果的 note 为「英语 (US)原始 (default)」，language_preference 为 5；同时识别中文原始标记和英文 original，避免仅按英文词误判原声 |
+
+证据在忽略的 `test-results/audio-options/`：`raw.json`、`production-raw.json` 只包含所需格式元数据，不保存签名媒体 URL 或凭据；另有 `client.json`、`menus.json`、`original-options.png`、`japanese-options.png`、`japanese-selection.png`、`metadata.json`、`selection.json` 和下载的 M4A。验证用实例和临时用户目录已关闭清理，用户开发版仍在运行；需要重新解析已有视频结果以取得新的语言元数据。
+
+`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`、`pnpm engine:build` 通过；Vitest 65 项通过、1 项跳过，`pnpm test:e2e --output=test-results/e2e-audio-options` 1 项通过（13.4 秒）。没有新增或修改测试规格，临时探针执行后删除。版本保持 0.4.3，本轮未 commit / push，版本升级与提交推送暂缓。
+
+## 2026-10-14：0.4.4 版本提交验证
+
+用户在音轨列表修复后明确要求升版本并推送，`package.json` 由 0.4.3 升至 0.4.4。版本包含本轮可配置软 / 硬双语 MP4 字幕、固定粗体样式与长字幕分页、烧录重新合成说明和预计时间、多语言音频列表与所选语言回退约束、访客 YouTube 媒体 403 回退、B 站短链 / 合集修复及已获授权的 E2E 修复。
+
+对 0.4.4 重新运行 `pnpm lint`、`pnpm test`、`pnpm test:e2e --output=test-results/e2e-release-0.4.4`：Lint 通过，Vitest 65 项通过、1 项跳过；E2E 包含类型检查与构建，1 项通过（16.0 秒）。前文引擎打包与真实字幕 / 音轨验证仍适用，版本号调整没有更改依赖或 lockfile。未手工创建 Git tag 或发布安装包；现有 main 推送工作流会在验证及各平台构建成功后发布没有同名 tag 的新版本。

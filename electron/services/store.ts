@@ -26,6 +26,8 @@ export class Store {
           // Jobs saved before the Chrome CDP route became the client's own browser session.
           method: (job.method as string) === 'chrome' ? 'browser' : job.method,
           kind: job.kind || (job.audioOnly ? 'audio' : 'video'), speed: undefined, eta: undefined, logs: job.logs || [],
+          processingEta: undefined,
+          burnRestartRequired: job.status !== 'completed' && (job.burnRestartRequired || job.stage === 'burn') || undefined,
           status: job.status === 'running' || job.status === 'queued' ? (this.data.settings.resumeOnStart ? 'queued' : 'paused') : job.status }
       })
     } catch (error) {

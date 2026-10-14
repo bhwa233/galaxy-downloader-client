@@ -1,6 +1,10 @@
 {
   "pause": "Pause",
   "resume": "Resume",
+  "restartBurn": "Restart subtitle processing",
+  "burnRestart": { "title": "Subtitles need to be processed again", "hint": "After an interruption, subtitle processing restarts from the beginning using the downloaded media." },
+  "estimatedRemaining": "Estimated time left: {{time}}",
+  "estimating": "Estimating time left…",
   "revealFile": "Show in folder",
   "open": "Open",
   "copyPath": "Copy file path",
@@ -32,11 +36,14 @@
   "alsoDeleteFiles": "Also delete downloaded files",
   "keep": "Keep",
   "preparing": "Preparing…",
+  "subtitleWarning": "Subtitle notice",
+  "stages": { "subtitles": "Preparing subtitles", "convert": "Converting to MP4", "embed": "Embedding subtitles", "burn": "Burning subtitles" },
   "completedAt": "Completed {{time}}",
   "remaining": "{{time}} left",
   "viewTask": "View task {{title}}",
   "failures": {
     "resuming": { "title": "Download interrupted, resuming shortly", "hint": "It continues from where it stopped after the time above, or you can retry now." },
+    "burnRestart": { "title": "Subtitle processing interrupted, restarting shortly", "hint": "Processing restarts from the beginning using the downloaded media. You can also restart now." },
     "noSpace": { "title": "Not enough disk space", "hint": "Free up space or choose another download folder in Settings, then retry." },
     "permission": { "title": "No write permission", "hint": "Choose another download folder in Settings or check this folder's permissions, then retry." },
     "expired": { "title": "Media link expired or refused", "hint": "Retrying parses the post again to get a fresh link. If it keeps happening, sign in again in the in-app browser." },
@@ -73,6 +80,7 @@
     "downloaded": "Downloaded",
     "speed": "Current speed",
     "eta": "Time left",
+    "processingEta": "Estimated processing time left",
     "autoResume": "Auto resumes",
     "createdAt": "Created",
     "completedAt": "Completed"

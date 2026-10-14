@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, copyFileSync } from 'node:fs'
+import { existsSync, mkdirSync, copyFileSync, cpSync } from 'node:fs'
 import path from 'node:path'
 
 const root = path.resolve(import.meta.dirname, '..')
@@ -23,4 +23,5 @@ if (process.argv.includes('--bundle')) {
   mkdirSync(path.join(root, 'resources/engine'), { recursive: true })
   const ffmpeg = path.join(root, 'node_modules/ffmpeg-static', windows ? 'ffmpeg.exe' : 'ffmpeg')
   copyFileSync(ffmpeg, path.join(root, 'resources/engine', windows ? 'ffmpeg.exe' : 'ffmpeg'))
+  cpSync(path.join(root, 'engine/fonts'), path.join(root, 'resources/engine/fonts'), { recursive: true })
 }

@@ -85,7 +85,8 @@ export class Parser {
   // pages and a selection behind it, and serving one of those from a cache would show the user a
   // page they did not ask for.
   private recent = new Map<string, { plan: ParsePlan; at: number }>()
-  constructor(private engine: Engine, private browser: EmbeddedBrowser, private fetcher: (url: string, init?: RequestInit) => Promise<Response> = fetch) {}
+  constructor(private engine: Engine, private browser: EmbeddedBrowser, private fetcher: (url: string, init?: RequestInit) => Promise<Response> = fetch,
+    private redirect?: (url: string, method: 'HEAD' | 'GET', signal: AbortSignal) => Promise<string | undefined>) {}
   private async extract(request: EngineRequest, signal: AbortSignal): Promise<RawInfo> {
     const raw = await this.engine.request<RawInfo>(request, signal)
     const entries = flattenEntries(raw)
@@ -136,8 +137,23 @@ export class Parser {
     if (!SHORTENERS.test(new URL(url).hostname)) return url
     for (const method of ['HEAD', 'GET'] as const) {
       try {
-        const response = await this.fetcher(url, { method, redirect: 'follow', signal })
-        if (response.url && response.url !== url) return normalizeUrl(response.url)
+        let target = url
+        const visited = new Set<string>()
+        // Read each redirect, stopping once the address can be routed to a platform adapter.
+        for (let hop = 0; hop < 10 && !visited.has(target); hop += 1) {
+          visited.add(target)
+          let location: string | undefined | null
+          if (this.redirect) location = await this.redirect(target, method, signal)
+          else {
+            const response = await this.fetcher(target, { method, redirect: 'manual', signal })
+            location = [301, 302, 303, 307, 308].includes(response.status) ? response.headers.get('location') : null
+            void response.body?.cancel().catch(() => {})
+            if (!location && response.url && response.url !== url) return normalizeUrl(response.url)
+          }
+          if (!location) break
+          target = normalizeUrl(new URL(location, target).href)
+          if (!SHORTENERS.test(new URL(target).hostname)) return target
+        }
       } catch { signal.throwIfAborted() }
     }
     return url

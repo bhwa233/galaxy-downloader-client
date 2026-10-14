@@ -113,16 +113,23 @@ export function Result({ result, parse, settings, send, login, connecting, close
   result: MediaResult; parse: ClientState['parse']; settings: Settings; send: Send
   login: (url?: string) => void; connecting: boolean; close: () => void
 }) {
-  const { t } = useTranslation(['result', 'common'])
+  const { t, i18n } = useTranslation(['result', 'common'])
   const [submitting, setSubmitting] = useState(false)
   // The first item comes picked, so a single video is ready to download without a click and a listing
   // starts somewhere rather than at nothing; 全选 covers everything loaded when they want all of it.
   // Only at mount, which is per parse: 加载更多 keeps whatever the user has ticked by then.
   const [selected, setSelected] = useState<string[]>(() => { const first = result.items.find(item => !item.wall); return first ? [first.id] : [] })
   const [format, setFormat] = useState('best')
+  const [audioFormatId, setAudioFormatId] = useState('best')
+  const [audioLanguageOverride, setAudioLanguageOverride] = useState<string>()
+  const { t: subtitleText } = useTranslation('settings')
+  const [subtitleOverride, setSubtitleOverride] = useState<Settings['subtitles']>()
+  const [languageOverride, setLanguageOverride] = useState<Settings['subtitleLanguage']>()
+  const subtitleOptions = { subtitles: subtitleOverride ?? settings.subtitles, subtitleLanguage: languageOverride ?? settings.subtitleLanguage }
   // What to download of each ticked item, any combination of the three. Back to the media alone on
   // every parse, so a choice made for one result does not quietly carry over to the next.
   const [kinds, setKinds] = useState<DownloadKind[]>(['video'])
+  const audioOnlyMode = kinds.includes('audio') && !kinds.includes('video')
   const [loading, setLoading] = useState(false)
   // Which tab is open, where the result has more than one. Held by id rather than by index so loading
   // more, which rebuilds the result, does not move the user to another tab.
@@ -170,6 +177,21 @@ export function Result({ result, parse, settings, send, login, connecting, close
   // its first video, for every video it queues; one that a later video lacks falls back to its best.
   const own = selectedItems.length === 1 ? selectedItems[0].formats : []
   const formats = own.length ? own : result.listing ? result.formats || [] : []
+  const ownAudio = selectedItems.length === 1 ? selectedItems[0].audioFormats || [] : []
+  const audioFormats = ownAudio.length ? ownAudio : result.listing ? result.audioFormats || [] : []
+  const audioLanguages = [...audioFormats.reduce((languages, item) => {
+    const value = item.audioLanguage || 'und'
+    if (!languages.has(value) || item.audioOriginal) languages.set(value, {
+      value, label: `${item.audioLanguageLabel || t('audioQuality.unknownLanguage')}${item.audioOriginal ? ` · ${t('audioQuality.original')}` : ''}`, original: item.audioOriginal,
+    })
+    return languages
+  }, new Map<string, { value: string; label: string; original?: boolean }>()).values()]
+    .sort((first, second) => Number(Boolean(second.original)) - Number(Boolean(first.original)) || first.label.localeCompare(second.label, i18n.language === 'en' ? 'en' : 'zh'))
+  const preferredAudio = audioFormats.find(item => item.audioOriginal) || audioFormats[0]
+  const audioLanguage = audioLanguages.some(option => option.value === audioLanguageOverride) ? audioLanguageOverride! : preferredAudio?.audioLanguage || 'und'
+  const scopedAudio = audioFormats.filter(item => (item.audioLanguage || 'und') === audioLanguage)
+  const effectiveAudioFormatId = scopedAudio.some(item => item.id === audioFormatId) ? audioFormatId : 'best'
+  const audioOptions = [{ value: 'best', label: result.listing && !result.audioFormats ? t('audioQuality.reading') : audioLanguages.length > 1 ? t('audioQuality.bestForLanguage') : t('audioQuality.best') }, ...scopedAudio.map(item => ({ value: item.id, label: item.label || item.id }))]
   const reading = Boolean(result.listing) && !result.formats
   // 全选 is everything loaded that can be picked; a locked item is never part of it.
   const pickable = visible.filter(item => !item.wall)
@@ -189,7 +211,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
   // from the last card toggled, the way a file list does.
   const toggle = (id: string, checked: boolean) => {
     if (checked && result.items.find(item => item.id === id)?.wall) return
-    if (!result.listing) setFormat('best')
+    if (!result.listing) { setFormat('best'); setAudioFormatId('best'); setAudioLanguageOverride(undefined) }
     const ids = shiftHeld.current && anchor.current && anchor.current !== id ? between(anchor.current, id) : [id]
     shiftHeld.current = false
     anchor.current = id
@@ -213,6 +235,14 @@ export function Result({ result, parse, settings, send, login, connecting, close
   // at half the size, so that one's (measured 2026-09-24: 72.8 MB shown for a 33.9 MB download before).
   const bytesOf = (item: MediaItem): number | undefined => {
     if (item.kind === 'image' || item.wall) return undefined
+    if (audioOnlyMode) {
+      if (settings.audioFormat !== 'best') return undefined
+      const own = item.audioFormats || []
+      const list = own.length ? own : result.listing ? result.audioFormats || [] : []
+      const tier = list.find(entry => entry.id === effectiveAudioFormatId) || list.find(entry => (entry.audioLanguage || 'und') === audioLanguage)
+      if (own.length) return tier?.size
+      return tier?.bitrate && item.duration ? Math.round(tier.bitrate * 1000 / 8 * item.duration) : undefined
+    }
     const list = item.formats.length ? item.formats : result.listing ? result.formats || [] : []
     const tier = tierOf(list)
     if (!tier) return undefined
@@ -248,7 +278,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
     const requests = pictures
       ? (['video', 'cover'] as const).map(kind => ({ kind, itemIds: queuedItems.filter(item => pictureKind(item) === kind).map(item => item.id) }))
         .filter(entry => entry.itemIds.length).map(entry => send('media:download', { resultId: result.id, itemIds: entry.itemIds, format: 'best', kinds: [entry.kind] }))
-      : [send('media:download', { resultId: result.id, itemIds: queueing, format: kinds.includes('video') ? tierFor(queuedItems) : 'best', kinds })]
+      : [send('media:download', { resultId: result.id, itemIds: queueing, format: kinds.includes('video') ? tierFor(queuedItems) : 'best', audioFormatId: kinds.includes('audio') ? audioTierFor(queuedItems) : 'best', audioLanguage: kinds.includes('audio') && audioLanguage !== 'und' ? audioLanguage : undefined, kinds, ...subtitleOptions })]
     void Promise.all(requests)
       .then(replies => {
         if (replies.some(reply => !reply)) return
@@ -263,9 +293,10 @@ export function Result({ result, parse, settings, send, login, connecting, close
   // The chosen tier where every one of these can take it - their own tiers, or a listing's - and the
   // default where it cannot.
   const tierFor = (picked: MediaItem[]) => picked.every(item => item.kind === 'image' || item.formats.some(entry => entry.id === format) || (result.listing && result.formats?.some(entry => entry.id === format))) ? format : 'best'
+  const audioTierFor = (picked: MediaItem[]) => picked.every(item => item.kind === 'image' || item.audioFormats?.some(entry => entry.id === effectiveAudioFormatId) || (result.listing && result.audioFormats?.some(entry => entry.id === effectiveAudioFormatId))) ? effectiveAudioFormatId : 'best'
   // One card queued from its menu, whatever else is ticked - the selection is left as it was.
   const downloadOne = (item: MediaItem, kind: DownloadKind) => {
-    void send('media:download', { resultId: result.id, itemIds: [item.id], format: kind === 'video' ? tierFor([item]) : 'best', kinds: [kind] })
+    void send('media:download', { resultId: result.id, itemIds: [item.id], format: kind === 'video' ? tierFor([item]) : 'best', audioFormatId: kind === 'audio' ? audioTierFor([item]) : 'best', audioLanguage: kind === 'audio' && audioLanguage !== 'und' ? audioLanguage : undefined, kinds: [kind], ...subtitleOptions })
       .then(reply => {
         if (!reply) return
         if (reply.added === 0) toast.add({ type: 'info', title: t('toast.inQueue'), description: t('toast.oneInQueue', { title: item.title.slice(0, 40), kind: t(`common:kinds.${kind}`) }) })
@@ -361,7 +392,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
       <span className="text-sm text-muted-foreground tabular-nums">
         {t('selected', { count: selectedItems.length })}{result.items.length > 1 ? ` / ${pickable.length}` : ''}
         {cap && selectedItems.length > cap ? t('capNote', { count: cap }) : ''}
-        {queuedBytes && kinds.includes('video') && !pictures ? ` · ${t('about', { size: formatBytes(queuedBytes) })}` : ''}
+        {queuedBytes && (kinds.includes('video') || audioOnlyMode) && !pictures ? ` · ${t('about', { size: formatBytes(queuedBytes) })}` : ''}
         {skipped.length ? t('skipped', { list: skipped.join(t('listSeparator')) }) : ''}
       </span>
       <div className="ml-auto flex flex-wrap items-center gap-3">
@@ -374,15 +405,21 @@ export function Result({ result, parse, settings, send, login, connecting, close
             <SelectContent><SelectGroup>{downloadKinds.map(kind => <SelectItem key={kind} value={kind}>{t(`common:kinds.${kind}`)}</SelectItem>)}</SelectGroup></SelectContent>
           </Select>
         </Field>
-        {/* Always here, whatever is chosen: a control that does not apply says so by being disabled
-            rather than by leaving a hole where it was. Only the media itself has a quality. */}
-        <Choice className="w-44" label={t('quality.label')} hideLabel disabled={pictures || !kinds.includes('video')} value={format} onChange={setFormat} options={[{ value: 'best', label: reading ? t('quality.reading') : t('quality.default') }, ...formats.map(item => ({ value: item.id, label: item.label || item.id }))]} />
+        {/* Audio choices name actual source tracks; output conversion remains a separate setting. */}
+        {kinds.includes('audio') && audioLanguages.length > 1 && <Choice className="w-48" label={t('audioQuality.language')} hideLabel disabled={pictures} value={audioLanguage} onChange={value => { setAudioLanguageOverride(value); setAudioFormatId('best') }} options={audioLanguages} />}
+        {audioOnlyMode
+          ? <Choice className="w-52" label={t('audioQuality.label')} hideLabel disabled={pictures} value={effectiveAudioFormatId} onChange={setAudioFormatId} options={audioOptions} />
+          : <Choice className="w-44" label={t('quality.label')} hideLabel disabled={pictures || !kinds.includes('video')} value={format} onChange={setFormat} options={[{ value: 'best', label: reading ? t('quality.reading') : t('quality.default') }, ...formats.map(item => ({ value: item.id, label: item.label || item.id }))]} />}
+        {kinds.includes('audio') && kinds.includes('video') && <Choice className="w-52" label={t('audioQuality.label')} hideLabel disabled={pictures} value={effectiveAudioFormatId} onChange={setAudioFormatId} options={audioOptions} />}
+        <Choice className="w-44" label={subtitleText('files.subtitles.label')} hideLabel disabled={pictures || !kinds.includes('video') || !queuedItems.some(item => item.kind === 'video')} value={subtitleOptions.subtitles} onChange={value => setSubtitleOverride(value as Settings['subtitles'])} options={(['embed', 'burn', 'file', 'off'] as const).map(value => ({ value, label: subtitleText(`files.subtitles.${value}`) }))} />
+        <Choice className="w-32" label={subtitleText('files.subtitles.languages')} hideLabel disabled={pictures || !kinds.includes('video') || subtitleOptions.subtitles === 'off' || !queuedItems.some(item => item.kind === 'video')} value={subtitleOptions.subtitleLanguage} onChange={value => setLanguageOverride(value as Settings['subtitleLanguage'])} options={(['en', 'zh', 'bilingual'] as const).map(value => ({ value, label: subtitleText(`files.subtitles.languageOptions.${value}`) }))} />
         <Button variant="ghost" size="sm" className="max-w-56 justify-start overflow-hidden text-muted-foreground" title={t('saveTo', { dir: settings.downloadDirectory })} onClick={() => void send('settings:directory', null)}>
           <FolderOpen /><span className="truncate">{settings.downloadDirectory}</span>
         </Button>
         {/* Enqueueing says so and leaves the listing where it is: the tasks are there whenever they look. */}
         <Button disabled={!queueing.length || submitting} onClick={download}><Download />{pictures ? t('download.pictures', { count: tasks }) : kinds.length > 1 ? t('download.files', { count: tasks }) : kinds[0] === 'video' ? t('download.items', { count: tasks }) : kinds[0] === 'audio' ? t('download.audio', { count: tasks }) : t('download.cover', { count: tasks })}</Button>
       </div>
+      {!pictures && kinds.includes('audio') && kinds.includes('video') && <p className="w-full text-xs text-muted-foreground">{t('audioQuality.separateFileHint')}</p>}
     </div>
   </section>
 }

@@ -29,6 +29,17 @@
     "reading": "正在读取画质…",
     "default": "默认画质（按设置）"
   },
+  "audioQuality": {
+    "language": "音频语言",
+    "separateFileHint": "音频语言和音质用于单独保存的音频文件。",
+    "original": "原声",
+    "unknownLanguage": "未标注语言",
+    "levels": { "high": "高音质", "standard": "标准音质", "low": "低音质" },
+    "label": "音质（原始音轨）",
+    "best": "最高音质（原始音轨）",
+    "bestForLanguage": "最高音质（当前语言）",
+    "reading": "正在读取音质…"
+  },
   "loadedOf": "共 {{total}} 项，已加载 {{loaded}} 项",
   "keywordLabel": "按关键字筛选",
   "keywordPlaceholder": "关键字…",

@@ -37,6 +37,7 @@ test/screenshots
 .live-chrome/
 resources/engine/
 engine-build/
+/engine/__pycache__/
 *.tsbuildinfo
 
 # Local agent tooling and scratch screenshots

@@ -11,7 +11,7 @@ export type RawInfo = {
 }
 
 const bestThumbnail = (value: RawInfo | undefined): string | undefined => value?.thumbnail || value?.thumbnails?.filter(item => item.url).sort((first, second) => (second.width || 0) - (first.width || 0))[0]?.url
-type RawFormat = { format_id: string; height?: number; fps?: number; format_note?: string; ext?: string; vcodec?: string; acodec?: string; has_drm?: boolean; filesize?: number; filesize_approx?: number; tbr?: number }
+type RawFormat = { format_id: string; height?: number; fps?: number; format_note?: string; ext?: string; vcodec?: string; acodec?: string; has_drm?: boolean; filesize?: number; filesize_approx?: number; tbr?: number; abr?: number; language?: string; language_preference?: number; audio_channels?: number; asr?: number; is_drc?: boolean; protocol?: string }
 
 // A stream's size as the platform states it - exact where it knows, approximate where it gives one -
 // and otherwise its bitrate over the whole duration.
@@ -83,6 +83,42 @@ function tiersOf(formats: RawFormat[], platform: string, duration?: number): Med
       const taken = measure(preferred.get(name) || format)
       return { id: format.format_id, label: name, height: format.height, extension: format.ext || '', audioOnly: false, ...own, preferredSize: taken.size, preferredBitrate: taken.bitrate }
     })
+}
+
+// Keep distinct languages and qualities, rather than presenting every transport/client duplicate.
+// Format IDs and safe language metadata reach the window; signed stream URLs remain in the engine.
+function audioTiersOf(formats: RawFormat[], duration?: number): NonNullable<MediaItem['audioFormats']> {
+  const groups = new Map<string, { format: RawFormat; order: number; level: 'high' | 'standard' | 'low' }>()
+  const codecOf = (format: RawFormat) => /^mp4a|^aac/i.test(format.acodec!) ? 'AAC' : format.acodec!.toUpperCase()
+  formats.forEach((format, order) => {
+    if (format.has_drm || format.vcodec !== 'none' || !format.acodec || format.acodec === 'none') return
+    const bitrate = format.abr || format.tbr || 0
+    const itag = format.format_id.split('-')[0]
+    const level = itag === '249' || itag === '139' ? 'low' : itag === '250' ? 'standard' : bitrate && bitrate <= 55 ? 'low' : bitrate && bitrate <= 90 ? 'standard' : 'high'
+    const role = /description|descriptive|commentary|音频描述|口述|解说|评论音轨/i.exec(format.format_note || '')?.[0].toLowerCase() || ''
+    // YouTube itags define real quality tiers even when VBR measurements vary.
+    // Other platforms can offer several AAC rates in the same broad quality
+    // band (Bilibili 66/123/161 kbps); preserve those separate choices.
+    const quality = ['139', '140', '249', '250', '251'].includes(itag) ? itag : bitrate ? Math.round(bitrate / 32) * 32 : format.format_id
+    const key = [format.language || '', codecOf(format), quality, format.audio_channels || 2, format.asr || 0, role].join('|')
+    const held = groups.get(key)
+    const compressed = (value: RawFormat) => Boolean(value.is_drc || /\bdrc\b/i.test(value.format_id + ' ' + (value.format_note || '')))
+    // Prefer uncompressed dynamics; within that group keep yt-dlp's last (preferred) format.
+    if (!held || compressed(held.format) && !compressed(format) || compressed(held.format) === compressed(format)) groups.set(key, { format, order, level })
+  })
+  return [...groups.values()].sort((first, second) => (second.format.language_preference || 0) - (first.format.language_preference || 0) || second.order - first.order).map(({ format, level }) => {
+    const bitrate = format.abr || format.tbr
+    const codec = codecOf(format)
+    const role = /description|descriptive|commentary|音频描述|口述|解说|评论音轨/i.test(format.format_note || '') ? format.format_note : undefined
+    const label = [codec, i18n.t(`result:audioQuality.levels.${level}`), bitrate ? `${Math.round(bitrate)} kbps` : undefined,
+      format.audio_channels && format.audio_channels > 2 ? `${format.audio_channels} ch` : undefined, role].filter(Boolean).join(' · ')
+    let audioLanguageLabel = format.language
+    if (format.language) {
+      try { audioLanguageLabel = new Intl.DisplayNames([i18n.language === 'en' ? 'en' : 'zh'], { type: 'language' }).of(format.language) || format.language } catch { /* Retain unusual platform language codes. */ }
+    }
+    return { id: format.format_id, label, audioOnly: true, extension: format.ext || '', bitrate, size: streamSize({ ...format, tbr: bitrate }, duration),
+      audioLanguage: format.language, audioLanguageLabel, audioOriginal: /\boriginal\b|原始|原声|原音/i.test(format.format_note || '') || (format.language_preference || 0) >= 10 }
+  })
 }
 
 // Hosts that hand out a short link instead of the page. The address the user pasted says nothing
@@ -161,6 +197,7 @@ export function mediaResult(raw: RawInfo, url: string, method: MediaResult['meth
     thumbnail: bestThumbnail(entry) || bestThumbnail(raw),
     kind: entry.vcodec === 'none' ? 'audio' : 'video',
     formats: tiersOf(entry.formats || [], platformOf(url), entry.duration),
+    audioFormats: audioTiersOf(entry.formats || [], entry.duration),
   }))
   if (!items.length) throw new Error(i18n.t('errors:media.nothingFound'))
   // A list that filled the limit exactly is one the engine stopped at rather than reached the end of:

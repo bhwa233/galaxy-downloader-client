@@ -106,7 +106,9 @@
     "subtitles": {
       "legend": "Subtitles",
       "label": "Subtitles",
-      "embed": "Embed in video file",
+      "embed": "Soft subtitles (switchable)",
+      "burn": "Hard subtitles (permanent)",
+      "languageOptions": { "en": "English", "zh": "Chinese", "bilingual": "Chinese + English" },
       "file": "Save as separate subtitle file",
       "off": "Don't download subtitles",
       "languages": "Subtitle languages",
@@ -117,7 +119,7 @@
         "hint": "Fall back to the platform's speech-recognition subtitles when a language has no human-made ones."
       },
       "normalize": { "label": "Normalize overlapping subtitle cues", "hint": "Join YouTube rolling caption fragments so one language does not render twice at once." },
-      "hint": "Only works on platforms that provide subtitle tracks; best supported on YouTube and on Bilibili when signed in. When embedded in MP4, subtitles are converted to mov_text, which some players may not show."
+      "hint": "Soft and hard subtitles output MP4. Soft subtitles are switchable, with an additional bilingual track in bilingual mode. Hard subtitles are permanent and take longer to process; Chinese appears above English. Human captions are preferred, with optional platform automatic or translated captions. Missing captions keep the video and show a warning."
     }
   },
   "browser": {
