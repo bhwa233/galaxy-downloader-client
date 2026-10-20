@@ -14,7 +14,7 @@ import type { Fetcher, Fingerprint, ListingGroup, ProfileAdapter } from './listi
 // A player on the page as the page shows it: its poster, and - when it sits inside a card linking to a
 // post - that post's address and text. What a stream caught off the network is matched against.
 export type Poster = { poster: string; link?: string; text?: string }
-export type BrowserMedia = { title: string; url: string; videos: string[]; images: string[]; posters: Poster[]; article: boolean; thumbnail?: string; cookies: Cookie[]; userAgent: string }
+export type BrowserMedia = { player?: { width: number; height: number; duration?: number }; title: string; url: string; videos: string[]; images: string[]; posters: Poster[]; article: boolean; thumbnail?: string; cookies: Cookie[]; userAgent: string }
 // 'area' is where the window's preview dialog wants the page; 'host' is the window it is shown in,
 // left off while the preview is closed.
 type PreviewView = { view: WebContentsView; host?: BrowserWindow; area: Rectangle; fullscreen: boolean; onClosed?: () => void }
@@ -509,7 +509,7 @@ export class EmbeddedBrowser {
       await pause(signal, PACE.media)
       signal.throwIfAborted()
       const article = EmbeddedBrowser.ARTICLES.test(new URL(url).hostname)
-      const data = await page.evaluate<{ title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string }>(`(${mediaScript})(${article})`)
+      const data = await page.evaluate<{ player?: BrowserMedia['player']; title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string }>(`(${mediaScript})(${article})`)
       // A 微信公众号 music card is an iframe: the article names the song and the player, and the audio
       // address is only inside that frame. Asked of every frame rather than of that one - a page's
       // media living in a frame is not special to one platform - and best-effort, because a frame
@@ -521,7 +521,7 @@ export class EmbeddedBrowser {
       // whether the page never arrived or arrived and held nothing.
       log.info(`[inspect] ${address} · 标题「${data.title.slice(0, 40)}」· 视频 ${data.media.length} · 图片 ${data.images.length} · 响应里的媒体 ${videos.size}${article ? ' · 按文章处理' : ''}`)
       for (const found of data.media) videos.add(new URL(found, address).href)
-      return { title: data.title, url: address, videos: [...videos], images: data.images, posters: data.posters, article, thumbnail: data.thumbnail, userAgent: data.userAgent, cookies: await this.cookiesFor([address, ...relatedTo(address), ...videos, ...data.images]) }
+      return { player: data.player, title: data.title, url: address, videos: [...videos], images: data.images, posters: data.posters, article, thumbnail: data.thumbnail, userAgent: data.userAgent, cookies: await this.cookiesFor([address, ...relatedTo(address), ...videos, ...data.images]) }
     } finally { await page.settle().catch(() => {}); if (!window.isDestroyed()) window.destroy() }
   }
 }
@@ -653,5 +653,7 @@ const mediaScript = function (article: boolean) {
     const text = found ? (card!.innerText || '').split('\n').map(line => line.trim()).sort((a, b) => b.length - a.length)[0] : undefined
     posters.push({ poster: element.poster, link: /^[^?#]*?\/status\/\d+/.exec(found?.href || '')?.[0], text: text?.slice(0, 80) || undefined })
   }
-  return { title, images: [...images], media: [...media], posters, thumbnail: meta('og:image'), userAgent: navigator.userAgent }
+  const player = [...document.querySelectorAll<HTMLVideoElement>('video')].find(video => video.videoWidth && video.videoHeight)
+  return { player: player ? { width: player.videoWidth, height: player.videoHeight, duration: Number.isFinite(player.duration) ? player.duration : undefined } : undefined,
+    title, images: [...images], media: [...media], posters, thumbnail: meta('og:image'), userAgent: navigator.userAgent }
 }

@@ -71,7 +71,7 @@ export class Controller {
   // A job re-resolves the one post it was made from. 'single' says so: its URL can itself be a listing
   // the client would otherwise expand - a 哔哩哔哩 video that turned out to have 分P - and downloading
   // all of them under one job is not what the user picked.
-  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), (job, signal) => this.parser.parse(job.url, this.profile(), signal, { browserOnly: job.method === 'browser', single: job.itemId === '*' }), () => this.emit(), job => { if (this.store.data.settings.notifications && Notification.isSupported()) new Notification({ title: i18n.t('desktop:notificationCompleted'), body: job.title }).show() }, file => shell.trashItem(file))
+  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), (job, signal) => this.parser.parse(job.url, this.profile(), signal, { browserOnly: job.method === 'browser', single: job.single || job.itemId === '*' }), () => this.emit(), job => { if (this.store.data.settings.notifications && Notification.isSupported()) new Notification({ title: i18n.t('desktop:notificationCompleted'), body: job.title }).show() }, file => shell.trashItem(file))
   // Results parsed for the command line, apart from the window's own; the newest few are kept.
   private detached = new Map<string, ParsePlan>()
   private commandLine = new CommandLine(app.getPath('userData'), app.getAppPath(), app.isPackaged)

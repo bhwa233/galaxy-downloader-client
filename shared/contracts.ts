@@ -98,8 +98,9 @@ export type AccessWall = 'login' | 'membership' | 'purchase' | 'encrypted'
 export type JobStatus = 'queued' | 'running' | 'paused' | 'completed' | 'cancelled' | 'failed'
 // The parse-time description of the media travels with the job: once the result is gone, the task
 // detail is the only place left that can say who published it and when.
+// single survives splitting and restarts: a numeric file id still belongs to one work.
 export type Job = MediaStats & {
-  id: string; url: string; itemId: string; sourceUrl?: string; title: string; platform: string; method: 'direct' | 'browser';
+  id: string; url: string; itemId: string; single?: boolean; sourceUrl?: string; title: string; platform: string; method: 'direct' | 'browser';
   format: string; audioOnly: boolean; status: JobStatus; progress: number; speed?: number; eta?: number;
   kind?: MediaItem['kind']; thumbnail?: string; duration?: number; downloaded?: number; total?: number; completedAt?: string;
   speedLimit?: number; filenameTemplate?: Settings['filenameTemplate']; videoQuality?: Settings['videoQuality']; audioFormat?: Settings['audioFormat'];

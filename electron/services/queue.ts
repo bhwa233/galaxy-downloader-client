@@ -135,7 +135,7 @@ export class Queue {
       const id = randomUUID()
       added += 1; created.push(id)
       this.jobs.unshift({
-        id, url, itemId, coverOnly: coverOnly || undefined,
+        id, url, itemId, single: Boolean(plan.result.listing || source?.kind === 'engine' && source.request.info) || undefined, coverOnly: coverOnly || undefined,
         title: item.title, platform: plan.result.platform, method: plan.result.method,
         kind: coverOnly || item.kind === 'image' ? 'image' : audioOnly ? 'audio' : item.kind, thumbnail: item.thumbnail, duration: coverOnly ? undefined : item.duration,
         views: item.views, danmaku: item.danmaku, comments: item.comments, likes: item.likes, author: item.author, publishedAt: item.publishedAt,
@@ -231,7 +231,7 @@ export class Queue {
       if (this.pending(source.url, item.id, source.audioOnly, false, !source.audioOnly && source.subtitles && source.subtitleLanguage ? { subtitles: source.subtitles, subtitleLanguage: source.subtitleLanguage } : undefined, source.audioLanguage)) continue
       this.jobs.unshift({
         ...source,
-        id: randomUUID(), itemId: item.id, title: item.title,
+        id: randomUUID(), itemId: item.id, single: true, title: item.title,
         kind: item.kind === 'image' ? 'image' : source.audioOnly ? 'audio' : item.kind,
         thumbnail: item.thumbnail || source.thumbnail, duration: item.duration,
         // A picture is never an audio conversion and never carries a quality choice.

@@ -444,3 +444,55 @@ X 的视频与图片两种帖子形态都有了样本，链接由使用者提供
 用户在音轨列表修复后明确要求升版本并推送，`package.json` 由 0.4.3 升至 0.4.4。版本包含本轮可配置软 / 硬双语 MP4 字幕、固定粗体样式与长字幕分页、烧录重新合成说明和预计时间、多语言音频列表与所选语言回退约束、访客 YouTube 媒体 403 回退、B 站短链 / 合集修复及已获授权的 E2E 修复。
 
 对 0.4.4 重新运行 `pnpm lint`、`pnpm test`、`pnpm test:e2e --output=test-results/e2e-release-0.4.4`：Lint 通过，Vitest 65 项通过、1 项跳过；E2E 包含类型检查与构建，1 项通过（16.0 秒）。前文引擎打包与真实字幕 / 音轨验证仍适用，版本号调整没有更改依赖或 lockfile。未手工创建 Git tag 或发布安装包；现有 main 推送工作流会在验证及各平台构建成功后发布没有同名 tag 的新版本。
+
+## 2026-10-19：抖音报错排查（仅诊断，未修改业务代码）
+
+用户提供截图 `Invalid \escape: line 1 column 14770 (char 14769)`，并指定以下两个真实链接用于验证。先执行 `git pull --ff-only origin main`，确认 main 与远端一致，HEAD 为 `8495d2c`（0.4.4）。当前仓库已经平铺于项目根目录，实际 package.json 位于根目录；本机 node_modules 和引擎为 Windows 版本，使用原生 Windows Node 执行 Vite 构建并通过 Playwright `_electron` 启动真实 Windows Electron 44.4.5，使用隔离临时用户目录，未登录新账号、未导入 cookie 文件。
+
+| 样本 / 检查 | 实际结果 |
+| --- | --- |
+| `https://www.douyin.com/jingxuan?modal_id=7677554225094956401` | yt-dlp 报 Unsupported URL。当前 normalizeUrl 只改写 `/series?modal_id=…`，没有处理 `/jingxuan?modal_id=…`；内置浏览器回退加载约 106 秒仍未完成，探针主动取消。不能据此声称网站不可用 |
+| `https://www.douyin.com/user/MS4wLjABAAAAxLM_XApxKUnt8hT2VrUBx5G8Pqd26aa_w7XcOEP-B9g?enter_from=author_card&from_gid=7677554225094956401&from_tab_name=main&tab_name=discover&vid=7677554225094956401` | 作者「这是个令人疑惑的星球」，首屏读取 18 条作品，包含目标作品，hasMore=true |
+| 从主页仅选 `7677554225094956401` 下载 | 入队时 added=1；浏览器回退识别为两个媒体文件后拆出第二个任务。首任务显示 completed，第二个任务报「内容已变化，请重新解析」，并安排自动续传。验证实例关闭后未继续重试 |
+| 下载文件检查 | 86,861,508 字节 MP4，872.1 秒，1280×720，只有 HEVC 视频轨，**没有音轨**。FFmpeg 完整解码退出 0，但这只证明视频流可解码，不能将这个无声文件作为完整下载成功 |
+| 同页媒体响应复核 | 真实播放器分别请求 `media-video-hvc1/` 与 `media-audio-und-mp4a/`，两者服务器 MIME 都是 video/mp4。客户端将两条响应当成两个视频，没有配对合并 |
+| 界面与隔离 | renderer pageerror 为 0；下载只写入 `test-results/douyin-20261019/下载/中/`，未写入用户原有下载目录或修改原有任务 |
+
+确认的代码原因：
+
+- `electron/services/media.ts:145` 只对 `/series` 处理 modal_id，精选弹窗地址没有转成目标作品地址。
+- `electron/services/browser.ts:501` 将嗅探到的媒体统一收为 URL；`electron/services/parser.ts:305` 仅按 URL 扩展名判断音频，而此样本的音频 URL 以 `media-audio-und-mp4a/` 结尾、MIME 仍为 video/mp4，结果音视频分轨被当成两个独立视频。`collapseStreams` 也没有适用于这组抖音分轨的配对规则，因此只保存了无声的视频轨。
+- `electron/main/controller.ts:74` 仅在 itemId 为 `*` 时传 single=true。拆分任务变成 itemId=`2` 后再次解析，会跳过单作品缓存，调用 douyinVideo 适配器展开所属合集（本次 mix_id=`7674938999751837739`，4 条作品）。合集内使用作品 ID，没有 itemId=`2`，故 `electron/services/queue.ts:413` 抛出「内容已变化」。
+
+原截图的 Invalid \escape **尚未在这两个真实样本上复现**。本机 Windows Python 系统编码为 cp65001，真实中文目录下载没有发生 JSON 编码错误。另以生产 `engine/main.py` 入口做条件对照：同一份含 `D:\中\video.%(ext)s` 的 UTF-8 JSON，在 stdin 显式为 cp936 时返回 Invalid \escape，在 UTF-8 时返回正常 version 结果。这证明缺少显式管道编码是一个可触发同类异常的条件，尚不足以认定原截图一定由此产生；仍需原失败环境的任务日志或相同环境复现才能确诊。建议修复时显式统一 Python 标准输入 / 输出为 UTF-8，并同时处理上述已确认的链接路由、音视频配对与拆分任务解析问题。
+
+本轮未修改业务代码、未新增或修改任何 Vitest / Playwright / live 规格。临时探针执行后删除，验证实例和临时用户目录已清理；保留忽略目录 `test-results/douyin-20261019/` 中的 result.json、tracks.json、media.json、decode.json、diagnostic.log、截图、抽帧与无声 MP4 作为诊断证据。tracks.json 仅保留去签名的媒体路径及 MIME，不保存 cookie 或授权头。生产 Vite 构建通过；本轮没有重跑完整测试门禁，不将构建等同于抖音下载正确。
+
+## 2026-10-19：修复精选链接、分轨合并与拆分任务解析
+
+用户在上述诊断后明确要求先修复三处问题。本节替代前节对这三处问题的“仅诊断、未修复”状态；原截图的 Invalid \escape 不在本次三处修复中，仍不能据此声称已经解决。
+
+实现复用现有本地引擎：normalizeUrl 对数字 modal_id 的 `/jingxuan` 与 `/series` 一并转换；抖音单个视频的浏览器回退根据实测 CDN 路径识别 `media-video-hvc1/` / `media-audio-und-mp4a/`，按真实资产路径去除同一分轨的范围请求及 CDN 重复地址，仅在唯一一组音视频轨时构造同一作品的 formats。媒体 URL、cookie、请求头始终保留在主进程与 Python 管道中，不返回 renderer。Python 使用 yt-dlp 自带的 process_ie_result，沿用原有的格式选择、续传、FFmpeg 合并、字幕与封面后处理，没有另建下载或合并管线、没有增加依赖。轨道不足或存在多组无法唯一配对时明确失败，避免再次保存无声视频或合并其他作品。
+
+Job 新增可选 single 标记，列表任务入队及拆分时设置、随任务持久化；Controller 重新解析任务时使用该标记，并保留旧通配符任务的兼容判断。数字文件 ID 不再意味着必须展开所属合集。
+
+| 真实 Windows Electron 验证 | 结果 |
+| --- | --- |
+| 原精选地址 `https://www.douyin.com/jingxuan?modal_id=7677554225094956401` | 解析结果地址为 `/video/7677554225094956401`，显示既有的「农村青年录」合集 4 条，包含目标作品；不再报原精选地址 Unsupported URL |
+| 从精选结果仅选择目标作品 | added=1、只创建一个任务，引擎实际选择 browser-video+browser-audio，最终合并为一个 MP4 |
+| 暂停、重启与数字文件 ID | 下载开始后真实暂停并关闭实例；在隔离的持久化状态中将该任务的 itemId 从 `*` 改为 `1`，模拟拆分后的数字文件 ID，保留生产代码写入的 single=true。重启后清空了内存解析缓存，再通过正常 resume 命令完成真实网络续传；只解析单作品，没有展开合集，也没有“内容已变化”。这是持久化状态重放，不能描述成修复后仍自然拆出了多余任务 |
+| 用户提供的作者主页 | 首屏 18 条，包含目标作品；只选该作品下载，added=1，再产生一个完成任务，没有多余任务。两次选择合计恰好 2 个 completed 任务 |
+| 两份实际成品 | 每份 108,544,181 字节、872.145 秒、1280×720，均含 HEVC 视频轨与 AAC 音轨；与修复前只有视频轨的 86,861,508 字节文件不同 |
+| 运行隔离 | 临时用户目录、匿名站点会话，输出只在 `test-results/douyin-fix-20261019/下载/中/`；未改动用户已有任务及下载目录；renderer pageerror=0。该作品无平台字幕，两次任务均明确提示保留无字幕视频 |
+
+Windows 原生工具执行类型检查、lint、Vitest、构建及现有 Electron E2E；`pnpm build`（含 typecheck）、`pnpm lint`、`pnpm test` 通过，Vitest 65 通过 / 1 跳过；构建后执行同一 E2E 门禁 `pnpm exec playwright test --output=test-results/e2e-douyin-fix`，1 passed（35.9 秒）。同时用项目既有 PyInstaller 参数重新打包 Windows media-engine.exe，真实客户端验证使用该新引擎。没有新增或修改任何 Vitest / Playwright / live 规格。
+
+诊断证据保留于忽略目录 `test-results/douyin-fix-20261019/`：result.json、media.json、verification.json、first-decode.json、精选 / 主页 / 完成截图及两份真实 MP4。两份成品 SHA-256 完全一致（db5572d61488c78a506d320137a953ace0f2623aa5733dc72775c181a5e17368）；对其中一份做完整 FFmpeg 解码，退出 0、无解码错误。前 30 秒音频平均响度 -15.6 dB、最大响度 -3.6 dB，确认不是数字静音；结果见 verification.json。一次性探针脚本和临时用户目录在验证后删除；未升级版本、提交或发布安装包。
+
+## 2026-10-20：0.4.5 发布验证
+
+用户要求升小版本并提交发布，package.json 从 0.4.4 升至 0.4.5。本次包含上述抖音精选分享链接转换、浏览器音视频分轨合并，以及拆分任务重试 / 重启后的单作品解析修复；没有改动依赖、lockfile 或测试规格。
+
+在 0.4.5 上执行 `pnpm check`：typecheck、lint、构建通过，Vitest 65 通过 / 1 跳过。随后执行构建后的同一 Electron E2E 门禁 `pnpm exec playwright test --output=test-results/e2e-release-0.4.5`，1 passed（17.6 秒）。上一节真实抖音双轨下载、完整解码、暂停及重启验证仍适用；本次版本号调整没有改变这些业务实现。
+
+发布沿用 main 推送触发的 Electron client 工作流：验证通过后分别构建 Windows、macOS、Linux 安装包，再统一创建裸版本号 0.4.5 的 GitHub Release。由工作流创建 tag，避免提前创建同名 tag 导致自动发布被跳过。

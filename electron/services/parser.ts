@@ -289,6 +289,40 @@ export class Parser {
     try { media = await this.browser.inspect(url, signal) }
     catch (error) { signal.throwIfAborted(); log.warn('应用内浏览器打开页面失败', error); throw new LoginRequired(error instanceof Error ? error.message : i18n.t('errors:parse.signIn')) }
     signal.throwIfAborted()
+    // The installed yt-dlp extractor cannot use Douyin's page-signed API. For a single work's
+    // browser fallback, reconstruct its two observed tracks and reuse yt-dlp's format selection
+    // and FFmpeg merger. Both tracks report video/mp4, so MIME and file extensions are insufficient.
+    const requested = new URL(url)
+    const landed = new URL(media.url)
+    const douyinId = /(^|\.)douyin\.com$/.test(requested.hostname) && /^\/video\/(\d+)\/?$/.exec(requested.pathname)?.[1]
+    if (douyinId && landed.hostname === requested.hostname && landed.pathname === requested.pathname) {
+      const tracks = { video: new Map<string, { url: string; codec: string }>(), audio: new Map<string, { url: string; codec: string }>() }
+      for (const address of media.videos) {
+        const stream = new URL(address)
+        if (!/(^|\.)douyinvod\.com$/.test(stream.hostname)) continue
+        const track = /\/video\/tos\/.+\/media-(video-(hvc1|avc1|av01)|audio-[\w-]*mp4a)\/?$/.exec(stream.pathname)
+        if (!track) continue
+        const kind = track[1].startsWith('video-') ? 'video' : 'audio'
+        // A range retry or CDN hostname change is still the same asset. Keep the newest URL.
+        tracks[kind].set(track[0], { url: address, codec: track[2] || 'aac' })
+      }
+      if (tracks.video.size || tracks.audio.size) {
+        // Never pair unrelated preloaded works or claim a silent track is a complete video.
+        if (tracks.video.size !== 1 || tracks.audio.size !== 1) throw new Error(i18n.t('errors:parse.incompleteTracks'))
+        const video = [...tracks.video.values()][0]
+        const audio = [...tracks.audio.values()][0]
+        const request: EngineRequest = {
+          operation: 'extract', url, cookies: media.cookies, headers: { Referer: media.url, 'User-Agent': media.userAgent },
+          info: { id: douyinId, title: media.title, webpage_url: url, thumbnail: media.thumbnail, duration: media.player?.duration,
+            extractor: 'browser', extractor_key: 'Generic', formats: [
+              { format_id: 'browser-audio', url: audio.url, ext: 'm4a', vcodec: 'none', acodec: audio.codec },
+              { format_id: 'browser-video', url: video.url, ext: 'mp4', acodec: 'none',
+                vcodec: video.codec === 'hvc1' ? 'hevc' : video.codec === 'av01' ? 'av1' : 'h264', height: media.player?.height },
+            ] },
+        }
+        return this.fromEngine(await this.extract(request, signal), request, 'browser')
+      }
+    }
     // An article is read off the page and nowhere else: the engine has no extractor for one, so the
     // attempt would only cost a failure. Everything else is offered to it first, because a real
     // extractor beats a DOM sweep whenever there is one.

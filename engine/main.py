@@ -168,7 +168,10 @@ def main():
 
     with downloader() as ydl:
         try:
-            info = ydl.extract_info(request['url'], download=operation == 'download')
+            # Browser fallback can supply an identified work's separate tracks. yt-dlp still owns
+            # selection, authentication, retries, merging and every existing post-processor.
+            info = (ydl.process_ie_result(request['info'], download=operation == 'download')
+                    if request.get('info') else ydl.extract_info(request['url'], download=operation == 'download'))
         except DownloadError as error:
             host = urlsplit(request['url']).hostname or ''
             youtube = host == 'youtu.be' or host == 'youtube.com' or host.endswith('.youtube.com')
