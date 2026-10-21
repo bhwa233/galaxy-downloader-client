@@ -137,14 +137,11 @@ export function normalizeUrl(input: string): string {
   if (!candidate) throw new Error(i18n.t('errors:media.invalidUrl'))
   const url = new URL(candidate)
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(i18n.t('errors:media.unsupportedUrl'))
-  // 抖音 短剧 are the one platform that puts the work's id in the query rather than in the path: a
-  // shared episode lands on '/series?modal_id=<id>', where '/series' is the 短剧 index and nothing
-  // downstream would recognise it as one work. The id is an aweme id like any other, so the address
-  // is written the way the rest of 抖音 is written. Inferred from the shape, not measured against the
-  // API: if it is wrong the parse fails as it already did, so there is nothing to lose by it.
-  if (/(^|\.)douyin\.com$/.test(url.hostname) && /^\/series\/?$/.test(url.pathname)) {
+  // Both the short-drama catalogue and 精选 open a work in a modal. Its numeric id, rather
+  // than the surrounding feed's path, identifies the work the user shared.
+  if (/(^|\.)douyin\.com$/.test(url.hostname) && /^\/(series|jingxuan)\/?$/.test(url.pathname)) {
     const episode = url.searchParams.get('modal_id')
-    if (episode) return `https://www.douyin.com/video/${episode}`
+    if (episode && /^\d+$/.test(episode)) return `https://www.douyin.com/video/${episode}`
   }
   for (const name of [...url.searchParams.keys()]) if (name.startsWith('utm_')) url.searchParams.delete(name)
   for (const name of SHARED) url.searchParams.delete(name)

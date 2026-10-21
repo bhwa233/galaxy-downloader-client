@@ -1,4 +1,4 @@
-import { BrowserWindow, WebContentsView, session, type Rectangle, type Session, type WebContents } from 'electron'
+import { BrowserWindow, WebContentsView, net, session, type Rectangle, type Session, type WebContents } from 'electron'
 import type { ListingKind, Settings } from '../../shared/contracts'
 import type { Cookie } from './engine'
 import { acceptLanguageFor, chromeUserAgent, clientHints, fetchMetadata, relatedTo } from './identity'
@@ -14,7 +14,7 @@ import type { Fetcher, Fingerprint, ListingGroup, ProfileAdapter } from './listi
 // A player on the page as the page shows it: its poster, and - when it sits inside a card linking to a
 // post - that post's address and text. What a stream caught off the network is matched against.
 export type Poster = { poster: string; link?: string; text?: string }
-export type BrowserMedia = { verification?: boolean; manifests?: string[]; title: string; url: string; videos: string[]; images: string[]; posters: Poster[]; article: boolean; thumbnail?: string; cookies: Cookie[]; userAgent: string }
+export type BrowserMedia = { player?: { width: number; height: number; duration?: number }; verification?: boolean; manifests?: string[]; title: string; url: string; videos: string[]; images: string[]; posters: Poster[]; article: boolean; thumbnail?: string; cookies: Cookie[]; userAgent: string }
 // 'area' is where the window's preview dialog wants the page; 'host' is the window it is shown in,
 // left off while the preview is closed.
 type PreviewView = { view: WebContentsView; host?: BrowserWindow; area: Rectangle; fullscreen: boolean; onClosed?: () => void }
@@ -143,6 +143,30 @@ export class EmbeddedBrowser {
   // Every request the client makes outside a page goes through here, so that it leaves from the same
   // session - the same cookies, agent and headers - as the pages the user signed in on.
   async fetch(address: string, init?: RequestInit): Promise<Response> { return await this.session.fetch(address, init) }
+  // session.fetch loses the final URL and rejects manual redirects. ClientRequest exposes the
+  // Location in its redirect event, using the same partition without loading the destination page.
+  async redirect(address: string, method: 'HEAD' | 'GET', signal: AbortSignal): Promise<string | undefined> {
+    const bounded = AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+    bounded.throwIfAborted()
+    return await new Promise((resolve, reject) => {
+      const request = net.request({ url: address, method, session: this.session, useSessionCookies: true, redirect: 'manual' })
+      let settled = false
+      const finish = (target?: string, error?: unknown) => {
+        if (settled) return
+        settled = true
+        bounded.removeEventListener('abort', abort)
+        if (error) reject(error)
+        else resolve(target)
+        request.abort()
+      }
+      const abort = () => finish(undefined, bounded.reason)
+      bounded.addEventListener('abort', abort, { once: true })
+      request.on('error', error => finish(undefined, error))
+      request.on('redirect', (_status, _method, target) => finish(target))
+      request.on('response', () => finish())
+      request.end()
+    })
+  }
   // How many sites the partition holds cookies for. Cookies are not proof of a login - a visited page
   // hands out visitor cookies too - so this is reported as sites with a session, never as "signed in".
   async sites(): Promise<number> {
@@ -487,7 +511,7 @@ export class EmbeddedBrowser {
       await pause(signal, PACE.media)
       signal.throwIfAborted()
       const article = EmbeddedBrowser.ARTICLES.test(new URL(url).hostname)
-      const data = await page.evaluate<{ verification?: boolean; title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string }>(`(${mediaScript})(${article})`)
+      const data = await page.evaluate<{ player?: BrowserMedia['player']; verification?: boolean; title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string }>(`(${mediaScript})(${article})`)
       // A 微信公众号 music card is an iframe: the article names the song and the player, and the audio
       // address is only inside that frame. Asked of every frame rather than of that one - a page's
       // media living in a frame is not special to one platform - and best-effort, because a frame
@@ -499,7 +523,7 @@ export class EmbeddedBrowser {
       // whether the page never arrived or arrived and held nothing.
       log.info(`[inspect] ${address} · 标题「${data.title.slice(0, 40)}」· 视频 ${data.media.length} · 图片 ${data.images.length} · 响应里的媒体 ${videos.size}${article ? ' · 按文章处理' : ''}`)
       for (const found of data.media) videos.add(new URL(found, address).href)
-      return { verification: data.verification, manifests: [...new Set([...manifests, ...videos].filter(found => manifests.has(found) || /\.m3u8(?:[?#]|$)/i.test(found)))], title: data.title, url: address, videos: [...videos], images: data.images, posters: data.posters, article, thumbnail: data.thumbnail, userAgent: data.userAgent, cookies: await this.cookiesFor([address, ...relatedTo(address), ...videos, ...data.images]) }
+      return { player: data.player, verification: data.verification, manifests: [...new Set([...manifests, ...videos].filter(found => manifests.has(found) || /\.m3u8(?:[?#]|$)/i.test(found)))], title: data.title, url: address, videos: [...videos], images: data.images, posters: data.posters, article, thumbnail: data.thumbnail, userAgent: data.userAgent, cookies: await this.cookiesFor([address, ...relatedTo(address), ...videos, ...data.images]) }
     } finally { await page.settle().catch(() => {}); if (!window.isDestroyed()) window.destroy() }
   }
 }
@@ -638,5 +662,7 @@ const mediaScript = function (article: boolean) {
   }
   const verification = Boolean(document.querySelector('#challenge-running, #challenge-stage, script[src*="/cdn-cgi/challenge-platform/"]'))
     && /just a moment|请稍候|请稍等|security verification|checking your browser/i.test(document.title + ' ' + (document.body?.innerText || '').slice(0, 1500))
-  return { verification, title, images: [...images], media: [...media], posters, thumbnail: meta('og:image'), userAgent: navigator.userAgent }
+  const player = [...document.querySelectorAll<HTMLVideoElement>('video')].find(video => video.videoWidth && video.videoHeight)
+  return { verification, player: player ? { width: player.videoWidth, height: player.videoHeight, duration: Number.isFinite(player.duration) ? player.duration : undefined } : undefined,
+    title, images: [...images], media: [...media], posters, thumbnail: meta('og:image'), userAgent: navigator.userAgent }
 }

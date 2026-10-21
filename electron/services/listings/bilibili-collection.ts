@@ -139,9 +139,11 @@ export const bilibiliBangumi: ProfileAdapter = {
   },
 }
 
-// A video page with a 'p' already picked is that one part, not the list it came from: the user named it.
+// Bilibili adds p=1 to mobile share links even for videos with only one part.
+// Check those videos for a collection; higher part numbers still name one explicit part.
 function bvidOf(url: URL): string {
-  if (!/(^|\.)bilibili\.com$/.test(url.hostname) || url.searchParams.get('p')) return ''
+  const part = url.searchParams.get('p')
+  if (!/(^|\.)bilibili\.com$/.test(url.hostname) || (part && part !== '1')) return ''
   return /^\/video\/(BV[0-9A-Za-z]+)/.exec(url.pathname)?.[1] || ''
 }
 
@@ -161,6 +163,8 @@ export const bilibiliVideo: ProfileAdapter = {
     const author = data.owner?.name?.trim() || undefined
     const cover = https(data.pic || '') || undefined
     const parts = data.pages || []
+    // A real multi-part video with p=1 explicitly names its first part, so keep single-part extraction.
+    if (url.searchParams.get('p') && parts.length > 1) return undefined
     const season = data.ugc_season
     const groups: ListingGroup[] = []
     if (parts.length > 1) {

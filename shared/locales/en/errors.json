@@ -1,5 +1,6 @@
 {
   "parse": {
+    "incompleteTracks": "Couldn't read the complete video and audio. Parse the link again.",
     "xiaohongshuProfile": "Xiaohongshu profiles can't be parsed yet. Use a link to a single note instead.",
     "collectionEmpty": "Nothing in this collection can be downloaded: no episodes were read, or every episode must be bought separately",
     "listingCollectionEmpty": "Nothing was read from this collection. Open the sign-in window, sign in or complete verification, then try again.",

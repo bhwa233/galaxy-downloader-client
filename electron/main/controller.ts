@@ -56,7 +56,8 @@ export class Controller {
   private browser = new EmbeddedBrowser(() => this.store.data.settings.locale)
   // Both go through the browser's own session: an image or a direct file has to be fetched by the same
   // visitor, with the same cookies and headers, that the parse was made by.
-  private parser = new Parser(this.engine, this.browser, (url, init) => this.browser.fetch(url, init))
+  private parser = new Parser(this.engine, this.browser, (url, init) => this.browser.fetch(url, init),
+    (url, method, signal) => this.browser.redirect(url, method, signal))
   private browserSites = 0
   private profiles: LocalProfile[] = []
   private plan?: ParsePlan

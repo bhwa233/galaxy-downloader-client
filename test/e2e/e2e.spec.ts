@@ -14,7 +14,9 @@ test('real engine parses and downloads a local video, persists history, and isol
   const bytes = await readFile(fixture)
   const server = createServer((req, res) => { res.setHeader('content-type', 'video/mp4'); res.setHeader('content-length', bytes.length); if (req.method === 'HEAD') res.end(); else res.end(bytes) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  await writeFile(path.join(directory, 'state.json'), JSON.stringify({ version: 1, settings: { downloadDirectory: directory }, jobs: [] }))
+  // This flow verifies the downloaded bytes. Subtitle processing intentionally
+  // remuxes MP4, so keep it off for this fixture instead of using its default.
+  await writeFile(path.join(directory, 'state.json'), JSON.stringify({ version: 1, settings: { downloadDirectory: directory, subtitles: 'off' }, jobs: [] }))
   // Windows treats an empty value as set, which would start Electron as plain Node and never open a window.
   const env = { ...process.env, CLIENT_TEST_DATA: directory }
   delete env.ELECTRON_RUN_AS_NODE
@@ -38,7 +40,7 @@ test('real engine parses and downloads a local video, persists history, and isol
     const state = await page.evaluate(() => window.desktopApi.command('state:get', null))
     expect(state.ok).toBe(true)
     if (!state.ok) throw new Error(state.message)
-    expect(await readFile(state.state.jobs[0].files[0])).toEqual(bytes)
+    expect((await readFile(state.state.jobs[0].files[0])).equals(bytes)).toBe(true)
     await page.getByRole('button', { name: /^查看任务/ }).click()
     await expect(page.getByRole('heading', { name: '任务详情' })).toBeVisible()
     await page.screenshot({ path: 'test-results/task-detail.png', fullPage: true })
