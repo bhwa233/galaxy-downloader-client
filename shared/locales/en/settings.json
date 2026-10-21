@@ -31,7 +31,7 @@
     },
     "workMode": {
       "label": "Work mode",
-      "hint": "Download mode saves media. Editing mode converts, resizes or adds subtitles after downloading, keeping both the source and the output. Save to switch; existing tasks keep their configuration."
+      "hint": "Download mode saves original media and merges separate video and audio when needed, without conversion, subtitles or embedded artwork. Editing mode processes downloads using your format, downscaling, subtitle and artwork settings, keeping both the source and the output. Save to switch; existing tasks keep their configuration."
     }
   },
   "download": {
@@ -144,11 +144,6 @@
       "system": "Follow system",
       "light": "Light",
       "dark": "Dark"
-    },
-    "view": {
-      "label": "Default view",
-      "list": "List",
-      "grid": "Cover cards"
     },
     "resultView": {
       "label": "Parse result view",

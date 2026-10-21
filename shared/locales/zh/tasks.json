@@ -90,7 +90,6 @@
     "autoResume": "自动续传",
     "createdAt": "创建时间",
     "completedAt": "完成时间",
-    "workMode": "任务模式",
     "outputFormat": "输出格式",
     "outputResolution": "输出分辨率"
   },

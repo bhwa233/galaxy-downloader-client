@@ -44,12 +44,8 @@
     "newest": "最新添加",
     "oldest": "最早添加",
     "progress": "下载进度",
-    "title": "名称",
-    "workMode": "任务模式",
-    "allModes": "全部模式"
+    "title": "名称"
   },
-  "listView": "列表视图",
-  "gridView": "卡片视图",
   "empty": {
     "noMatchTitle": "没有匹配的任务",
     "noMatchDescription": "试试其他分类、筛选条件或关键词。",

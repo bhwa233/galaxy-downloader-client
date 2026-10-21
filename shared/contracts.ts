@@ -47,7 +47,6 @@ export const settingsSchema = z.object({
   // Whether successful parses are remembered on the new-task page. On by default; off stops recording
   // without deleting what is already there, which 清空 does.
   keepHistory: z.boolean().default(true),
-  view: z.enum(['list', 'grid']).default('list'),
   // 'auto' lets the parse result pick per content: covers for listings and pictures, rows for one video.
   resultView: z.enum(['auto', 'list', 'grid']).default('auto'),
   density: z.enum(['comfortable', 'compact']).default('comfortable'),

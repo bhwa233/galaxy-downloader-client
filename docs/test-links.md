@@ -542,3 +542,55 @@ Linux x64 的准备 / 打包流程改用 **BtbN n8.1.3-9-g29e619e767，autobuild
 合并及升版本后执行 `pnpm engine:dev`（固定 Linux FFmpeg 校验通过）、`pnpm check`（typecheck、lint、66 项单测及构建全部通过，无跳过），以及构建后的 Electron E2E 门禁 `pnpm exec playwright test --output=test-results/e2e-release-0.5.0`（1 passed，9.9 秒）。前一节真实 HLS 与剪辑验证仍适用，本轮没有重新下载整部用户样本。
 
 发布沿用 main 推送工作流：验证与 Windows / macOS / Linux 打包成功后创建 0.5.0 tag 和 Release；不预先手动创建同名 tag。
+
+## 2026-10-21：任务模式标签隐藏与左上角版本号
+
+按用户截图反馈，去掉任务标题旁的工作模式 Badge，列表和卡片共用同一处标题；左上角 Galaxy 名称旁显示 package.json 的当前版本 `v0.5.0`，随构建版本更新。模式筛选与任务详情继续可查看模式。
+
+`pnpm build`（包含 typecheck）、`pnpm lint`、`git diff --check` 通过。通过技能 driver 启动真实 Linux Electron，在隔离临时用户目录重放前次真实 Mux HLS 下载和 MDN flower 剪辑样本的完成记录，切换列表 / 卡片：两项均无下载或剪辑模式标签，标题和完成状态正常，侧栏显示 `Galaxy v0.5.0`，renderer pageerror 为 0。该轮只验证展示，没有重新联网下载；未新增或修改测试规格。截图保留于 `test-results/driver/no-mode-tag-list-version.png` 与 `no-mode-tag-grid-version.png`，验证实例已关闭、临时用户目录已删除。
+
+## 2026-10-21：任务仅保留列表视图
+
+按用户要求，任务页固定使用列表，移除任务卡片分支、列表 / 卡片切换入口、设置中的默认任务视图及对应持久化字段。旧状态中 `view=grid` 经现有 settingsSchema 解析时自动忽略，解析结果的 `resultView` 配置仍独立保留。
+
+`pnpm build`（含 typecheck）、`pnpm lint`、`pnpm test`（66 passed，无跳过）与 `git diff --check` 通过。真实 Linux Electron 使用隔离临时用户目录，预置旧 `view=grid` 和此前真实 HLS / flower 的完成记录；全部任务和已完成页均显示两条列表，切换按钮数量为 0，外观设置不再包含默认任务视图，仍包含解析结果视图与列表密度；renderer pageerror=0。截图：`test-results/driver/tasks-list-only.png`、`tasks-list-only-settings.png`。本次未重新联网下载，实例关闭后临时目录已删除。
+
+现有 Electron E2E `pnpm exec playwright test --output=test-results/e2e-list-only` 在 `test/e2e/e2e.spec.ts:50` 等待已删除的“卡片视图”按钮时超时失败；此前本地媒体解析、下载、文件内容、详情日志步骤已执行。此失败与本次移除入口的产品要求冲突，遵守 AGENTS.md 原型阶段不得修改测试规格的规则，未新增或修改测试；不能声称整套 E2E 通过。
+
+## 2026-10-21：任务状态固定在右上角
+
+任务完成、暂停及其他状态从标题后移到条目右侧操作列的顶部，操作按钮位于该列底部；长标题在内容列截断，不挤占状态位置。
+
+`pnpm build`（含 typecheck）、`pnpm lint`、`git diff --check` 通过。真实 Electron 使用隔离目录展示完成短标题与暂停超长标题，两项状态距右边均为 13 px、距上边均为 11 px，与标题顶部对齐，任务无水平溢出，renderer pageerror=0。截图：`test-results/driver/task-status-top-right.png`；任务数据重放先前真实下载样本，非本轮重新下载。临时实例及目录已清理，用户开发版继续运行，Vite 日志确认 Tasks.tsx 已热更新。未修改任何测试规格，未重跑上节已知依赖旧卡片入口的 E2E。
+
+## 2026-10-21：设置页右上角保存与最小高度
+
+保存按钮与保存反馈移入设置卡片标题右侧，移除底部保存栏。表单、卡片、内容区使用弹性布局，在内容较少时填满主区域的可用高度，长内容自然增高并由页面滚动。
+
+`pnpm build`（含 typecheck）、`pnpm lint`、`git diff --check` 通过；真实 Linux Electron 隔离目录验证：1200×950 的外观页卡片底部在 y=926（保留 24 px 页面内边距），保存按钮位于标题右侧；修改列表密度并点击右上角保存，主进程状态确认为 compact，显示“设置已保存”，renderer pageerror=0。1000×700 的剪辑页内容高度 904 px、可视区 636 px，能滚动 268 px 至底部，卡片底部保留 24 px 间距，无水平溢出。截图与数据：`test-results/settings-layout/appearance.png`、`editing-bottom.png`、`summary.json`。验证实例与临时目录已清理；用户开发版继续运行且已热更新。未修改测试规格。
+
+## 2026-10-21：模式名称仅在设置显示
+
+保留“下载模式 / 剪辑模式”名称。移除顶栏模式 Badge、侧栏模式副标题、任务模式筛选和任务详情中的模式字段；左上角保留 Galaxy 与版本号，任务保持统一列表。设置里说明下载模式不转码、不加字幕或嵌入封面，剪辑模式按配置加工并保留原片和成品，保存后仅影响新任务。
+
+`pnpm build`（含 typecheck）、`pnpm lint`、`git diff --check` 通过。真实 Linux Electron 隔离目录验证：剪辑模式任务页、任务详情和切回下载模式后的任务页均无模式名称 / 模式筛选，版本号仍显示；设置内两种模式名称及说明正常，实际切换并保存后主进程 workMode=download，renderer pageerror=0。截图和报告：`test-results/mode-displays/tasks.png`、`detail.png`、`settings.png`、`summary.json`。首次探针在设置懒加载完成前读取了页面文本，导致说明文本检查误报；改为等待“工作模式”控件就绪后重验通过，未因此修改业务实现。临时实例与目录已清理，用户开发版继续运行并已更新。未修改测试规格；未重跑已知依赖旧卡片入口的 E2E。
+
+## 2026-10-21：B 站番剧时长与大小估算修复
+
+用户截图链接 `https://www.bilibili.com/bangumi/play/ss28747`，第一集“凡人风起天南1重制版”显示 334:12:40、约 773.8 GB。真实季度接口第一集 duration=1203160（毫秒），现有 bilibili-bangumi 适配器直接赋给统一按秒定义的 ListingEntry.duration，导致时长和按码率估算的体积同时放大 1000 倍。播放器接口 timelength=1203198（毫秒）独立佐证实际约 20 分钟；两处片长相差约 0.038 秒属于上游列表 / 播放元数据差异。
+
+只在 bilibili-bangumi 的 PGC 入口执行毫秒转秒，保留小数与未知时长；没有按数值大小猜测单位，也没有改变普通投稿、合集、分P 或 yt-dlp 原本按秒提供的时长。结果页继续用原有真实码率与音视频合并逻辑估算体积，并保留“约”标识。
+
+验证：
+
+- 同一运行中的真实客户端 CLI 在修复前后解析原链接，首集 duration 从 1203160 变为 1203.16，前 100 集均正确换算。原会话默认 4K 的合并码率 5524.304 kbit/s，大小估算由 830827700080 字节（约 773.8 GiB）恢复为 830827700 字节（界面约 792.3 MB），与原引擎同画质 filesize 830808535 字节接近；这里是元数据对比，没有整集下载。
+- 隔离临时用户目录运行真实 Linux Electron，在线解析同一站点。匿名会话可用画质不同：首集卡片和列表均显示 20:03、约 69.4 MB；短片“星海飞驰16”duration=25.2，卡片显示 0:25、约 1.5 MB，说明没有使用长度阈值误伤短片。renderer pageerror=0。
+- `pnpm check` 通过：类型检查、Lint、66 项单测（10 文件、无跳过）与生产构建全部通过；`git diff --check` 通过。没有新增或修改 Vitest / Playwright / live 规格；未重复运行此前已知等待旧卡片按钮失败的 E2E。
+
+证据位于忽略目录 `test-results/bangumi-metadata-20261021/`：metadata-comparison.json、client.json、corrected-grid.png、corrected-list.png、check.log。两次早期临时 UI 探针分别使用了错误的卡片容器选择器与旧列表按钮名称，修正探针后重验通过；未因探针问题改动业务代码。临时实例、用户目录与含签名播放地址的接口原始响应已删除，保留报告只含公开条目、时长和画质数值。用户开发实例继续运行并已重新加载修复；已有结果需要重新解析以获取正确元数据。
+
+## 2026-10-21：0.5.1 本地提交验证
+
+用户要求 commit 并升小版本，package.json 从 0.5.0 升至 0.5.1。本次提交包含前述任务仅列表显示、状态固定右上角、模式名称仅在设置显示及区别说明、左上角版本号、设置右上角保存与最小铺满页面，以及 B 站番剧毫秒时长转换和连带体积估算修复。依赖及 lockfile 未变，未修改测试规格。
+
+业务变更后的 `pnpm check` 已通过（typecheck、Lint、66 项单测与构建），实际客户端及 B 站验证见前文。升版本后重新运行 `pnpm build`（含 typecheck）通过，`git diff --check` 通过。既有 E2E 仍在等待已按产品要求移除的卡片按钮，此次没有重跑或修改该测试，不宣称 E2E 全部通过。本次仅本地提交，未推送、未创建 tag。

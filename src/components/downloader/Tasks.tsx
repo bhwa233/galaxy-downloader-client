@@ -5,7 +5,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -14,7 +13,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle }
 import { Progress } from '@/components/ui/progress'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { MediaCover, MediaStatsRow, cardOutline } from './MediaCard'
+import { MediaCover, MediaStatsRow } from './MediaCard'
 import { fixableBySignIn, wallTitle } from './walls'
 import { cn, formatBytes, formatDate, formatDuration, platformLabel } from '@/lib/utils'
 import { i18n } from '../../../shared/i18n'
@@ -144,39 +143,18 @@ function Metrics({ job }: { job: Job }) {
     {job.status === 'running' && job.stage && job.stage !== 'download' && <span>{job.processingEta === undefined ? t('estimating') : t('estimatedRemaining', { time: formatDuration(job.processingEta) })}</span>}
   </div>
 }
-export function TaskCard({ job, send, select, view = 'list', density = 'comfortable' }: { job: Job; send: Send; select: () => void; view?: Settings['view']; density?: Settings['density'] }) {
+export function TaskCard({ job, send, select, density = 'comfortable' }: { job: Job; send: Send; select: () => void; density?: Settings['density'] }) {
   const { t } = useTranslation(['tasks', 'common'])
   const compact = density === 'compact'
-  const heading = <div className="flex min-w-0 items-center gap-2">
-    <button className="min-w-0 truncate text-left text-sm font-medium" onClick={select} title={job.title}>{job.title}</button>
-    <Badge variant="outline">{t(`common:workModes.${job.workMode || 'download'}`)}</Badge>
-    <span className={cn('shrink-0 text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>
-  </div>
   // The batch is named on every task of it rather than as a header above a group: the list is sorted
   // and filtered by the user, so tasks of one batch are not necessarily next to each other.
   const subtitle = <>{platformLabel(job.platform)} · {localTime(job.createdAt)}{job.batchId ? ` · ${t('batchLabel', { title: job.batchTitle || t('thisParse') })}` : ''}</>
-  // Wrapped once around whichever shape the view asks for, so a right-click anywhere on the task opens
-  // the same menu.
-  if (view === 'grid') return <JobMenu job={job} send={send}><Card className={cn('gap-3', cardOutline(), compact ? 'p-3' : 'p-4')}>
-    <CardContent className="flex flex-col gap-3 p-0">
-      <button className="aspect-video w-full overflow-hidden rounded-md" onClick={select} aria-label={t('viewTask', { title: job.title })}><Cover job={job} /></button>
-      {heading}
-      <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
-      {/* A finished task has nothing left to measure; a full bar on every row of the list was noise. */}
-      {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
-      <Metrics job={job} />
-      {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
-      {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
-      {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
-      <div className="flex justify-end gap-1"><Actions job={job} send={send} /></div>
-    </CardContent>
-  </Card></JobMenu>
-  return <JobMenu job={job} send={send}><Item variant="outline" size={compact ? 'sm' : 'default'}>
+  return <JobMenu job={job} send={send}><Item variant="outline" size={compact ? 'sm' : 'default'} className="flex-nowrap items-stretch">
     <ItemMedia variant="image" className={compact ? 'size-12' : 'h-14 w-20'}>
       <button className="size-full" onClick={select} aria-label={t('viewTask', { title: job.title })}><Cover job={job} /></button>
     </ItemMedia>
-    <ItemContent className="gap-1.5">
-      <ItemTitle className="w-full">{heading}</ItemTitle>
+    <ItemContent className="min-w-0 gap-1.5">
+      <ItemTitle className="w-full min-w-0"><button className="min-w-0 truncate text-left" onClick={select} title={job.title}>{job.title}</button></ItemTitle>
       <ItemDescription>{subtitle}</ItemDescription>
       {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
       <Metrics job={job} />
@@ -184,7 +162,10 @@ export function TaskCard({ job, send, select, view = 'list', density = 'comforta
       {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
     </ItemContent>
-    <ItemActions><Actions job={job} send={send} /></ItemActions>
+    <ItemActions className="shrink-0 flex-col items-end justify-between">
+      <span className={cn('text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>
+      <div className="flex items-center gap-1"><Actions job={job} send={send} /></div>
+    </ItemActions>
   </Item></JobMenu>
 }
 // What a failure was and what to do about it. A permission wall is known for certain, from the engine's
@@ -281,7 +262,6 @@ export function TaskInspector({ job, send, close, error }: { job?: Job; send: Se
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm [&_dt]:text-muted-foreground">
                 <dt>{t('fields.progress')}</dt><dd className="tabular-nums">{Math.round((job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100)}%</dd>
                 <dt>{t('fields.platformKind')}</dt><dd>{platformLabel(job.platform)} / {t(`common:kinds.${job.kind || 'video'}`)}</dd>
-                <dt>{t('fields.workMode')}</dt><dd>{t(`common:workModes.${job.workMode || 'download'}`)}</dd>
                 {job.workMode === 'edit' && job.kind === 'video' && <>
                   <dt>{t('fields.outputFormat')}</dt><dd>{job.outputFormat && job.outputFormat !== 'original' ? job.outputFormat.toUpperCase() : t('files.originalFormat')}</dd>
                   <dt>{t('fields.outputResolution')}</dt><dd>{job.outputResolution && job.outputResolution !== 'original' ? t('resolutionLimit', { value: job.outputResolution }) : t('files.originalResolution')}</dd>

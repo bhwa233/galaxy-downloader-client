@@ -132,7 +132,9 @@ export const bilibiliBangumi: ProfileAdapter = {
       const id = episode.id || episode.aid
       if (!id) return undefined
       const cover = https(episode.cover || result?.cover || '')
-      return { id: String(id), url: `https://www.bilibili.com/bangumi/play/ep${id}`, title: episode.long_title?.trim() || episode.title?.trim() || `第 ${(page - 1) * PAGE + index + 1} 集`, thumbnail: cover || undefined, kind: 'video', duration: count(episode.duration), publishedAt: count(episode.pub_time) }
+      // PGC episodes report milliseconds; ListingEntry uses seconds, like UGC and part listings.
+      const milliseconds = count(episode.duration)
+      return { id: String(id), url: `https://www.bilibili.com/bangumi/play/ep${id}`, title: episode.long_title?.trim() || episode.title?.trim() || `第 ${(page - 1) * PAGE + index + 1} 集`, thumbnail: cover || undefined, kind: 'video', duration: milliseconds === undefined ? undefined : milliseconds / 1000, publishedAt: count(episode.pub_time) }
     }).filter((entry): entry is ListingEntry => Boolean(entry))
     const total = count(result?.total) ?? episodes.length
     return { title: result?.title?.trim() || i18n.t('errors:bilibili.collection'), kind: 'collection', groups: [{ id: 'collection', title: result?.title?.trim() || i18n.t('errors:bilibili.collection'), directory: result?.title?.trim(), entries, pagination: { index: page, size: PAGE, total, hasMore: page * PAGE < total } }] }

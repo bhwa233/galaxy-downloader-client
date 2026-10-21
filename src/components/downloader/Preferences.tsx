@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderOpen, RefreshCw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSet, FieldLegend, FieldTitle } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
@@ -32,16 +32,20 @@ export function Preferences({ state, send }: { state: ClientState; send: Send })
     <FieldContentLabel id={`toggle-${key}`} label={label} hint={hint} />
     <Switch aria-labelledby={`toggle-${key}`} checked={draft[key]} onCheckedChange={checked => patch({ [key]: checked })} />
   </Field>
-  return <form onSubmit={event => { event.preventDefault(); setSaving(true); void send('settings:save', draft).then(ok => setSaved(Boolean(ok))).finally(() => setSaving(false)) }}>
-    <Card>
+  return <form className="flex flex-1 flex-col" onSubmit={event => { event.preventDefault(); setSaving(true); void send('settings:save', draft).then(ok => setSaved(Boolean(ok))).finally(() => setSaving(false)) }}>
+    <Card className="flex-1">
       <CardHeader>
         <CardTitle>{t('title')}</CardTitle>
         <CardDescription>{t('description')}</CardDescription>
+        <CardAction className="flex items-center gap-3">
+          <span role="status" className="text-sm text-muted-foreground">{saved ? t('saved') : ''}</span>
+          <Button type="submit" disabled={saving}><Save />{saving ? t('saving') : t('save')}</Button>
+        </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         {/* A side menu read like the app's own sidebar: rows of the same height, the open one filled
             rather than underlined, and a rule between it and the fields it switches. */}
-        <Tabs orientation="vertical" value={section} onValueChange={value => setSection(value as Section)} className="gap-6">
+        <Tabs orientation="vertical" value={section} onValueChange={value => setSection(value as Section)} className="flex-1 gap-6">
           <TabsList className="w-44 shrink-0 items-stretch gap-1 self-stretch rounded-none border-r bg-transparent p-0 pr-4">{sections.filter(id => id !== 'editing' || draft.workMode === 'edit').map(id =>
             <TabsTrigger key={id} value={id} className="h-9 flex-none justify-start rounded-md border-0 px-3 font-normal hover:bg-muted/60 data-active:bg-muted data-active:font-medium dark:data-active:border-transparent dark:data-active:bg-muted group-data-[variant=default]/tabs-list:data-active:shadow-none">{t(`sections.${id}`)}</TabsTrigger>)}
           </TabsList>
@@ -136,7 +140,6 @@ export function Preferences({ state, send }: { state: ClientState; send: Send })
                 read can still find the way back. */}
             <Choice label="语言 · Language" value={state.settings.locale} onChange={value => { patch({ locale: value as Settings['locale'] }); void send('settings:save', { ...state.settings, locale: value as Settings['locale'] }) }} options={[{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]} />
             <Choice label={t('appearance.theme.label')} value={draft.theme} onChange={value => patch({ theme: value as Settings['theme'] })} options={[{ value: 'system', label: t('appearance.theme.system') }, { value: 'light', label: t('appearance.theme.light') }, { value: 'dark', label: t('appearance.theme.dark') }]} />
-            <Choice label={t('appearance.view.label')} value={draft.view} onChange={value => patch({ view: value as Settings['view'] })} options={[{ value: 'list', label: t('appearance.view.list') }, { value: 'grid', label: t('appearance.view.grid') }]} />
             <Choice label={t('appearance.resultView.label')} value={draft.resultView} onChange={value => patch({ resultView: value as Settings['resultView'] })} options={[{ value: 'auto', label: t('appearance.resultView.auto') }, { value: 'list', label: t('appearance.resultView.list') }, { value: 'grid', label: t('appearance.resultView.grid') }]} />
             <Choice label={t('appearance.density.label')} value={draft.density} onChange={value => patch({ density: value as Settings['density'] })} options={[{ value: 'comfortable', label: t('appearance.density.comfortable') }, { value: 'compact', label: t('appearance.density.compact') }]} />
           </FieldGroup></TabsContent>
@@ -178,10 +181,6 @@ export function Preferences({ state, send }: { state: ClientState; send: Send })
           </FieldGroup></TabsContent>
         </Tabs>
       </CardContent>
-      <CardFooter className="gap-3 border-t">
-        <Button type="submit" disabled={saving}><Save />{saving ? t('saving') : t('save')}</Button>
-        <span role="status" className="text-sm text-muted-foreground">{saved ? t('saved') : ''}</span>
-      </CardFooter>
     </Card>
   </form>
 }

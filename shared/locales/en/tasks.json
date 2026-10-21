@@ -90,7 +90,6 @@
     "autoResume": "Auto resumes",
     "createdAt": "Created",
     "completedAt": "Completed",
-    "workMode": "Task mode",
     "outputFormat": "Output format",
     "outputResolution": "Output resolution"
   },

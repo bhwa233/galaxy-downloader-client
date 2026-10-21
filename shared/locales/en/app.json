@@ -46,12 +46,8 @@
     "newest": "Newest first",
     "oldest": "Oldest first",
     "progress": "Progress",
-    "title": "Name",
-    "workMode": "Task mode",
-    "allModes": "All modes"
+    "title": "Name"
   },
-  "listView": "List view",
-  "gridView": "Card view",
   "empty": {
     "noMatchTitle": "No matching tasks",
     "noMatchDescription": "Try another category, filter or keyword.",
