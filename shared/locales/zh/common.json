@@ -29,7 +29,7 @@
   },
   "statuses": {
     "queued": "等待中",
-    "running": "下载中",
+    "running": "进行中",
     "paused": "已暂停",
     "completed": "已完成",
     "cancelled": "已取消",
@@ -43,5 +43,9 @@
   },
   "verifyTitle": "需要完成验证",
   "openLogin": "打开登录窗口",
-  "openVerify": "打开验证页面"
+  "openVerify": "打开验证页面",
+  "workModes": {
+    "download": "下载模式",
+    "edit": "剪辑模式"
+  }
 }

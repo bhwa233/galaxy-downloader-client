@@ -1,13 +1,14 @@
 {
   "title": "Settings",
-  "description": "Settings are stored on this computer. Download options apply when a task is created or resumed.",
+  "description": "Settings stay on this device. Mode and processing options apply to new tasks only.",
   "sections": {
     "general": "General",
     "download": "Download",
     "files": "Files & media",
     "browser": "Browser",
     "appearance": "Appearance",
-    "tools": "Tools & updates"
+    "tools": "Tools & updates",
+    "editing": "Editing & output"
   },
   "general": {
     "saveLocation": "Save location",
@@ -27,6 +28,10 @@
     "keepHistory": {
       "label": "Keep parse history",
       "hint": "Remember successfully parsed links on the new task page so they can be parsed again; stored on this computer only. When off, nothing new is recorded; existing entries can be cleared from the new task page."
+    },
+    "workMode": {
+      "label": "Work mode",
+      "hint": "Download mode saves media. Editing mode converts, resizes or adds subtitles after downloading, keeping both the source and the output. Save to switch; existing tasks keep their configuration."
     }
   },
   "download": {
@@ -106,7 +111,9 @@
     "subtitles": {
       "legend": "Subtitles",
       "label": "Subtitles",
-      "embed": "Embed in video file",
+      "embed": "Soft subtitles (switchable)",
+      "burn": "Hard subtitles (permanent)",
+      "languageOptions": { "en": "English", "zh": "Chinese", "bilingual": "Chinese + English" },
       "file": "Save as separate subtitle file",
       "off": "Don't download subtitles",
       "languages": "Subtitle languages",
@@ -117,7 +124,7 @@
         "hint": "Fall back to the platform's speech-recognition subtitles when a language has no human-made ones."
       },
       "normalize": { "label": "Normalize overlapping subtitle cues", "hint": "Join YouTube rolling caption fragments so one language does not render twice at once." },
-      "hint": "Only works on platforms that provide subtitle tracks; best supported on YouTube and on Bilibili when signed in. When embedded in MP4, subtitles are converted to mov_text, which some players may not show."
+      "hint": "Uses captions provided by the platform, including platform-generated captions when enabled. No client-side translation. Embedded or burned captions affect only the output, leaving the source intact."
     }
   },
   "browser": {
@@ -183,5 +190,13 @@
   },
   "saving": "Saving…",
   "save": "Save settings",
-  "saved": "Settings saved"
+  "saved": "Settings saved",
+  "editing": {
+    "hint": "Both source and output are kept. Output filenames include .edited and never overwrite the source.",
+    "outputFormat": "Video output format",
+    "originalFormat": "Keep original format",
+    "outputResolution": "Output resolution",
+    "originalResolution": "Keep original resolution",
+    "resolutionHint": "Resolution only decreases, capped by the shorter edge. Aspect ratio is preserved without stretching or cropping."
+  }
 }

@@ -5,7 +5,7 @@ import type { Job, MediaItem, Settings } from '../../shared/contracts'
 import { Store } from './store'
 import { asAccessDenied } from './access'
 import { LoginRequired } from './login'
-import { Engine, redact } from './engine'
+import { Engine, redact, type EngineEvent, type EngineRequest } from './engine'
 import { downloadHttp, type Fetcher } from './http-download'
 import { checkCover } from './cover'
 import { logger } from './log'
@@ -13,6 +13,7 @@ import type { ParsePlan } from './parser'
 import { i18n } from '../../shared/i18n'
 
 const log = logger('queue')
+type ProcessingOptions = Partial<Pick<Settings, 'subtitles' | 'subtitleLanguage' | 'outputFormat' | 'outputResolution' | 'audioFormat'>> & { audioLanguage?: string }
 
 // Adapted from src/utils/string-utils.ts without the remote image proxy imports.
 // Cut by bytes, not characters: filesystems cap a name at 255 bytes and a Chinese character is three
@@ -61,9 +62,9 @@ export function directoryFor(settings: Settings, plan: ParsePlan, item: MediaIte
 export function thumbnailsFor(settings: Settings, kind: MediaItem['kind'], audioOnly: boolean): Pick<Job, 'saveThumbnail' | 'embedThumbnail' | 'thumbnailFormat'> {
   if (kind === 'image') return { saveThumbnail: false, embedThumbnail: false }
   return {
-    saveThumbnail: settings.saveThumbnail,
-    embedThumbnail: audioOnly ? settings.embedThumbnailInAudio : settings.embedThumbnailInVideo,
-    thumbnailFormat: settings.thumbnailFormat,
+    saveThumbnail: settings.workMode === 'edit' ? settings.editSaveThumbnail : settings.saveThumbnail,
+    embedThumbnail: settings.workMode === 'edit' && (audioOnly ? settings.embedThumbnailInAudio : settings.embedThumbnailInVideo),
+    thumbnailFormat: settings.workMode === 'edit' ? settings.thumbnailFormat : 'original',
   }
 }
 
@@ -102,15 +103,18 @@ export class Queue {
   // the same address and the same item, and only this tells the two apart. The files cannot collide -
   // every stem carries eight characters of the job's own id.
   // A cover is a third thing to want of the same post, told apart the same way.
-  private pending(url: string, itemId: string, audioOnly: boolean, coverOnly = false): boolean {
-    return this.jobs.some(job => job.url === url && job.itemId === itemId && job.audioOnly === audioOnly && Boolean(job.coverOnly) === coverOnly && ['queued', 'running', 'paused'].includes(job.status))
+  private pending(url: string, itemId: string, audioOnly: boolean, coverOnly = false, subtitleOptions?: Pick<Settings, 'subtitles' | 'subtitleLanguage'>, audioLanguage?: string, processing?: Pick<Job, 'workMode' | 'outputFormat' | 'outputResolution' | 'audioFormat'>): boolean {
+    return this.jobs.some(job => job.url === url && job.itemId === itemId && job.audioOnly === audioOnly && Boolean(job.coverOnly) === coverOnly && ['queued', 'running', 'paused'].includes(job.status)
+      && (!audioOnly || job.audioLanguage === audioLanguage)
+      && (!processing || job.workMode === processing.workMode && job.outputFormat === processing.outputFormat && job.outputResolution === processing.outputResolution && job.audioFormat === processing.audioFormat)
+      && (!subtitleOptions || job.subtitles === subtitleOptions.subtitles && (job.subtitles === 'off' || job.subtitleLanguage === subtitleOptions.subtitleLanguage)))
   }
 
   // One call, one batch. The batch is only worth naming when it holds more than one task: a single
   // download has nothing to be grouped with and a header above it would be noise.
   // Returns how many tasks it created - anything already on its way is not created again - and puts
   // their ids in 'created' for a caller that wants to follow them.
-  enqueue(plan: ParsePlan, items: MediaItem[], format: string, audioOnly: boolean, coverOnly = false, created: string[] = []): number {
+  enqueue(plan: ParsePlan, items: MediaItem[], format: string, audioOnly: boolean, coverOnly = false, created: string[] = [], subtitleOptions: ProcessingOptions = {}): number {
     const settings = this.store.data.settings
     // Only what has a cover to save, when covers are all that is wanted.
     const wanted = coverOnly ? items.filter(item => item.thumbnail && /^https?:\/\//i.test(item.thumbnail)) : items
@@ -126,17 +130,24 @@ export class Queue {
       const url = plan.result.listing && source?.kind === 'engine' ? source.request.url! : plan.result.url
       const itemId = plan.result.listing ? '*' : item.id
       const wantsAudio = !coverOnly && item.kind !== 'image' && audioOnly
-      if (this.pending(url, itemId, wantsAudio, coverOnly)) continue
+      const editing = settings.workMode === 'edit' && !coverOnly && item.kind !== 'image'
+      const processing = { workMode: settings.workMode, outputFormat: editing && !wantsAudio ? subtitleOptions.outputFormat ?? settings.outputFormat : 'original', outputResolution: editing && !wantsAudio ? subtitleOptions.outputResolution ?? settings.outputResolution : 'original', audioFormat: editing && wantsAudio ? subtitleOptions.audioFormat ?? settings.audioFormat : 'best' } as const
+      const subtitles = !editing || wantsAudio ? 'off' : subtitleOptions.subtitles ?? settings.subtitles
+      const subtitleLanguage = subtitleOptions.subtitleLanguage ?? settings.subtitleLanguage
+      const audioLanguage = wantsAudio ? subtitleOptions.audioLanguage : undefined
+      if (this.pending(url, itemId, wantsAudio, coverOnly, wantsAudio || coverOnly || item.kind === 'image' ? undefined : { subtitles, subtitleLanguage }, audioLanguage, processing)) continue
       const id = randomUUID()
       added += 1; created.push(id)
       this.jobs.unshift({
-        id, url, itemId, coverOnly: coverOnly || undefined,
+        id, url, itemId, single: Boolean(plan.result.listing || source?.kind === 'engine' && source.request.info) || undefined, coverOnly: coverOnly || undefined,
         title: item.title, platform: plan.result.platform, method: plan.result.method,
         kind: coverOnly || item.kind === 'image' ? 'image' : audioOnly ? 'audio' : item.kind, thumbnail: item.thumbnail, duration: coverOnly ? undefined : item.duration,
         views: item.views, danmaku: item.danmaku, comments: item.comments, likes: item.likes, author: item.author, publishedAt: item.publishedAt,
         format: coverOnly || item.kind === 'image' ? 'best' : format, audioOnly: wantsAudio,
-        speedLimit: settings.taskSpeedLimit, filenameTemplate: settings.filenameTemplate, videoQuality: settings.videoQuality, audioFormat: settings.audioFormat,
-        subtitles: settings.subtitles, subtitleLanguages: settings.subtitleLanguages || SUBTITLE_LANGUAGES[settings.locale], subtitleAutoGenerated: settings.subtitleAutoGenerated, subtitleNormalizeOverlaps: settings.subtitleNormalizeOverlaps,
+        speedLimit: settings.taskSpeedLimit, filenameTemplate: settings.filenameTemplate, videoQuality: settings.workMode === 'edit' ? settings.editVideoQuality : settings.videoQuality, ...processing,
+        subtitles, subtitleLanguage,
+        audioLanguage,
+        subtitleLanguages: settings.subtitleLanguages || SUBTITLE_LANGUAGES[settings.locale], subtitleAutoGenerated: settings.subtitleAutoGenerated, subtitleNormalizeOverlaps: settings.subtitleNormalizeOverlaps,
         ...(coverOnly ? {} : thumbnailsFor(settings, item.kind, wantsAudio)),
         status: 'queued', progress: 0, files: [],
         directory: directoryFor(settings, plan, item),
@@ -154,8 +165,9 @@ export class Queue {
     this.forget(id)
     if (action === 'pause' || action === 'cancel') {
       if (job.status === 'completed') throw new Error(i18n.t('queue:errors.completedCannotStop'))
+      if (job.stage === 'burn') job.burnRestartRequired = true
       job.status = action === 'pause' ? 'paused' : 'cancelled'
-      job.speed = undefined; job.eta = undefined
+      job.speed = undefined; job.eta = undefined; job.processingEta = undefined
       this.running.get(id)?.abort()
     } else {
       if (this.running.has(id)) throw new Error(i18n.t('queue:errors.stopping'))
@@ -163,7 +175,8 @@ export class Queue {
       // Asking by hand starts the automatic attempts over: this break is being treated as a new one.
       job.status = 'queued'; job.error = undefined; job.attempts = undefined
     }
-    this.log(job, i18n.t(`queue:log.${({ pause: 'paused', cancel: 'cancelled', resume: 'awaitingResume', retry: 'awaitingRetry' } as const)[action]}`))
+    this.log(job, i18n.t(job.burnRestartRequired && (action === 'resume' || action === 'retry') ? 'queue:log.awaitingBurnRestart'
+      : `queue:log.${({ pause: 'paused', cancel: 'cancelled', resume: 'awaitingResume', retry: 'awaitingRetry' } as const)[action]}`))
     this.persist(); this.pump()
   }
   // One cover, saved because the user asked for it rather than because a setting said so. It does not
@@ -194,13 +207,15 @@ export class Queue {
     if (!source) throw new Error(i18n.t('queue:errors.jobNotFound'))
     if (source.audioOnly) throw new Error(i18n.t('queue:errors.alreadyAudio'))
     if (source.kind === 'image') throw new Error(i18n.t('queue:errors.imageHasNoAudio'))
-    if (this.pending(source.url, source.itemId, true)) throw new Error(i18n.t('queue:errors.audioPending'))
     const settings = this.store.data.settings
+    const processing = { workMode: settings.workMode, audioFormat: settings.workMode === 'edit' ? settings.audioFormat : 'best', outputFormat: 'original', outputResolution: 'original' } as const
+    if (this.pending(source.url, source.itemId, true, false, undefined, undefined, processing)) throw new Error(i18n.t('queue:errors.audioPending'))
     this.jobs.unshift({
       ...source,
       id: randomUUID(), status: 'queued', progress: 0, files: [], logs: [], error: undefined, attempts: undefined,
       speed: undefined, eta: undefined, downloaded: undefined, total: undefined, completedAt: undefined,
-      kind: 'audio', audioOnly: true, format: 'best', audioFormat: settings.audioFormat,
+      kind: 'audio', audioOnly: true, format: 'best', ...processing,
+      originalFiles: [], processedFiles: [], stage: undefined, processingProgress: undefined, processingEta: undefined, burnRestartRequired: undefined, audioLanguage: undefined,
       // An audio file has nowhere to put a subtitle track, and its cover follows the audio setting.
       subtitles: 'off', ...thumbnailsFor(settings, source.kind || 'video', true),
       createdAt: new Date().toISOString(),
@@ -219,16 +234,16 @@ export class Queue {
     const batchId = source.batchId || randomUUID()
     if (!source.batchId) { source.batchId = batchId; source.batchTitle = source.batchTitle || source.title }
     for (const item of rest) {
-      if (this.pending(source.url, item.id, source.audioOnly)) continue
+      if (this.pending(source.url, item.id, source.audioOnly, false, !source.audioOnly && source.subtitles && source.subtitleLanguage ? { subtitles: source.subtitles, subtitleLanguage: source.subtitleLanguage } : undefined, source.audioLanguage, source)) continue
       this.jobs.unshift({
         ...source,
-        id: randomUUID(), itemId: item.id, title: item.title,
+        id: randomUUID(), itemId: item.id, single: true, title: item.title,
         kind: item.kind === 'image' ? 'image' : source.audioOnly ? 'audio' : item.kind,
         thumbnail: item.thumbnail || source.thumbnail, duration: item.duration,
         // A picture is never an audio conversion and never carries a quality choice.
         audioOnly: item.kind !== 'image' && source.audioOnly, format: item.kind === 'image' ? 'best' : source.format,
         batchId, batchTitle: source.batchTitle || source.title,
-        status: 'queued', progress: 0, files: [], logs: [], error: undefined, attempts: undefined,
+        status: 'queued', progress: 0, files: [], originalFiles: [], processedFiles: [], logs: [], error: undefined, attempts: undefined,
         speed: undefined, eta: undefined, downloaded: undefined, total: undefined, completedAt: undefined,
         createdAt: new Date().toISOString(),
       })
@@ -252,18 +267,20 @@ export class Queue {
       // Whatever is being asked for replaces a wait the client had scheduled for itself.
       this.forget(job.id)
       if (action === 'pause' && ['queued', 'running'].includes(job.status)) {
-        job.status = 'paused'; job.speed = undefined; job.eta = undefined
+        if (job.stage === 'burn') job.burnRestartRequired = true
+        job.status = 'paused'; job.speed = undefined; job.eta = undefined; job.processingEta = undefined
         this.running.get(job.id)?.abort(); this.log(job, i18n.t('queue:log.paused'))
       } else if (action === 'cancel' && ['queued', 'running', 'paused'].includes(job.status)) {
-        job.status = 'cancelled'; job.speed = undefined; job.eta = undefined
+        if (job.stage === 'burn') job.burnRestartRequired = true
+        job.status = 'cancelled'; job.speed = undefined; job.eta = undefined; job.processingEta = undefined
         this.running.get(job.id)?.abort(); this.log(job, i18n.t('queue:log.cancelled'))
       } else if (action === 'resume' && ['paused', 'failed'].includes(job.status)) {
-        job.status = 'queued'; job.error = undefined; this.log(job, i18n.t('queue:log.awaitingResume'))
+        job.status = 'queued'; job.error = undefined; this.log(job, i18n.t(job.burnRestartRequired ? 'queue:log.awaitingBurnRestart' : 'queue:log.awaitingResume'))
       } else if (action === 'retry' && ['paused', 'failed', 'cancelled'].includes(job.status)) {
         // Asking by hand starts the automatic attempts over, exactly as it does for one task. A job
         // whose abort has not finished unwinding is queued anyway rather than quietly skipped: pump
         // will not start it while it is still in 'running', and picks it up when that clears.
-        job.status = 'queued'; job.error = undefined; job.attempts = undefined; this.log(job, i18n.t('queue:log.awaitingRetry'))
+        job.status = 'queued'; job.error = undefined; job.attempts = undefined; this.log(job, i18n.t(job.burnRestartRequired ? 'queue:log.awaitingBurnRestart' : 'queue:log.awaitingRetry'))
       }
     }
     this.persist(); this.pump()
@@ -321,7 +338,14 @@ export class Queue {
   stop(): void {
     this.stopping = true
     for (const id of [...this.resuming.keys()]) this.forget(id)
-    for (const controller of this.running.values()) controller.abort()
+    for (const [id, controller] of this.running) {
+      const job = this.jobs.find(item => item.id === id)
+      if (job) {
+        if (job.stage === 'burn') job.burnRestartRequired = true
+        job.processingEta = undefined
+      }
+      controller.abort()
+    }
     this.store.save()
   }
   // A download that broke is picked up again on its own. It is safe to do so because it resumes: the
@@ -333,14 +357,14 @@ export class Queue {
     const wait = RESUME_AFTER[attempt]
     if (wait === undefined) return
     job.attempts = attempt + 1
-    job.error = i18n.t('queue:errors.autoResume', { error: job.error || i18n.t('queue:errors.interrupted'), seconds: Math.round(wait / 1000), attempt: job.attempts, total: RESUME_AFTER.length })
+    job.error = i18n.t(job.burnRestartRequired ? 'queue:errors.autoBurnRestart' : 'queue:errors.autoResume', { error: job.error || i18n.t('queue:errors.interrupted'), seconds: Math.round(wait / 1000), attempt: job.attempts, total: RESUME_AFTER.length })
     this.forget(job.id)
     this.resuming.set(job.id, setTimeout(() => {
       this.resuming.delete(job.id)
       // Anything the user did in the meantime wins: only a job still sitting where it broke is taken.
       if (this.stopping || job.status !== 'failed') return
       job.status = 'queued'; job.error = undefined
-      this.log(job, i18n.t('queue:log.autoResume')); this.persist(); this.pump()
+      this.log(job, i18n.t(job.burnRestartRequired ? 'queue:log.autoBurnRestart' : 'queue:log.autoResume')); this.persist(); this.pump()
     }, wait))
   }
 
@@ -356,7 +380,7 @@ export class Queue {
       if (job.status !== 'queued' || this.running.has(job.id)) continue
       const controller = new AbortController()
       this.running.set(job.id, controller)
-      job.status = 'running'; job.speed = undefined; job.eta = undefined
+      job.status = 'running'; job.speed = undefined; job.eta = undefined; job.processingEta = undefined; job.stage = 'download'; job.processingProgress = undefined; job.warnings = []
       this.log(job, i18n.t('queue:log.preparing')); this.persist()
       void this.execute(job, controller.signal).catch(error => {
         if (controller.signal.aborted) return
@@ -364,10 +388,11 @@ export class Queue {
         // wording, and waiting twenty seconds to run into the same wall again helps nobody - the
         // account's entitlement is not going to change while the client counts.
         const denied = asAccessDenied(error)
+        if (job.stage === 'burn') job.burnRestartRequired = true
         job.status = 'failed'; job.error = denied ? denied.message : redact(String(error)); this.log(job, job.error)
         job.wall = denied?.wall ?? (error instanceof LoginRequired ? 'login' : undefined)
         if (!denied) this.resumeLater(job)
-      }).finally(() => { this.running.delete(job.id); job.speed = undefined; job.eta = undefined; this.persist(); this.pump() })
+      }).finally(() => { this.running.delete(job.id); job.speed = undefined; job.eta = undefined; job.processingEta = undefined; this.persist(); this.pump() })
     }
   }
   private async execute(job: Job, signal: AbortSignal): Promise<void> {
@@ -409,7 +434,7 @@ export class Queue {
     const base = stemOf(job)
     let lastProgress = 0
     let completedBytes = 0
-    job.files = []
+    job.files = []; job.originalFiles = []; job.processedFiles = []
     for (const [index, item] of items.entries()) {
       signal.throwIfAborted()
       const source = plan.sources.get(item.id)
@@ -422,36 +447,75 @@ export class Queue {
         if (Date.now() - lastProgress > 250 || value === 1) { lastProgress = Date.now(); this.changed() }
       }
       this.log(job, i18n.t('queue:log.fileStart', { index: index + 1, total: items.length }))
+      const owns = (file: string) => path.dirname(path.resolve(file)) === path.resolve(job.directory) && path.basename(file).startsWith(path.basename(stem))
+      const onEvent = (event: EngineEvent) => {
+        if (signal.aborted) return
+        if (event.kind === 'original') {
+          const file = (event.result as { file?: unknown } | undefined)?.file
+          if (typeof file === 'string' && owns(file)) {
+            job.originalFiles = [...new Set([...(job.originalFiles || []), file])]
+            job.files = [...new Set([...job.files, file])]
+            this.persist()
+          }
+        }
+        if (event.kind === 'progress') { job.stage = 'download'; progress(event.total ? Math.min(0.99, (event.downloaded || 0) / event.total) : 0, { downloaded: event.downloaded || 0, total: event.total || 0, speed: event.speed, eta: event.eta }) }
+        if (event.kind === 'processing') {
+          const previousStage = job.stage
+          if (['subtitles', 'convert', 'embed', 'burn'].includes(event.status || '')) job.stage = event.status as Job['stage']
+          job.processingProgress = event.progress; job.speed = undefined; job.eta = undefined
+          job.processingEta = event.eta !== undefined && Number.isFinite(event.eta) && event.eta >= 0 ? event.eta : undefined
+          if (previousStage !== job.stage) this.store.save()
+          this.changed()
+        }
+        if (event.kind === 'warning' && event.message) { job.warnings = [...new Set([...(job.warnings || []), redact(event.message)])]; this.log(job, event.message) }
+        if (event.kind === 'log' && event.message) this.log(job, event.message)
+      }
+      const processing: Partial<EngineRequest> = {
+        workMode: job.workMode, outputFormat: job.outputFormat, outputResolution: job.outputResolution,
+        audioOnly: job.audioOnly, audioFormat: job.audioFormat,
+        subtitles: job.subtitles, subtitleLanguage: job.subtitleLanguage, subtitleLanguages: job.subtitleLanguages,
+        subtitleAutoGenerated: job.subtitleAutoGenerated, subtitleNormalizeOverlaps: job.subtitleNormalizeOverlaps,
+        saveThumbnail: job.saveThumbnail, embedThumbnail: job.embedThumbnail, thumbnailFormat: job.thumbnailFormat,
+      }
+      let request: EngineRequest | undefined
       if (source.kind === 'http' && !(job.audioOnly && item.kind === 'video')) {
-        job.files.push(await downloadHttp(this.fetcher, source.url, `${stem}.${source.extension}`, source.cookies, source.headers, signal, progress, { speedLimit, retries: settings.retries, timeout: settings.timeout }))
+        const file = await downloadHttp(this.fetcher, source.url, `${stem}.${source.extension}`, source.cookies, source.headers, signal, progress, { speedLimit, retries: settings.retries, timeout: settings.timeout })
+        job.files.push(file)
+        if (job.workMode === 'edit' && item.kind !== 'image') {
+          job.originalFiles = [...new Set([...(job.originalFiles || []), file])]
+          this.persist()
+          request = {
+            ...processing, operation: 'process', input: file, output: `${stem}.%(ext)s`, cookies: source.cookies, headers: source.headers,
+            info: { id: item.id, title: item.title, duration: item.duration, thumbnails: item.thumbnail ? [{ url: item.thumbnail }] : [] },
+          }
+        }
       } else {
-        // A tier this video does not have - one picked off a listing's first video, which a later video
-        // lacks - is downloaded at the best this video has rather than failing the task.
-        const selected = item.formats.find(format => format.id === job.format)
-        if (job.format !== 'best' && !selected) this.log(job, i18n.t('queue:log.tierMissing'))
+        const selected = (job.audioOnly ? item.audioFormats || [] : item.formats).find(format => format.id === job.format)
+        if (job.format !== 'best' && !selected) this.log(job, i18n.t(job.audioOnly ? 'queue:log.audioTierMissing' : 'queue:log.tierMissing'))
         const height = job.videoQuality && job.videoQuality !== 'best' ? `[height<=${job.videoQuality}]` : ''
         const best = `bv*${height}+ba/b${height}`
-        // The tier's own format first; should the platform refuse it at download time, the best instead.
         const format = !selected ? best : selected.audioOnly ? job.format : `${job.format}+ba/${job.format}/${best}`
-        const request = source.kind === 'engine' ? source.request : { operation: 'download' as const, url: source.url, cookies: source.cookies, headers: source.headers }
-        const output = await this.engine.request<{ files: string[] }>({ ...request, format, audioOnly: job.audioOnly, audioFormat: job.audioFormat, speedLimit, retries: settings.retries, timeout: settings.timeout, output: `${stem}.%(ext)s`,
-          subtitles: job.subtitles, subtitleLanguages: job.subtitleLanguages, subtitleAutoGenerated: job.subtitleAutoGenerated, subtitleNormalizeOverlaps: job.subtitleNormalizeOverlaps,
-          saveThumbnail: job.saveThumbnail, embedThumbnail: job.embedThumbnail, thumbnailFormat: job.thumbnailFormat }, signal, event => {
-          if (event.kind === 'progress') progress(event.total ? Math.min(0.99, (event.downloaded || 0) / event.total) : 0, { downloaded: event.downloaded || 0, total: event.total || 0, speed: event.speed, eta: event.eta })
-          if (event.kind === 'log' && event.message) this.log(job, event.message)
-        })
+        const origin = source.kind === 'engine' ? source.request : { operation: 'download' as const, url: source.url, cookies: source.cookies, headers: source.headers }
+        request = { ...origin, ...processing, format, audioFormatId: job.audioOnly ? selected?.id : undefined,
+          audioLanguage: job.audioOnly ? job.audioLanguage : undefined, speedLimit, retries: settings.retries, timeout: settings.timeout, output: `${stem}.%(ext)s` }
+      }
+      if (request) {
+        const output = await this.engine.request<{ files: string[]; originalFiles?: string[]; processedFiles?: string[] }>(request, signal, onEvent)
         if (!output.files.length) throw new Error(i18n.t('queue:errors.noFilesReturned'))
         for (const file of output.files) {
-          if (path.dirname(path.resolve(file)) !== path.resolve(job.directory) || !path.basename(file).startsWith(path.basename(stem))) throw new Error(i18n.t('queue:errors.pathMismatch'))
+          if (!owns(file)) throw new Error(i18n.t('queue:errors.pathMismatch'))
           if (!(await stat(file)).isFile()) throw new Error(i18n.t('queue:errors.fileMissing'))
         }
-        job.files.push(...output.files)
+        job.files = [...new Set([...job.files, ...output.files])]
+        job.originalFiles = [...new Set([...(job.originalFiles || []), ...(output.originalFiles || []).filter(file => output.files.includes(file))])]
+        job.processedFiles = [...new Set([...(job.processedFiles || []), ...(output.processedFiles || []).filter(file => output.files.includes(file))])]
       }
       completedBytes = (await Promise.all(job.files.map(file => stat(file)))).reduce((sum, file) => sum + file.size, 0)
       progress(1)
     }
     signal.throwIfAborted()
-    job.method = plan.result.method; job.status = 'completed'; job.progress = 1; job.attempts = undefined
+    job.method = plan.result.method; job.status = 'completed'; job.progress = 1; job.attempts = undefined; job.stage = undefined; job.processingProgress = undefined
+    job.processingEta = undefined; job.burnRestartRequired = undefined
     job.downloaded = completedBytes; job.total = completedBytes; job.completedAt = new Date().toISOString()
     this.log(job, i18n.t('queue:log.completed')); this.completed(job)
   }

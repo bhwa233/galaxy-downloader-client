@@ -70,7 +70,7 @@ export class Controller {
   // A job re-resolves the one post it was made from. 'single' says so: its URL can itself be a listing
   // the client would otherwise expand - a 哔哩哔哩 video that turned out to have 分P - and downloading
   // all of them under one job is not what the user picked.
-  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), (job, signal) => this.parser.parse(job.url, this.profile(), signal, { browserOnly: job.method === 'browser', single: job.itemId === '*' }), () => this.emit(), job => { if (this.store.data.settings.notifications && Notification.isSupported()) new Notification({ title: i18n.t('desktop:notificationCompleted'), body: job.title }).show() }, file => shell.trashItem(file))
+  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), (job, signal) => this.parser.parse(job.url, this.profile(), signal, { browserOnly: job.method === 'browser', single: job.single || job.itemId === '*' }), () => this.emit(), job => { if (this.store.data.settings.notifications && Notification.isSupported()) new Notification({ title: i18n.t('desktop:notificationCompleted'), body: job.title }).show() }, file => shell.trashItem(file))
   // Results parsed for the command line, apart from the window's own; the newest few are kept.
   private detached = new Map<string, ParsePlan>()
   private commandLine = new CommandLine(app.getPath('userData'), app.getAppPath(), app.isPackaged)
@@ -107,15 +107,16 @@ export class Controller {
     // Only onto the listing it was read for: the user may have parsed something else meanwhile. A
     // listing whose first video offers no tiers still gets an answer - an empty list - so the menu
     // settles on the default instead of reading forever.
-    const formats = await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined })
+    const tiers = await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined })
     if (this.plan !== plan) return
-    plan.result.formats = formats || []
+    plan.result.formats = tiers?.formats || []
+    plan.result.audioFormats = tiers?.audioFormats || []
     if (this.parseState.result?.id === plan.result.id) this.parseState = { ...this.parseState, result: plan.result }
     this.emit()
   }
   // The tiers of a listing's first video, which stand for the whole listing; nothing for a result that
   // is not a listing or has no video with a page of its own.
-  private async readTiers(plan: ParsePlan): Promise<ParsePlan['result']['formats']> {
+  private async readTiers(plan: ParsePlan): Promise<Pick<ParsePlan['result'], 'formats' | 'audioFormats'> | undefined> {
     if (!plan.result.listing) return undefined
     // Engine playlists already carry per-entry formats when they have been fully extracted. Sampling
     // the first episode again would repeat the same番剧 page request and can trigger Bilibili risk control.
@@ -123,7 +124,7 @@ export class Controller {
     const first = plan.result.items.find(item => item.kind === 'video' && !item.wall && item.url)
     if (!first?.url) return undefined
     const sample = await this.parser.parse(first.url, this.profile(), new AbortController().signal, { single: true })
-    return sample.result.items[0]?.formats
+    return { formats: sample.result.items[0]?.formats, audioFormats: sample.result.items[0]?.audioFormats }
   }
   private emit(): void { const win = this.window(); if (win && !win.isDestroyed()) win.webContents.send('desktop:state', this.state()) }
   async initialize(): Promise<void> {
@@ -242,7 +243,7 @@ export class Controller {
               if (!before || found.id !== (groupId || current.result.groups?.[0]?.id)) return before || found
               return { ...found, itemIds: [...before.itemIds, ...found.itemIds.filter(id => !before.itemIds.includes(id))] }
             })
-            current.result = { ...next.result, id: current.result.id, title: current.result.title, items, groups, formats: current.result.formats }
+            current.result = { ...next.result, id: current.result.id, title: current.result.title, items, groups, formats: current.result.formats, audioFormats: current.result.audioFormats }
             this.parseState = { status: 'idle', result: current.result }
             this.pendingPage = undefined
           }
@@ -260,7 +261,7 @@ export class Controller {
           break
         }
         case 'media:download': {
-          const { resultId, itemIds, format, kinds } = commandSchemas['media:download'].parse(input)
+          const { resultId, itemIds, format, audioFormatId, audioLanguage, kinds, subtitles, subtitleLanguage, outputFormat, outputResolution, audioFormat } = commandSchemas['media:download'].parse(input)
           const plan = this.planFor(resultId)
           const items = [...new Set(itemIds)].map(id => plan.catalog.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item))
           if (items.length !== new Set(itemIds).size) throw new Error(i18n.t('desktop:errors.selectionMissing'))
@@ -271,12 +272,15 @@ export class Controller {
           // itself has a tier; audio and covers ignore it.
           const offered = (item: typeof items[number]) => item.formats.some(entry => entry.id === format) || Boolean(plan.result.listing && plan.result.formats?.some(entry => entry.id === format))
           if (kinds.includes('video') && format !== 'best' && items.some(item => item.kind !== 'image' && !offered(item))) throw new Error(i18n.t('desktop:errors.qualityExpired'))
+          const audioOffered = (item: typeof items[number]) => [ ...(item.audioFormats || []), ...(plan.result.listing ? plan.result.audioFormats || [] : []) ].some(entry => entry.id === audioFormatId && (!audioLanguage || entry.audioLanguage === audioLanguage))
+          if (kinds.includes('audio') && audioFormatId !== 'best' && items.some(item => item.kind !== 'image' && !audioOffered(item))) throw new Error(i18n.t('desktop:errors.qualityExpired'))
+          if (kinds.includes('audio') && audioLanguage && items.some(item => item.kind !== 'image' && ![...(item.audioFormats || []), ...(plan.result.audioFormats || [])].some(track => track.audioLanguage === audioLanguage))) throw new Error(i18n.t('desktop:errors.qualityExpired'))
           // Each kind asked for is queued on its own, from the items it applies to: a picture has no
           // audio, and is skipped for it rather than failing the rest.
           const enqueue = (from: ParsePlan, picked: typeof items) => {
             for (const kind of kinds) {
               const applicable = kind === 'audio' ? picked.filter(item => item.kind !== 'image') : picked
-              if (applicable.length) this.queue.enqueue(from, applicable, kind === 'video' ? format : 'best', kind === 'audio', kind === 'cover', jobIds)
+              if (applicable.length) this.queue.enqueue(from, applicable, kind === 'video' ? format : kind === 'audio' ? audioFormatId : 'best', kind === 'audio', kind === 'cover', jobIds, { subtitles, subtitleLanguage, outputFormat, outputResolution, audioFormat, audioLanguage: kind === 'audio' ? audioLanguage : undefined })
             }
           }
           // A whole collection picked from a catalogue (a 短剧 from the 短剧 list) is not a file: it is
@@ -303,7 +307,7 @@ export class Controller {
             const plan = await this.parser.parse(url, this.profile(), AbortSignal.timeout(300_000), page > 1 ? { page } : {})
             // The window reads a listing's tiers in the background once the listing is on screen; the
             // command line has no screen to fill in later, so it waits for them before it answers.
-            if (!plan.result.formats && plan.result.listing) plan.result.formats = await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined }) || []
+            if (!plan.result.formats && plan.result.listing) Object.assign(plan.result, await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined }) || { formats: [], audioFormats: [] })
             this.detached.set(plan.result.id, plan)
             for (const id of [...this.detached.keys()].slice(0, -DETACHED)) this.detached.delete(id)
             return { ok: true, state: this.state(), result: plan.result }
@@ -357,7 +361,7 @@ export class Controller {
             await shell.openExternal(job.url); break
           }
           // These speak for a file on disk, so all want one that is there and is the job's own.
-          const file = job.files[0]
+          const file = job.processedFiles?.[0] || job.files[0]
           if (!file || job.status !== 'completed' || path.dirname(path.resolve(file)) !== path.resolve(job.directory)) throw new Error(i18n.t('desktop:errors.noCompletedFile'))
           if (action === 'copy-path') await clipboard.writeText(file)
           else if (action === 'open') {
@@ -386,6 +390,18 @@ export class Controller {
           // Through the client's own session, so a cover the platform only serves to its own visitors
           // is fetched as one of them.
           await checkCover(await downloadHttp((address, init) => this.browser.fetch(address, init), url, chosen.filePath, [], {}, AbortSignal.timeout(60_000), () => {}))
+          break
+        }
+        case 'jobs:file': {
+          const { id, index, action } = commandSchemas['jobs:file'].parse(input)
+          const job = this.queue.jobs.find(item => item.id === id)
+          const file = job?.files[index]
+          if (!job || !file || path.dirname(path.resolve(file)) !== path.resolve(job.directory) || !(await stat(file)).isFile()) throw new Error(i18n.t('desktop:errors.noCompletedFile'))
+          if (action === 'reveal') shell.showItemInFolder(file)
+          else {
+            const failure = await shell.openPath(file)
+            if (failure) throw new Error(i18n.t('desktop:errors.openFailed', { reason: failure }))
+          }
           break
         }
         case 'jobs:files': {

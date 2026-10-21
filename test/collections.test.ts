@@ -104,11 +104,10 @@ test('turning one tab leaves the other where it was', async () => {
   expect(new URL(asked[1]).searchParams.get('page_num')).toBe('1')
 })
 
-test('a video link that already names a part, and a 番剧, are left to the engine', () => {
+test('part links stay with the engine and bangumi uses its own adapter', () => {
   expect(findAdapter('https://www.bilibili.com/video/BV1bK411W797')?.id).toBe('bilibili-video')
   expect(findAdapter('https://www.bilibili.com/video/BV1bK411W797?p=3')).toBeUndefined()
-  // 番剧 is a separate route that has not been built yet; claiming it here would break it silently.
-  expect(findAdapter('https://www.bilibili.com/bangumi/play/ss113506')).toBeUndefined()
+  expect(findAdapter('https://www.bilibili.com/bangumi/play/ss113506')?.id).toBe('bilibili-bangumi')
 })
 
 // Where the files land, which is the only thing the collection's name is used for once it is downloaded.

@@ -11,10 +11,13 @@
     "splitItem": "作品中的一个媒体文件",
     "settingsChanged": "下载参数已更新，等待继续",
     "autoResume": "自动续传",
+    "awaitingBurnRestart": "等待重新合成字幕；会复用已下载的素材，从头烧录",
+    "autoBurnRestart": "自动重新合成字幕；会复用已下载的素材，从头烧录",
     "preparing": "正在解析作品并准备下载",
     "coverSaved": "封面已保存",
     "fileStart": "开始下载第 {{index}} / {{total}} 个文件",
     "tierMissing": "这个视频没有所选的画质档位，改按最高画质下载",
+    "audioTierMissing": "这个作品没有所选的音轨，改按最高音质下载",
     "completed": "下载完成"
   },
   "errors": {
@@ -30,6 +33,7 @@
     "pauseBeforeLimit": "请先暂停任务再修改限速",
     "interrupted": "下载中断",
     "autoResume": "{{error}}（{{seconds}} 秒后自动续传，第 {{attempt}}/{{total}} 次）",
+    "autoBurnRestart": "{{error}}（{{seconds}} 秒后自动重新合成字幕，第 {{attempt}}/{{total}} 次）",
     "noCover": "这个作品没有封面地址",
     "contentChanged": "内容已变化，请重新解析",
     "noFilesReturned": "引擎没有返回已保存的文件",

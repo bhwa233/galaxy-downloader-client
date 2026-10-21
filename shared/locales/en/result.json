@@ -30,6 +30,17 @@
     "reading": "Reading qualities…",
     "default": "Default quality"
   },
+  "audioQuality": {
+    "language": "Audio language",
+    "separateFileHint": "Audio language and quality apply to the separately saved audio file.",
+    "original": "Original",
+    "unknownLanguage": "Unspecified language",
+    "levels": { "high": "High quality", "standard": "Standard quality", "low": "Low quality" },
+    "label": "Audio quality (source track)",
+    "best": "Best source audio",
+    "bestForLanguage": "Best audio for this language",
+    "reading": "Reading audio qualities…"
+  },
   "loadedOf": "{{loaded}} of {{total}} loaded",
   "keywordLabel": "Filter by keyword",
   "keywordPlaceholder": "Keyword…",
@@ -82,7 +93,9 @@
     "audio_one": "Download {{count}} audio file",
     "audio_other": "Download {{count}} audio files",
     "cover_one": "Download {{count}} cover",
-    "cover_other": "Download {{count}} covers"
+    "cover_other": "Download {{count}} covers",
+    "process_other": "Download & process {{count}} items",
+    "process_one": "Download & process {{count}} item"
   },
   "toast": {
     "queued": "Added to the download queue",

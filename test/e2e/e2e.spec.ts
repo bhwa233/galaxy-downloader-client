@@ -32,7 +32,7 @@ test('real engine parses and downloads a local video, persists history, and isol
     await page.getByRole('button', { name: '解析', exact: true }).click()
     // The first item comes selected, so a single result is ready to download without picking anything.
     // The wait is for the parse itself, which is what takes the time here.
-    await page.getByRole('button', { name: '下载所选 (1)' }).click({ timeout: 40_000 })
+    await page.getByRole('button', { name: '下载 1 项', exact: true }).click({ timeout: 40_000 })
     await page.getByRole('button', { name: /^已完成/ }).click()
     await expect(page.getByRole('button', { name: '打开文件位置' })).toBeVisible({ timeout: 40_000 })
     const state = await page.evaluate(() => window.desktopApi.command('state:get', null))

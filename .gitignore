@@ -42,3 +42,5 @@ engine-build/
 # Local agent tooling and scratch screenshots
 .claude/
 /*.png
+
+engine/__pycache__/

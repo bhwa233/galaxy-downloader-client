@@ -27,11 +27,14 @@ const plan = (url: string, item = videoItem): ParsePlan => ({
 })
 const settings = (over: Partial<Settings>): Settings => ({ ...settingsSchema.parse({}), downloadDirectory: '/downloads', ...over })
 
-test('the cover setting a job carries depends on what it is downloading', () => {
+test('cover processing respects the work mode and the media kind', () => {
   const on = settings({ saveThumbnail: true, embedThumbnailInVideo: true, embedThumbnailInAudio: true, thumbnailFormat: 'jpg' })
-  expect(thumbnailsFor(on, 'video', false)).toEqual({ saveThumbnail: true, embedThumbnail: true, thumbnailFormat: 'jpg' })
-  // Audio has its own switch, and it is the one that is on by default.
-  expect(thumbnailsFor(settings({}), 'audio', true)).toEqual({ saveThumbnail: false, embedThumbnail: true, thumbnailFormat: 'original' })
+  // Pure downloads keep the original image format and never rewrite media to embed artwork.
+  expect(thumbnailsFor(on, 'video', false)).toEqual({ saveThumbnail: true, embedThumbnail: false, thumbnailFormat: 'original' })
+  expect(thumbnailsFor(settings({}), 'audio', true)).toEqual({ saveThumbnail: false, embedThumbnail: false, thumbnailFormat: 'original' })
+  // Editing remembers its own save switch and enables the requested embedding/conversion.
+  expect(thumbnailsFor({ ...on, workMode: 'edit', editSaveThumbnail: true }, 'video', false)).toEqual({ saveThumbnail: true, embedThumbnail: true, thumbnailFormat: 'jpg' })
+  expect(thumbnailsFor(settings({ workMode: 'edit' }), 'audio', true)).toEqual({ saveThumbnail: false, embedThumbnail: true, thumbnailFormat: 'original' })
   expect(thumbnailsFor(settings({}), 'video', false)).toEqual({ saveThumbnail: false, embedThumbnail: false, thumbnailFormat: 'original' })
   // A picture post is its own cover: saving one would write the same picture twice, and there is no
   // cover track in an image file to embed anything into.
@@ -50,7 +53,7 @@ test('asking for the audio of a video that is already downloading builds a secon
   expect(queue.enqueue(plan('https://example.test/post'), [videoItem], 'best', false)).toBe(0)
   queue.audio(video.id)
   expect(queue.jobs).toHaveLength(2)
-  expect(queue.jobs[0]).toMatchObject({ url: video.url, itemId: video.itemId, audioOnly: true, kind: 'audio', format: 'best', subtitles: 'off', embedThumbnail: true })
+  expect(queue.jobs[0]).toMatchObject({ url: video.url, itemId: video.itemId, audioOnly: true, kind: 'audio', format: 'best', subtitles: 'off', workMode: 'download', audioFormat: 'best', embedThumbnail: false })
   // The task it was asked on keeps going, with its own files and its own state.
   expect(queue.jobs[1].id).toBe(video.id)
   expect(queue.jobs[1].audioOnly).toBe(false)

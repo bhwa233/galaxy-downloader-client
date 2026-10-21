@@ -2,64 +2,18 @@
 import json
 import os
 import sys
-import re
+from shutil import copyfile
 from http.cookiejar import Cookie
+from urllib.parse import urlsplit
+from hashlib import sha256
 
-from yt_dlp import YoutubeDL
-from yt_dlp.postprocessor.common import PostProcessor
 from yt_dlp.version import __version__
+from yt_dlp.utils import DownloadError
+from subtitles import SubtitleDownloader, SubtitleProcessor
 
 
 def emit(kind, **data):
     print(json.dumps({'kind': kind, **data}, ensure_ascii=False), flush=True)
-
-def normalize_subtitle_file(path):
-    with open(path, encoding='utf-8-sig') as subtitle:
-        text = subtitle.read()
-    blocks = re.split(r'\r?\n\s*\r?\n', text.strip())
-    cues = []
-    for block in blocks:
-        lines = [line.strip('\ufeff\r') for line in block.splitlines()]
-        timing = next((i for i, line in enumerate(lines) if '-->' in line), -1)
-        if timing < 0: continue
-        start, end = [part.strip() for part in lines[timing].split('-->', 1)]
-        body = ' '.join(line.strip() for line in lines[timing + 1:] if line.strip())
-        if body: cues.append((start, end, body))
-    if not cues: return
-    def stamp(value):
-        parts = value.replace(',', '.').split(':')
-        if len(parts) == 2:
-            h, m, rest = 0, parts[0], parts[1]
-        else:
-            h, m, rest = parts
-        if '.' in rest:
-            s, ms = rest.split('.', 1)
-        else:
-            s, ms = rest, '0'
-        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms.ljust(3, '0')[:3]) / 1000
-    cues.sort(key=lambda cue: stamp(cue[0]))
-    out = []
-    for index, (start, end, body) in enumerate(cues):
-        if index + 1 < len(cues):
-            next_start = cues[index + 1][0]
-            if stamp(end) > stamp(next_start): end = next_start
-        if stamp(end) > stamp(start): out.append(f'{len(out) + 1}\n{start.replace(".", ",")} --> {end.replace(".", ",")}\n{body}\n')
-    with open(path, 'w', encoding='utf-8', newline='\n') as subtitle:
-        subtitle.write('\n'.join(out))
-
-class NormalizeSubtitles(PostProcessor):
-    def __init__(self, ydl):
-        super().__init__(ydl)
-    def run(self, info):
-        for track in (info.get('requested_subtitles') or {}).values():
-            path = track.get('filepath')
-            if path and os.path.exists(path) and path.lower().endswith(('.srt', '.vtt')):
-                normalize_subtitle_file(path)
-                # The normalizer emits SRT regardless of the source subtitle container. Keep
-                # metadata aligned so the following embedder reads the rewritten file as SRT.
-                track['ext'] = 'srt'
-        return [], info
-
 
 class Logger:
     def debug(self, message):
@@ -82,6 +36,12 @@ def main():
     if operation == 'version':
         emit('result', result={'version': __version__})
         return
+    # Mode is enforced in the engine as well as at enqueue time. Legacy requests without a
+    # mode keep their saved processing configuration when an older task is resumed.
+    if request.get('workMode') == 'download':
+        request.update(subtitles='off', audioFormat='best', embedThumbnail=False,
+                       thumbnailFormat='original', outputFormat='original', outputResolution='original')
+    editing = request.get('workMode') == 'edit'
     profile = request.get('profile')
     logger = Logger()
     options = {
@@ -105,7 +65,12 @@ def main():
         options['http_headers'] = request['headers']
     if profile:
         options['cookiesfrombrowser'] = (profile['browser'], profile['path'], None, None)
-    if operation == 'download':
+    def postprocessor_progress(event):
+        stage = {'ExtractAudio': 'convert', 'EmbedThumbnail': 'embed', 'ThumbnailsConvertor': 'convert'}.get(event.get('postprocessor'))
+        if stage and request.get('workMode') != 'download':
+            emit('processing', status=stage, progress=1 if event.get('status') == 'finished' else 0)
+
+    if operation in ('download', 'process'):
         options.update({
             'outtmpl': request['output'], 'continuedl': True, 'overwrites': False,
             # One long-lived connection for a whole file is what gets cut: a 334 MiB download was
@@ -115,13 +80,25 @@ def main():
             'http_chunk_size': 10 * 1024 * 1024,
             'windowsfilenames': True, 'restrictfilenames': False,
             'format': request.get('format', 'bv*+ba/b'), 'merge_output_format': 'mp4/mkv',
+            'postprocessor_hooks': [postprocessor_progress],
             'progress_hooks': [lambda d: emit('progress', status=d['status'],
                 downloaded=d.get('downloaded_bytes', 0), total=d.get('total_bytes') or d.get('total_bytes_estimate'),
                 speed=d.get('speed'), eta=d.get('eta'))],
         })
         subtitles = request.get('subtitles', 'off')
         if request.get('audioOnly'):
-            options['format'] = 'bestaudio/best'
+            audio_format_id = request.get('audioFormatId')
+            options['format'] = f'{audio_format_id}/bestaudio/best' if audio_format_id and audio_format_id != 'best' else 'bestaudio/best'
+            audio_language = request.get('audioLanguage')
+            if audio_language:
+                import re
+                if not re.fullmatch(r'[A-Za-z0-9-]{1,35}', audio_language):
+                    raise ValueError('Invalid audio language')
+                # Per-video IDs (251-20, etc.) can name different languages in a
+                # playlist. Constrain both the chosen ID and its quality fallback
+                # to the requested language; never silently switch dubbed audio.
+                selected = f'{audio_format_id}[language={audio_language}]/' if audio_format_id and audio_format_id != 'best' else ''
+                options['format'] = selected + f'bestaudio[language={audio_language}]/best[language={audio_language}]'
             options['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': request.get('audioFormat', 'mp3'), 'preferredquality': '192'}]
             # An audio file has nowhere to put a subtitle track and no picture to read it against.
             subtitles = 'off'
@@ -136,11 +113,6 @@ def main():
             })
             # yt-dlp keeps the manual track when a language has both a manual and an automatic one,
             # so enabling automatic subtitles cannot produce two tracks of the same language.
-            options.setdefault('postprocessors', [])
-            if subtitles == 'embed':
-                options['postprocessors'].append({'key': 'FFmpegEmbedSubtitle', 'already_have_subtitle': False})
-            else:
-                options['postprocessors'].append({'key': 'FFmpegSubtitlesConvertor', 'format': 'srt'})
         # Covers. One flag writes the picture, one post-processor puts it inside the media file, and
         # they are independent: embedding without keeping asks yt-dlp to delete the picture afterwards,
         # which 'already_have_thumbnail' is how it is told not to.
@@ -163,22 +135,50 @@ def main():
             options['playliststart'] = request.get('playliststart', 1)
             options['playlistend'] = request.get('playlistend', 100)
     files = []
-    with YoutubeDL(options) as ydl:
-        # Inject a domain-aware cookie jar from an authorized Chrome connection.
-        for item in request.get('cookies', []):
+    original_files = []
+    processed_files = []
+    def downloader(anonymous=False):
+        configured = dict(options)
+        if anonymous:
+            configured.pop('cookiesfrombrowser', None)
+            configured['http_headers'] = {key: value for key, value in (options.get('http_headers') or {}).items() if key.lower() != 'cookie'}
+        ydl = SubtitleDownloader(configured, request.get('subtitleLanguage') if operation in ('download', 'process') else None)
+        # Credentials remain in this process; the fallback gets a fresh cookie jar
+        # without changing the client's persist:media session or browser profile.
+        for item in [] if anonymous else request.get('cookies', []):
             domain = item['domain']
             ydl.cookiejar.set_cookie(Cookie(0, item['name'], item['value'], None, False,
                 domain, domain.startswith('.'), domain.startswith('.'), item.get('path', '/'), True,
                 item.get('secure', False), int(item['expires']) if item.get('expires', -1) > 0 else None,
                 False, None, None, {}, False))
-        if operation == 'download':
+        if operation in ('download', 'process'):
             from yt_dlp.postprocessor.common import PostProcessor
 
             keep_subtitle_files = request.get('subtitles') == 'file' and not request.get('audioOnly')
 
+            class PreserveOriginal(PostProcessor):
+                def run(self, info):
+                    original = info['filepath']
+                    if original not in original_files:
+                        original_files.append(original)
+                    emit('original', result={'file': original})
+                    working = os.path.splitext(original)[0] + '.edited' + os.path.splitext(original)[1]
+                    # Reuse the successful download on retry, but always start processing from
+                    # a fresh copy so cancelled/failed transformations cannot become the input.
+                    temporary = working + '.copying'
+                    copyfile(original, temporary)
+                    os.replace(temporary, working)
+                    info['filepath'] = working
+                    info['__files_to_move'].pop(original, None)
+                    info['__files_to_move'][original] = original
+                    return [], info
+
             class CaptureFile(PostProcessor):
                 def run(self, info):
                     files.append(info['filepath'])
+                    if editing:
+                        processed_files.append(info['filepath'])
+                        files.extend(file for file in original_files if file not in files)
                     # Sidecar subtitles are separate files the client has to know about. In embed mode
                     # they are deleted once muxed in, so their recorded paths no longer exist.
                     if keep_subtitle_files:
@@ -196,13 +196,63 @@ def main():
                                 files.append(saved)
                     return [], info
 
-            if request.get('subtitleNormalizeOverlaps') and subtitles != 'off':
-                # Subtitle files are written before post_process. Normalize them before
-                # yt-dlp converts or embeds the selected tracks.
-                ydl._pps['post_process'].insert(0, NormalizeSubtitles(ydl))
+            if subtitles != 'off' or editing and not request.get('audioOnly'):
+                # Runs after merging the audio/video and before embedding a cover.
+                ydl._pps['post_process'].insert(0, SubtitleProcessor(ydl, request, emit))
+            if editing:
+                ydl._pps['post_process'].insert(0, PreserveOriginal(ydl))
             ydl.add_post_processor(CaptureFile(ydl), when='after_move')
-        info = ydl.extract_info(request['url'], download=operation == 'download')
-        emit('result', result=ydl.sanitize_info(info) if operation == 'extract' else {'files': files})
+        return ydl
+
+    with downloader() as ydl:
+        if operation == 'process':
+            info = dict(request.get('info') or {})
+            info.update(filepath=request['input'], ext=os.path.splitext(request['input'])[1][1:])
+            # A direct media response has no platform subtitle catalogue. The processor still
+            # converts/resizes it and reports unavailable captions through the normal warning.
+            thumbnails = []
+            if save_thumbnail or embed_thumbnail:
+                for index, thumbnail in enumerate(info.get('thumbnails') or []):
+                    thumbnail.setdefault('id', str(index))
+                thumbnails = ydl._write_thumbnails('video', info, request['input']) or []
+            ydl.post_process(request['input'], info, files_to_move=dict(thumbnails))
+            emit('result', result={'files': files, 'originalFiles': original_files, 'processedFiles': processed_files})
+            return
+        try:
+            # Browser fallback can supply an identified work's separate tracks. yt-dlp still owns
+            # selection, authentication, retries, merging and every existing post-processor.
+            if request.get('manifest'):
+                # Reuse yt-dlp's HLS parser/downloader: it resolves relative variants, separate
+                # audio, subtitles and fragments. No second playlist parser or downloader.
+                from yt_dlp.extractor.generic import GenericIE
+                video_id = sha256((request.get('pageUrl') or request['url']).encode()).hexdigest()[:16]
+                extractor = GenericIE(ydl)
+                formats, captions = extractor._extract_m3u8_formats_and_subtitles(
+                    request['url'], video_id, ext='mp4', m3u8_id='hls',
+                    headers=options.get('http_headers'))
+                media_playlist = next((item['url'] for item in reversed(formats) if item.get('url') and item.get('vcodec') != 'none'), request['url'])
+                duration = extractor._extract_m3u8_vod_duration(media_playlist, video_id, headers=options.get('http_headers'))
+                info = ydl.process_ie_result({
+                    'id': video_id, 'title': request.get('mediaTitle') or os.path.basename(urlsplit(request['url']).path) or 'HLS video',
+                    'webpage_url': request['url'], 'formats': formats, 'subtitles': captions, 'duration': duration,
+                    'extractor': 'generic', 'extractor_key': 'Generic',
+                }, download=operation == 'download')
+            else:
+                info = (ydl.process_ie_result(request['info'], download=operation == 'download')
+                        if request.get('info') else ydl.extract_info(request['url'], download=operation == 'download'))
+        except DownloadError as error:
+            host = urlsplit(request['url']).hostname or ''
+            youtube = host == 'youtu.be' or host == 'youtube.com' or host.endswith('.youtube.com')
+            auth_names = {'SID', 'SAPISID', 'APISID', 'HSID', 'SSID', '__Secure-1PSID', '__Secure-3PSID', '__Secure-1PAPISID', '__Secure-3PAPISID'}
+            authenticated = any(cookie.name in auth_names and cookie.domain.lstrip('.') in {'youtube.com', 'google.com'} for cookie in ydl.cookiejar)
+            authorization = any(key.lower() == 'authorization' for key in request.get('headers', {}))
+            denied_media = 'unable to download video data' in str(error) and 'HTTP Error 403' in str(error)
+            if operation != 'download' or not youtube or not denied_media or authenticated or authorization or not (request.get('cookies') or profile):
+                raise
+            emit('log', message='YouTube 媒体请求返回 403，使用匿名会话重新解析并重试。' if request.get('locale') == 'zh' else 'YouTube media returned 403; re-extracting and retrying with an anonymous session.')
+            with downloader(anonymous=True) as fallback:
+                info = fallback.extract_info(request['url'], download=True)
+        emit('result', result=ydl.sanitize_info(info) if operation == 'extract' else {'files': files, 'originalFiles': original_files, 'processedFiles': processed_files})
 
 
 if __name__ == '__main__':

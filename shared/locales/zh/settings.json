@@ -1,13 +1,14 @@
 {
   "title": "设置",
-  "description": "设置保存在本机。下载参数在新建或继续任务时生效。",
+  "description": "设置保存在本机。模式与加工参数只影响新建任务。",
   "sections": {
     "general": "常规",
     "download": "下载",
     "files": "文件与媒体",
     "browser": "浏览器",
     "appearance": "外观",
-    "tools": "工具与更新"
+    "tools": "工具与更新",
+    "editing": "剪辑与输出"
   },
   "general": {
     "saveLocation": "保存位置",
@@ -27,6 +28,10 @@
     "keepHistory": {
       "label": "保存解析历史",
       "hint": "在新建任务页记住解析成功的链接，方便再次解析；只保存在本机。关闭后不再记录，已有的记录可在新建任务页清空。"
+    },
+    "workMode": {
+      "label": "工作模式",
+      "hint": "下载模式只保存媒体；剪辑模式在下载后转换、调整分辨率或处理字幕，并保留原片和成品。保存设置后切换，已有任务不受影响。"
     }
   },
   "download": {
@@ -106,7 +111,9 @@
     "subtitles": {
       "legend": "字幕",
       "label": "字幕",
-      "embed": "嵌入视频文件",
+      "embed": "软字幕（可开关）",
+      "burn": "硬字幕（固定显示）",
+      "languageOptions": { "en": "英文", "zh": "中文", "bilingual": "中英双语" },
       "file": "保存为独立字幕文件",
       "off": "不下载字幕",
       "languages": "字幕语言",
@@ -117,7 +124,7 @@
         "hint": "该语言没有人工字幕时，回退到平台的语音识别字幕。"
       },
       "normalize": { "label": "整理重叠字幕时间轴", "hint": "合并 YouTube 滚动式字幕片段，避免同一语言同时显示两行。" },
-      "hint": "仅对提供字幕轨的平台有效，YouTube 和登录后的 B 站支持最好。嵌入 MP4 时字幕转为 mov_text，个别播放器可能不显示。"
+      "hint": "使用平台已有字幕；允许自动字幕时可使用平台识别或翻译的字幕，不在客户端自行翻译。软字幕和硬字幕写入成品，原片保持不变。"
     }
   },
   "browser": {
@@ -182,5 +189,13 @@
   },
   "saving": "正在保存…",
   "save": "保存设置",
-  "saved": "设置已保存"
+  "saved": "设置已保存",
+  "editing": {
+    "hint": "原片与成品都保留，成品文件名带 .edited，不覆盖原片。",
+    "outputFormat": "视频输出格式",
+    "originalFormat": "保持原格式",
+    "outputResolution": "输出分辨率",
+    "originalResolution": "保持原分辨率",
+    "resolutionHint": "分辨率只降不升，按画面短边限制，保持比例，不拉伸、不裁切。"
+  }
 }

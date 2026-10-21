@@ -4,13 +4,13 @@
   "nav": {
     "new": "New task",
     "all": "All tasks",
-    "running": "Downloading",
+    "running": "In progress",
     "completed": "Completed",
     "settings": "Settings"
   },
   "workspace": "Workspace",
   "activeDownloads_one": "{{count}} task downloading",
-  "activeDownloads_other": "{{count}} tasks downloading",
+  "activeDownloads_other": "{{count}} tasks in progress",
   "localOnly": "Parsed and saved locally",
   "clipboardFailed": "Couldn't read the clipboard. Paste the link into the box instead.",
   "browserSessions_one": "In-app browser · signed in to {{count}} site",
@@ -46,7 +46,9 @@
     "newest": "Newest first",
     "oldest": "Oldest first",
     "progress": "Progress",
-    "title": "Name"
+    "title": "Name",
+    "workMode": "Task mode",
+    "allModes": "All modes"
   },
   "listView": "List view",
   "gridView": "Card view",

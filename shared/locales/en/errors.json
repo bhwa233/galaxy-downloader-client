@@ -7,7 +7,7 @@
     "group": "Content",
     "media": "Media",
     "signIn": "Sign in with the in-app browser, then try again",
-    "challenge": "The platform sent this visit to a verification page, so the article itself didn't open. Open the sign-in window, complete verification (and sign in if needed), then try again.",
+    "challenge": "This site requires access verification. Open the verification page, complete the check, then close it and retry.",
     "pageEmptyKnown": "The page offered nothing to download. If it needs a sign-in to view, open the sign-in window, sign in or complete verification, then try again.",
     "pageEmpty": "This page has nothing to download.",
     "expired": "This parse result has expired. Parse the link again."

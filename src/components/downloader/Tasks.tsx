@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Copy, Download, ExternalLink, FileX, FolderOpen, Image as ImageIcon, Layers, Link as LinkIcon, LogIn, Music, Pause, Play, RotateCcw, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -41,7 +42,7 @@ function Actions({ job, send }: { job: Job; send: Send }) {
   </>
   if (job.status === 'completed') return <Button variant="ghost" size="icon" title={t('revealFile')} aria-label={t('revealFile')} disabled={busy} onClick={() => run('reveal')}><FolderOpen /></Button>
   const resume = job.status === 'paused'
-  const label = resume ? t('resume') : t('common:retry')
+  const label = job.burnRestartRequired ? t('restartBurn') : resume ? t('resume') : t('common:retry')
   return <Button variant="ghost" size="icon" title={label} aria-label={label} disabled={busy} onClick={() => run(resume ? 'resume' : 'retry')}>{resume ? <Play /> : <RotateCcw />}</Button>
 }
 // Right-clicking a task. The row already carries the one action its state calls for; this is where the
@@ -78,8 +79,8 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
           <ContextMenuItem onClick={() => run('pause')}><Pause />{t('pause')}</ContextMenuItem>
           <ContextMenuItem onClick={() => run('cancel')}><X />{t('common:cancel')}</ContextMenuItem>
         </>}
-        {job.status === 'paused' && <ContextMenuItem onClick={() => run('resume')}><Play />{t('resume')}</ContextMenuItem>}
-        {(job.status === 'failed' || job.status === 'cancelled') && <ContextMenuItem onClick={() => run('retry')}><RotateCcw />{t('common:retry')}</ContextMenuItem>}
+        {job.status === 'paused' && <ContextMenuItem onClick={() => run('resume')}><Play />{t(job.burnRestartRequired ? 'restartBurn' : 'resume')}</ContextMenuItem>}
+        {(job.status === 'failed' || job.status === 'cancelled') && <ContextMenuItem onClick={() => run('retry')}><RotateCcw />{job.burnRestartRequired ? t('restartBurn') : t('common:retry')}</ContextMenuItem>}
         <ContextMenuItem variant="destructive" onClick={() => { setWithFiles(false); setRemoving(true) }}><Trash2 />{t('removeRecordMenu')}</ContextMenuItem>
         {/* The batch this task was queued with. Everything above stays available on the task itself:
             acting on the batch is doing the same thing to each of them, not taking their controls away. */}
@@ -138,8 +139,9 @@ function Metrics({ job }: { job: Job }) {
   const { t } = useTranslation(['tasks', 'common'])
   return <div className="flex flex-wrap justify-between gap-3 text-xs tabular-nums text-muted-foreground">
     <span>{job.downloaded !== undefined ? formatBytes(job.downloaded) : '—'}{job.total ? ` / ${formatBytes(job.total)}` : ''}</span>
-    <span>{job.status === 'running' ? job.speed ? `${formatBytes(job.speed)}/s` : t('preparing') : job.status === 'completed' ? job.completedAt ? t('completedAt', { time: localTime(job.completedAt) }) : '' : `${Math.round(job.progress * 100)}%`}</span>
+    <span>{job.status === 'running' ? job.stage && job.stage !== 'download' ? `${t(`stages.${job.stage}`)}${job.processingProgress !== undefined ? ` ${Math.round(job.processingProgress * 100)}%` : ''}` : job.speed ? `${formatBytes(job.speed)}/s` : t('preparing') : job.status === 'completed' ? job.completedAt ? t('completedAt', { time: localTime(job.completedAt) }) : '' : `${Math.round(job.progress * 100)}%`}</span>
     {job.status === 'running' && job.eta !== undefined && <span>{t('remaining', { time: formatDuration(job.eta) })}</span>}
+    {job.status === 'running' && job.stage && job.stage !== 'download' && <span>{job.processingEta === undefined ? t('estimating') : t('estimatedRemaining', { time: formatDuration(job.processingEta) })}</span>}
   </div>
 }
 export function TaskCard({ job, send, select, view = 'list', density = 'comfortable' }: { job: Job; send: Send; select: () => void; view?: Settings['view']; density?: Settings['density'] }) {
@@ -147,6 +149,7 @@ export function TaskCard({ job, send, select, view = 'list', density = 'comforta
   const compact = density === 'compact'
   const heading = <div className="flex min-w-0 items-center gap-2">
     <button className="min-w-0 truncate text-left text-sm font-medium" onClick={select} title={job.title}>{job.title}</button>
+    <Badge variant="outline">{t(`common:workModes.${job.workMode || 'download'}`)}</Badge>
     <span className={cn('shrink-0 text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>
   </div>
   // The batch is named on every task of it rather than as a header above a group: the list is sorted
@@ -160,8 +163,10 @@ export function TaskCard({ job, send, select, view = 'list', density = 'comforta
       {heading}
       <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
       {/* A finished task has nothing left to measure; a full bar on every row of the list was noise. */}
-      {job.status !== 'completed' && <Progress value={job.progress * 100} className="h-1.5" />}
+      {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
       <Metrics job={job} />
+      {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
+      {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
       <div className="flex justify-end gap-1"><Actions job={job} send={send} /></div>
     </CardContent>
@@ -173,8 +178,10 @@ export function TaskCard({ job, send, select, view = 'list', density = 'comforta
     <ItemContent className="gap-1.5">
       <ItemTitle className="w-full">{heading}</ItemTitle>
       <ItemDescription>{subtitle}</ItemDescription>
-      {job.status !== 'completed' && <Progress value={job.progress * 100} className="h-1.5" />}
+      {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
       <Metrics job={job} />
+      {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
+      {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
     </ItemContent>
     <ItemActions><Actions job={job} send={send} /></ItemActions>
@@ -183,8 +190,9 @@ export function TaskCard({ job, send, select, view = 'list', density = 'comforta
 // What a failure was and what to do about it. A permission wall is known for certain, from the engine's
 // own wording, and its message already says what to do. Anything else is read off the error the way a
 // user would read it; where nothing matches, the error is shown as it is with the general advice.
-type FailureKind = 'resuming' | 'noSpace' | 'permission' | 'expired' | 'network' | 'convert'
+type FailureKind = 'resuming' | 'burnRestart' | 'noSpace' | 'permission' | 'expired' | 'network' | 'convert'
 const FAILURES: { pattern: RegExp; kind: FailureKind }[] = [
+  { pattern: /自动重新合成|restarting subtitle processing automatically/i, kind: 'burnRestart' },
   { pattern: /自动续传|resuming automatically/i, kind: 'resuming' },
   { pattern: /ENOSPC|no space|not enough (disk )?space|insufficient (disk )?space|disk full|磁盘空间/i, kind: 'noSpace' },
   { pattern: /EACCES|EPERM|EROFS|permission denied|access (is )?denied|read-only file system|not writable|拒绝访问/i, kind: 'permission' },
@@ -202,10 +210,10 @@ function Failure({ job, send }: { job: Job; send: Send }) {
   const retry = job.status === 'failed' || job.status === 'cancelled'
   return <Alert variant="destructive">
     <AlertTitle>{title}</AlertTitle>
-    <AlertDescription className="break-words"><p>{job.error}</p>{hint && <p>{hint}</p>}</AlertDescription>
+    <AlertDescription className="break-words"><p>{job.error}</p>{hint && <p>{hint}</p>}{job.burnRestartRequired && kind !== 'burnRestart' && <p>{t('burnRestart.hint')}</p>}</AlertDescription>
     {(login || retry) && <div className="mt-2 flex flex-wrap gap-2">
       {login && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'login' })}><LogIn />{t('common:openLogin')}</Button>}
-      {retry && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'retry' })}><RotateCcw />{t('common:retry')}</Button>}
+      {retry && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'retry' })}><RotateCcw />{job.burnRestartRequired ? t('restartBurn') : t('common:retry')}</Button>}
     </div>}
   </Alert>
 }
@@ -218,16 +226,22 @@ function Files({ job, send }: { job: Job; send: Send }) {
   const key = job.files.join('\n')
   useEffect(() => { void send('jobs:files', { id: job.id }).then(reply => { if (reply) setFound(reply.files) }) }, [send, job.id, key])
   if (!job.files.length) return <p className="text-sm text-muted-foreground">{t('files.empty')}</p>
-  return <>{job.files.map(file => {
+  return <>{job.files.map((file, index) => {
+    const role = job.originalFiles?.includes(file) ? 'original' : job.processedFiles?.includes(file) ? 'processed' : undefined
     const entry = found?.find(item => item.path === file)
     return <Item key={file} variant="outline" size="sm">
       <ItemMedia>{entry && !entry.exists ? <FileX className="size-4 text-destructive" /> : <Download className="size-4" />}</ItemMedia>
       <ItemContent>
-        <ItemTitle className="break-all whitespace-normal">{file}</ItemTitle>
+        {role && <Badge variant="secondary" className="w-fit">{t(`files.${role}`)}</Badge>}
+        <ItemTitle className="break-all whitespace-normal" title={file}>{file.split(/[\\/]/).pop()}</ItemTitle>
         <ItemDescription className={cn('tabular-nums', entry && !entry.exists && 'text-destructive')}>
           {!entry ? t('files.checking') : entry.exists ? entry.size !== undefined ? formatBytes(entry.size) : t('files.saved') : t('files.missing')}
         </ItemDescription>
       </ItemContent>
+      <ItemActions>
+        <Button variant="ghost" size="sm" disabled={!entry?.exists} onClick={() => void send('jobs:file', { id: job.id, index, action: 'open' })}><Play />{t('files.open')}</Button>
+        <Button variant="ghost" size="icon-sm" aria-label={t('files.reveal')} disabled={!entry?.exists} onClick={() => void send('jobs:file', { id: job.id, index, action: 'reveal' })}><FolderOpen /></Button>
+      </ItemActions>
     </Item>
   })}</>
 }
@@ -260,10 +274,18 @@ export function TaskInspector({ job, send, close, error }: { job?: Job; send: Se
             </TabsList>
             <TabsContent value="overview" className="flex flex-col gap-4">
               {job.error && <Failure job={job} send={send} />}
-              <Progress value={job.progress * 100} />
+              {job.burnRestartRequired && !job.error && <Alert><AlertTitle>{t('burnRestart.title')}</AlertTitle><AlertDescription>{t('burnRestart.hint')}</AlertDescription></Alert>}
+              {job.warnings?.map(warning => <Alert key={warning}><AlertTitle>{t('subtitleWarning')}</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
+              <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} />
+              {job.status === 'running' && job.stage && job.stage !== 'download' && <p className="text-sm text-muted-foreground">{t(`stages.${job.stage}`)}</p>}
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm [&_dt]:text-muted-foreground">
-                <dt>{t('fields.progress')}</dt><dd className="tabular-nums">{Math.round(job.progress * 100)}%</dd>
+                <dt>{t('fields.progress')}</dt><dd className="tabular-nums">{Math.round((job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100)}%</dd>
                 <dt>{t('fields.platformKind')}</dt><dd>{platformLabel(job.platform)} / {t(`common:kinds.${job.kind || 'video'}`)}</dd>
+                <dt>{t('fields.workMode')}</dt><dd>{t(`common:workModes.${job.workMode || 'download'}`)}</dd>
+                {job.workMode === 'edit' && job.kind === 'video' && <>
+                  <dt>{t('fields.outputFormat')}</dt><dd>{job.outputFormat && job.outputFormat !== 'original' ? job.outputFormat.toUpperCase() : t('files.originalFormat')}</dd>
+                  <dt>{t('fields.outputResolution')}</dt><dd>{job.outputResolution && job.outputResolution !== 'original' ? t('resolutionLimit', { value: job.outputResolution }) : t('files.originalResolution')}</dd>
+                </>}
                 <dt>{t('fields.method')}</dt><dd>{job.method === 'browser' ? t('methods.browser') : t('methods.local')}</dd>
                 {/* What the platform said about the media when it was parsed; older jobs carry none of it. */}
                 {job.author && <><dt>{t('fields.author')}</dt><dd>{job.author}</dd></>}
@@ -275,6 +297,7 @@ export function TaskInspector({ job, send, close, error }: { job?: Job; send: Se
                 <dt>{t('fields.downloaded')}</dt><dd className="tabular-nums">{job.downloaded !== undefined ? formatBytes(job.downloaded) : t('noData')}{job.total ? ` / ${formatBytes(job.total)}` : ''}</dd>
                 <dt>{t('fields.speed')}</dt><dd className="tabular-nums">{job.status === 'running' && job.speed ? `${formatBytes(job.speed)}/s` : '—'}</dd>
                 {job.status === 'running' && job.eta !== undefined && <><dt>{t('fields.eta')}</dt><dd className="tabular-nums">{formatDuration(job.eta)}</dd></>}
+                {job.status === 'running' && job.stage && job.stage !== 'download' && <><dt>{t('fields.processingEta')}</dt><dd className="tabular-nums">{job.processingEta === undefined ? t('estimating') : formatDuration(job.processingEta)}</dd></>}
                 {/* Breaks picked up again on their own since the last time it finished or was retried by hand. */}
                 {job.attempts ? <><dt>{t('fields.autoResume')}</dt><dd className="tabular-nums">{t('attempts', { count: job.attempts })}</dd></> : null}
                 <dt>{t('fields.createdAt')}</dt><dd>{localTime(job.createdAt)}</dd>

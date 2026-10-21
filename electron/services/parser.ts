@@ -3,7 +3,7 @@ import type { MediaGroup, MediaItem, MediaResult } from '../../shared/contracts'
 import { Engine, type Cookie, type EngineProfile, type EngineRequest } from './engine'
 import type { EmbeddedBrowser } from './browser'
 import { findAdapter } from './listings'
-import { LoginRequired } from './login'
+import { LoginRequired, VerificationRequired } from './login'
 import { logger } from './log'
 import { i18n } from '../../shared/i18n'
 import { SHORTENERS, flattenEntries, isCookieFailure, mediaResult, needsBrowser, normalizeUrl, platformOf, type RawInfo } from './media'
@@ -240,7 +240,7 @@ export class Parser {
       if (platformOf(url) !== new URL(url).hostname.replace(/^www\./, '')) await this.browser.warm(url, signal)
       const { cookies, userAgent } = await this.browser.identity(url)
       const request: EngineRequest = {
-        operation: 'extract', url, profile: this.cookiesUnavailable ? undefined : profile,
+        operation: 'extract', url, manifest: /\.m3u8(?:[?#]|$)/i.test(url) || undefined, profile: this.cookiesUnavailable ? undefined : profile,
         cookies, headers: { 'User-Agent': userAgent },
       }
       let failure: unknown
@@ -273,6 +273,7 @@ export class Parser {
     try { media = await this.browser.inspect(url, signal) }
     catch (error) { signal.throwIfAborted(); log.warn('应用内浏览器打开页面失败', error); throw new LoginRequired(error instanceof Error ? error.message : i18n.t('errors:parse.signIn')) }
     signal.throwIfAborted()
+    if (media.verification || CHALLENGES.test(new URL(media.url).pathname)) throw new VerificationRequired(i18n.t('errors:parse.challenge'))
     // An article is read off the page and nowhere else: the engine has no extractor for one, so the
     // attempt would only cost a failure. Everything else is offered to it first, because a real
     // extractor beats a DOM sweep whenever there is one.
@@ -308,6 +309,16 @@ export class Parser {
       if (known) throw new LoginRequired(i18n.t('errors:parse.pageEmptyKnown'))
       throw new Error(i18n.t('errors:parse.pageEmpty'))
     }
+    // A single HLS player is one work with selectable variants, rather than a text file to save.
+    // The engine owns manifest parsing and downloads; the browser contributes only its session.
+    const hls = (address: string) => media.manifests?.includes(address) || /\.m3u8(?:[?#]|$)/i.test(address)
+    if (assets.length === 1 && hls(assets[0].address)) {
+      const request: EngineRequest = { operation: 'extract', url: assets[0].address, manifest: true, pageUrl: url, mediaTitle: media.title, cookies: media.cookies, headers: { Referer: media.url, 'User-Agent': media.userAgent } }
+      const plan = this.fromEngine(await this.extract(request, signal), request, 'browser')
+      plan.result.url = url; plan.result.title = media.title
+      for (const item of plan.result.items) item.thumbnail ||= media.thumbnail
+      return plan
+    }
     const sources = new Map<string, DownloadSource>()
     const result: MediaResult = {
       id: randomUUID(), url, title: media.title, platform: platformOf(url), method: 'browser',
@@ -315,7 +326,7 @@ export class Parser {
         const id = String(index + 1)
         // Anything with a timeline goes to the engine, which knows how to resume and remux it; a
         // picture is a single GET and needs none of that.
-        if (kind !== 'image') sources.set(id, { kind: 'engine', request: { operation: 'download', url: address, cookies: media.cookies, headers: { Referer: media.url, 'User-Agent': media.userAgent } } })
+        if (kind !== 'image') sources.set(id, { kind: 'engine', request: { operation: 'download', url: address, manifest: hls(address) || undefined, pageUrl: url, mediaTitle: media.title, cookies: media.cookies, headers: { Referer: media.url, 'User-Agent': media.userAgent } } })
         else sources.set(id, { kind: 'http', url: address, cookies: media.cookies, headers: { Referer: media.url, 'User-Agent': media.userAgent }, extension: /\.(png|webp|gif)(\?|$)/i.exec(address)?.[1] || 'jpg' })
         const player = kind === 'image' ? undefined : posterOf(address)
         return {

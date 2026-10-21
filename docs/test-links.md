@@ -186,3 +186,41 @@ X 的视频与图片两种帖子形态都有了样本，链接由使用者提供
 | 超话 | — | 已决定不做 | 不做 |
 
 链接打开后落在"微博正文"详情页（`weibo.com/<uid>/<bid>` 形式）。微博同样存在"点卡片不改地址"的问题，permalink 要用分享菜单复制。
+
+## 2026-10-21：Linux 工作目录的模式拆分、测试修复与 HLS
+
+本节验证只针对 `/home/bhwa233/code/electron-client`，起点为 `316527d`（0.4.3），开始时工作区干净。此前误在 Windows 目录实现的模式功能已迁入这里，并补齐其所需字幕处理器、粗体 CJK 字体、输出参数和进度展示；本节不使用 Windows 目录的结果代替 Linux 实测。未修改版本或发布安装包。
+
+### 测试规则修复
+
+用户明确要求修复失败 / 跳过项，因此本轮修改了对应测试：封面测试区分下载模式与剪辑模式，纯下载不嵌入或转换封面，剪辑模式遵守自己的保存开关；音频追加仍验证独立任务、去重和原任务不变。原跳过项仍假设番剧没有适配器，已改为分P 链接交给引擎、番剧链接交给现有 `bilibili-bangumi`，同时移除 Vitest 的名称过滤。旧 Electron E2E 的按钮名由「下载所选 (1)」更新为实际「下载 1 项」。没有新增持久化测试规格。
+
+最终 `pnpm test`：**66 passed / 10 files，无失败、无跳过**。`pnpm lint`、`pnpm typecheck`、`pnpm build` 均通过。`pnpm test:e2e --output=test-results/e2e-hls-20261021`：**1 passed**，验证真实下载字节、渲染隔离、界面操作及重启持久化。
+
+### 用户指定来源与实测范围
+
+最初来源 [YFSP 播放页](https://www.yfsp.tv/play/40zRQuBGtM8) 在本环境返回 Cloudflare 验证页，用户随后改为提供 `sss111-e1.pipecdn.vip/.../chunklist.m3u8` 的签名直链。未完成该播放页的访问验证，也未将它记录为站点解析成功。代码增加验证页识别与「打开验证页面」入口，避免把访问验证误报为没有媒体。
+
+签名参数不写入需求或长期用例；它会过期，不作为固定网络断言。以下通过隔离用户目录中的真实 Linux Electron 客户端及本地引擎执行，未替换 IPC、解析器、下载器或 FFmpeg：
+
+| 输入 / 检查 | 实际结果 |
+| --- | --- |
+| 用户 m3u8 直链，客户端解析 | 识别 1 项 HLS 视频，VOD 时长 **5739 秒（95:39）**；清单共 **509 个分片**，包含结束标记 |
+| 用户来源首分片 | 实际获取 622,844 字节、约 12.08 秒；检测到 **864×486 H.264 视频 + AAC 音频（44.1 kHz）** |
+| 用户来源短样本 | 使用更新后的随应用 FFmpeg 从该直链保存前约 15 秒：MP4 时长 15.16 秒、646,232 字节，H.264 / AAC，完整解码退出 0。此项只验证短样本，不代表整部 95 分钟内容下载完成 |
+| [Mux 固定公开 HLS 主清单](https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8) | 客户端列出 5 档画质，选择最低档完整下载；最终是真实 MP4，320×184、H.264 / AAC、634.633 秒、20,049,873 字节，完整解码退出 0，未保存为清单文本 |
+| 下载模式默认隔离 | 即使保存着 MKV / 480p / 硬字幕 / MP3 的剪辑参数，下载任务仍固定字幕关闭、原始音轨、不加工媒体 |
+| 剪辑 MP4 / 480p | 实际 MDN flower 视频从原片 960×540 输出为 852×480；两份文件均保留 |
+| 剪辑 MKV / 1080p | 同一 960×540 素材保持 960×540，没有上采样；两次下载的原片哈希一致 |
+| 统一任务与重启 | 1 条下载任务与 2 条剪辑任务统一展示；重启后 3 条任务保留；renderer pageerror=0 |
+| Linux 打包字幕处理器 | 对上述真实素材添加中英样例字幕，调用 `resources/engine/media-engine` 生成双语硬字幕；原片哈希不变，成品完整解码通过，粗体字体可用。此项不是在线中文字幕获取验证 |
+
+### Linux FFmpeg 兼容修复
+
+实测 `ffmpeg-static` 随附的 Linux `7.0.2-static` 对完整 MPEG-TS 输入发生 SIGSEGV（退出 -11）；同一输入用系统 FFmpeg 可成功封装。多种输入 / 线程参数仍复现，因此没有靠跳过封装或把 TS 冒充 MP4 来完成任务。
+
+Linux x64 的准备 / 打包流程改用 **BtbN n8.1.3-9-g29e619e767，autobuild-2026-09-30-13-08 月末版本**，下载归档固定 SHA-256：`97ce978979194b5cf7e06a5e68020dbdaa7a4f3294c5452b6a1bc347100dbb79`，复用本地缓存并随包保留许可证。开发客户端也优先使用准备后的 FFmpeg。对同一失败输入重跑封装退出 0，随后真实客户端完整 HLS 下载成功；验收使用随应用二进制，未依赖系统 FFmpeg。
+
+构建来源见 [FFmpeg 官方静态构建入口](https://ffmpeg.org/download.html)、[BtbN 项目与保留策略](https://github.com/BtbN/FFmpeg-Builds)、[固定发布](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08)。相关版本差异可参考 [ffmpeg-static #151](https://github.com/eugeneware/ffmpeg-static/issues/151)；具体崩溃结论来自本机对照，不能仅由该 issue 推断。
+
+证据在忽略目录 `test-results/hls-20261021/`：`client-summary.json`、`sample-metadata.json`、`sample-clip-metadata.json`、`fixed-remux.json`、`remux-comparison.json`、`demux-comparison.json`、`user-direct-hls.png`、`unified-tasks.png`、`hard-subtitles/summary.json` 与抽帧。临时探针和用户目录在验收后清理；原片、成品及脱敏结果保留供复核。

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, copyFileSync } from 'node:fs'
+import { existsSync, mkdirSync, copyFileSync, cpSync } from 'node:fs'
 import path from 'node:path'
 
 const root = path.resolve(import.meta.dirname, '..')
@@ -21,6 +21,10 @@ if (hasUv) {
 if (process.argv.includes('--bundle')) {
   run(python, ['-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', '--name', 'media-engine', '--collect-all', 'yt_dlp', '--collect-all', 'yt_dlp_ejs', '--distpath', 'resources/engine', '--workpath', 'engine-build/work', '--specpath', 'engine-build', 'engine/main.py'])
   mkdirSync(path.join(root, 'resources/engine'), { recursive: true })
-  const ffmpeg = path.join(root, 'node_modules/ffmpeg-static', windows ? 'ffmpeg.exe' : 'ffmpeg')
-  copyFileSync(ffmpeg, path.join(root, 'resources/engine', windows ? 'ffmpeg.exe' : 'ffmpeg'))
+  if (process.platform !== 'linux' || process.arch !== 'x64') {
+    const ffmpeg = path.join(root, 'node_modules/ffmpeg-static', windows ? 'ffmpeg.exe' : 'ffmpeg')
+    copyFileSync(ffmpeg, path.join(root, 'resources/engine', windows ? 'ffmpeg.exe' : 'ffmpeg'))
+  }
+  cpSync(path.join(root, 'engine/fonts'), path.join(root, 'resources/engine/fonts'), { recursive: true })
 }
+if (process.platform === 'linux' && process.arch === 'x64') run(python, ['scripts/prepare-ffmpeg.py'])

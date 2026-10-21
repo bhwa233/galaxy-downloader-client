@@ -30,7 +30,7 @@
   },
   "statuses": {
     "queued": "Queued",
-    "running": "Downloading",
+    "running": "In progress",
     "paused": "Paused",
     "completed": "Completed",
     "cancelled": "Cancelled",
@@ -44,5 +44,9 @@
   },
   "verifyTitle": "Verification required",
   "openLogin": "Open sign-in window",
-  "openVerify": "Open verification page"
+  "openVerify": "Open verification page",
+  "workModes": {
+    "download": "Download mode",
+    "edit": "Editing mode"
+  }
 }

@@ -15,6 +15,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Toaster } from '@/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Badge } from '@/components/ui/badge'
 import { Choice } from '@/components/downloader/Choice'
 import { History } from '@/components/downloader/History'
 import { MediaGrid } from '@/components/downloader/MediaCard'
@@ -48,6 +49,7 @@ export default function App() {
   const [selectedJob, setSelectedJob] = useState<string>()
   const [search, setSearch] = useState('')
   const [kind, setKind] = useState('all')
+  const [workModeFilter, setWorkModeFilter] = useState('all')
   const [platform, setPlatform] = useState('all')
   const [sort, setSort] = useState('newest')
   const [connecting, setConnecting] = useState(false)
@@ -70,7 +72,7 @@ export default function App() {
   const active = state.jobs.filter(job => job.status === 'running')
   const speed = active.reduce((sum, job) => sum + (job.speed || 0), 0)
   const query = search.trim().toLocaleLowerCase()
-  const jobs = state.jobs.filter(job => (page === 'all' || job.status === page) && (kind === 'all' || (job.kind || (job.audioOnly ? 'audio' : 'video')) === kind) && (platform === 'all' || job.platform === platform) && (!query || `${job.title} ${job.platform} ${job.url}`.toLocaleLowerCase().includes(query))).sort((a, b) => sort === 'oldest' ? a.createdAt.localeCompare(b.createdAt) : sort === 'progress' ? b.progress - a.progress : sort === 'title' ? a.title.localeCompare(b.title) : b.createdAt.localeCompare(a.createdAt))
+  const jobs = state.jobs.filter(job => (page === 'all' || job.status === page) && (workModeFilter === 'all' || (job.workMode || 'download') === workModeFilter) && (kind === 'all' || (job.kind || (job.audioOnly ? 'audio' : 'video')) === kind) && (platform === 'all' || job.platform === platform) && (!query || `${job.title} ${job.platform} ${job.url}`.toLocaleLowerCase().includes(query))).sort((a, b) => sort === 'oldest' ? a.createdAt.localeCompare(b.createdAt) : sort === 'progress' ? b.progress - a.progress : sort === 'title' ? a.title.localeCompare(b.title) : b.createdAt.localeCompare(a.createdAt))
   const title = t(`nav.${page}`)
   const batch = (action: 'pause' | 'resume') => { setBatchBusy(true); void send('jobs:batch', { action }).finally(() => setBatchBusy(false)) }
   const paste = async () => { setPage('new'); try { const reply = await window.desktopApi.command('clipboard:read', null); if (reply.ok) setUrl(reply.clipboardText || ''); else setError(reply.message) } catch { setError(t('clipboardFailed')) } }
@@ -86,7 +88,7 @@ export default function App() {
       <SidebarHeader>
         <div className="flex items-center gap-2 px-1 py-1.5">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Sparkles className="size-4" /></div>
-          <div className="grid leading-tight group-data-[collapsible=icon]:hidden"><span className="text-sm font-semibold">Galaxy</span><span className="text-xs text-muted-foreground">{t('appSubtitle')}</span></div>
+          <div className="grid leading-tight group-data-[collapsible=icon]:hidden"><span className="text-sm font-semibold">Galaxy</span><span className="text-xs text-muted-foreground">{t(`common:workModes.${state.settings.workMode}`)}</span></div>
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -121,6 +123,7 @@ export default function App() {
           <h1 className="text-base font-semibold">{title}</h1>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <Badge variant="secondary">{t(`common:workModes.${state.settings.workMode}`)}</Badge>
           <Tooltip>
             <TooltipTrigger render={<span className="flex items-center px-1" role="img" aria-label={browserState} />}><span className={cn('size-2 rounded-full', state.browser.sites ? 'bg-emerald-500' : 'bg-muted-foreground')} /></TooltipTrigger>
             <TooltipContent>{browserState}</TooltipContent>
@@ -166,7 +169,7 @@ export default function App() {
             {!state.parse.result && <History entries={state.history} send={send} parsing={state.parse.status === 'parsing'}
               reparse={address => { setUrl(address); void send('media:parse', { url: address }) }} />}
           </div> : <>
-          <Card>
+          <Card className="shrink-0">
             <CardHeader>
               <CardTitle>{title}</CardTitle>
               <CardDescription>{t('common:items', { count: jobs.length })}</CardDescription>
@@ -200,6 +203,7 @@ export default function App() {
                   <InputGroupInput aria-label={t('searchTasks')} placeholder={t('searchPlaceholder')} value={search} onChange={event => setSearch(event.target.value)} />
                   <InputGroupAddon><Search /></InputGroupAddon>
                 </InputGroup>
+                <Choice className="w-36" label={t('filters.workMode')} value={workModeFilter} onChange={setWorkModeFilter} options={[{ value: 'all', label: t('filters.allModes') }, ...(['download', 'edit'] as const).map(value => ({ value, label: t(`common:workModes.${value}`) }))]} />
                 <Choice className="w-36" label={t('filters.kind')} value={kind} onChange={setKind} options={[{ value: 'all', label: t('filters.allKinds') }, ...(['video', 'audio', 'image'] as const).map(value => ({ value, label: t(`common:kinds.${value}`) }))]} />
                 <Choice className="w-36" label={t('filters.platform')} value={platform} onChange={setPlatform} options={[{ value: 'all', label: t('filters.allPlatforms') }, ...[...new Set(state.jobs.map(job => job.platform))].map(value => ({ value, label: platformLabel(value) }))]} />
                 <Choice className="w-36" label={t('filters.sort')} value={sort} onChange={setSort} options={(['newest', 'oldest', 'progress', 'title'] as const).map(value => ({ value, label: t(`filters.${value}`) }))} />
@@ -217,7 +221,7 @@ export default function App() {
                     <EmptyTitle><h3>{state.jobs.length ? t('empty.noMatchTitle') : t('empty.emptyTitle')}</h3></EmptyTitle>
                     <EmptyDescription>{state.jobs.length ? t('empty.noMatchDescription') : t('empty.emptyDescription')}</EmptyDescription>
                   </EmptyHeader>
-                  <EmptyContent><Button variant="outline" onClick={() => { if (state.jobs.length) { setSearch(''); setKind('all'); setPlatform('all'); setPage('all') } else setPage('new') }}>{state.jobs.length ? t('empty.showAll') : t('empty.addFirst')}</Button></EmptyContent>
+                  <EmptyContent><Button variant="outline" onClick={() => { if (state.jobs.length) { setSearch(''); setWorkModeFilter('all'); setKind('all'); setPlatform('all'); setPage('all') } else setPage('new') }}>{state.jobs.length ? t('empty.showAll') : t('empty.addFirst')}</Button></EmptyContent>
                 </Empty>}
             </CardContent>
           </Card>

@@ -23,9 +23,13 @@ export class Store {
         // Older profile jobs stored a position in the listing; retain the original post instead.
         const profileJob = job.sourceUrl && /^https?:/.test(job.sourceUrl) && /(?:\/user\/(?:profile\/)?|space\.bilibili\.com\/|bilibili\.com\/space\/)/.test(job.url)
         return { ...job, url: profileJob ? job.sourceUrl! : job.url, itemId: profileJob ? '*' : job.itemId, sourceUrl: undefined,
+          outputFormat: job.outputFormat || (!job.workMode && (job.subtitles === 'embed' || job.subtitles === 'burn') ? 'mp4' : 'original'), outputResolution: job.outputResolution || 'original',
+          workMode: job.workMode || (job.subtitles && job.subtitles !== 'off' || job.audioFormat && job.audioFormat !== 'best' || job.embedThumbnail ? 'edit' : 'download'),
           // Jobs saved before the Chrome CDP route became the client's own browser session.
           method: (job.method as string) === 'chrome' ? 'browser' : job.method,
           kind: job.kind || (job.audioOnly ? 'audio' : 'video'), speed: undefined, eta: undefined, logs: job.logs || [],
+          processingEta: undefined,
+          burnRestartRequired: job.status !== 'completed' && (job.burnRestartRequired || job.stage === 'burn') || undefined,
           status: job.status === 'running' || job.status === 'queued' ? (this.data.settings.resumeOnStart ? 'queued' : 'paused') : job.status }
       })
     } catch (error) {

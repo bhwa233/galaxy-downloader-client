@@ -14,7 +14,7 @@ import type { Fetcher, Fingerprint, ListingGroup, ProfileAdapter } from './listi
 // A player on the page as the page shows it: its poster, and - when it sits inside a card linking to a
 // post - that post's address and text. What a stream caught off the network is matched against.
 export type Poster = { poster: string; link?: string; text?: string }
-export type BrowserMedia = { title: string; url: string; videos: string[]; images: string[]; posters: Poster[]; article: boolean; thumbnail?: string; cookies: Cookie[]; userAgent: string }
+export type BrowserMedia = { verification?: boolean; manifests?: string[]; title: string; url: string; videos: string[]; images: string[]; posters: Poster[]; article: boolean; thumbnail?: string; cookies: Cookie[]; userAgent: string }
 // 'area' is where the window's preview dialog wants the page; 'host' is the window it is shown in,
 // left off while the preview is closed.
 type PreviewView = { view: WebContentsView; host?: BrowserWindow; area: Rectangle; fullscreen: boolean; onClosed?: () => void }
@@ -472,9 +472,11 @@ export class EmbeddedBrowser {
     signal.throwIfAborted()
     const window = this.hidden()
     const videos = new Set<string>()
+    const manifests = new Set<string>()
     // Manifests and progressive media are fetched by the player itself, so they appear as responses
     // and never in the DOM.
     const page = watch(window.webContents, { response: (address, mimeType, status) => {
+      if (status < 400 && /mpegurl/i.test(mimeType)) manifests.add(address)
       if (status >= 400) log.debug(`[inspect] 响应 ${status} ${mimeType} ${address}`)
       if (status < 400 && /^https?:/.test(address) && !/\.(ts|m4s)(\?|$)/i.test(address)
         && (/mpegurl|dash\+xml|video\/mp4|audio\/mpeg/.test(mimeType) || /\.(m3u8|mpd)(\?|$)/i.test(address))) videos.add(address)
@@ -485,7 +487,7 @@ export class EmbeddedBrowser {
       await pause(signal, PACE.media)
       signal.throwIfAborted()
       const article = EmbeddedBrowser.ARTICLES.test(new URL(url).hostname)
-      const data = await page.evaluate<{ title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string }>(`(${mediaScript})(${article})`)
+      const data = await page.evaluate<{ verification?: boolean; title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string }>(`(${mediaScript})(${article})`)
       // A 微信公众号 music card is an iframe: the article names the song and the player, and the audio
       // address is only inside that frame. Asked of every frame rather than of that one - a page's
       // media living in a frame is not special to one platform - and best-effort, because a frame
@@ -497,7 +499,7 @@ export class EmbeddedBrowser {
       // whether the page never arrived or arrived and held nothing.
       log.info(`[inspect] ${address} · 标题「${data.title.slice(0, 40)}」· 视频 ${data.media.length} · 图片 ${data.images.length} · 响应里的媒体 ${videos.size}${article ? ' · 按文章处理' : ''}`)
       for (const found of data.media) videos.add(new URL(found, address).href)
-      return { title: data.title, url: address, videos: [...videos], images: data.images, posters: data.posters, article, thumbnail: data.thumbnail, userAgent: data.userAgent, cookies: await this.cookiesFor([address, ...relatedTo(address), ...videos, ...data.images]) }
+      return { verification: data.verification, manifests: [...new Set([...manifests, ...videos].filter(found => manifests.has(found) || /\.m3u8(?:[?#]|$)/i.test(found)))], title: data.title, url: address, videos: [...videos], images: data.images, posters: data.posters, article, thumbnail: data.thumbnail, userAgent: data.userAgent, cookies: await this.cookiesFor([address, ...relatedTo(address), ...videos, ...data.images]) }
     } finally { await page.settle().catch(() => {}); if (!window.isDestroyed()) window.destroy() }
   }
 }
@@ -564,13 +566,17 @@ const fingerprintScript = function () {
 const frameMediaScript = function () {
   const found = new Set<string>()
   for (const element of document.querySelectorAll<HTMLMediaElement>('video, audio')) {
-    if (element.currentSrc && !element.currentSrc.startsWith('blob:')) found.add(element.currentSrc)
+    const address = element.currentSrc || element.src
+    if (/^https?:/.test(address)) found.add(address)
   }
   for (const element of document.querySelectorAll<HTMLSourceElement>('video source, audio source')) if (element.src) found.add(element.src)
   // A player that has not been pressed has no currentSrc yet, but says what it would play.
   for (const name of ['og:audio', 'og:audio:url', 'og:audio:secure_url', 'og:video', 'og:video:url']) {
     const stated = document.querySelector<HTMLMetaElement>(`meta[property="${name}"],meta[name="${name}"]`)?.content
     if (stated) found.add(stated)
+  }
+  for (const resource of performance.getEntriesByType('resource')) {
+    if (/^https?:/.test(resource.name) && /\.m3u8(?:[?#]|$)/i.test(resource.name)) found.add(resource.name)
   }
   return [...found]
 }
@@ -614,7 +620,8 @@ const mediaScript = function (article: boolean) {
   }
   const noteMap = findMap(state); const note = noteMap && Object.values(noteMap)[0]?.note
   if (note) { title = typeof note.title === 'string' ? note.title : title; const list = Array.isArray(note.imageList) ? note.imageList as { urlDefault?: string; url?: string }[] : []; for (const image of list) if (image.urlDefault || image.url) images.add(image.urlDefault || image.url!); const video = note.video as { media?: { stream?: Record<string, { masterUrl?: string }[]> } } | undefined; for (const variants of Object.values(video?.media?.stream || {})) for (const variant of variants) if (variant.masterUrl) media.add(variant.masterUrl) }
-  for (const element of document.querySelectorAll<HTMLMediaElement>('video, audio')) if (element.currentSrc && !element.currentSrc.startsWith('blob:')) media.add(element.currentSrc)
+  for (const element of document.querySelectorAll<HTMLMediaElement>('video, audio')) { const address = element.currentSrc || element.src; if (/^https?:/.test(address)) media.add(address) }
+  for (const resource of performance.getEntriesByType('resource')) if (/^https?:/.test(resource.name) && /\.m3u8(?:[?#]|$)/i.test(resource.name)) media.add(resource.name)
   for (const element of document.querySelectorAll<HTMLSourceElement>('video source, audio source')) if (element.src) media.add(element.src)
   for (const key of ['og:video', 'og:video:url', 'og:video:secure_url']) if (meta(key)) media.add(meta(key))
   // Every player's poster, and the post it belongs to. A timeline plays blob: streams, so the addresses
@@ -629,5 +636,7 @@ const mediaScript = function (article: boolean) {
     const text = found ? (card!.innerText || '').split('\n').map(line => line.trim()).sort((a, b) => b.length - a.length)[0] : undefined
     posters.push({ poster: element.poster, link: /^[^?#]*?\/status\/\d+/.exec(found?.href || '')?.[0], text: text?.slice(0, 80) || undefined })
   }
-  return { title, images: [...images], media: [...media], posters, thumbnail: meta('og:image'), userAgent: navigator.userAgent }
+  const verification = Boolean(document.querySelector('#challenge-running, #challenge-stage, script[src*="/cdn-cgi/challenge-platform/"]'))
+    && /just a moment|请稍候|请稍等|security verification|checking your browser/i.test(document.title + ' ' + (document.body?.innerText || '').slice(0, 1500))
+  return { verification, title, images: [...images], media: [...media], posters, thumbnail: meta('og:image'), userAgent: navigator.userAgent }
 }
