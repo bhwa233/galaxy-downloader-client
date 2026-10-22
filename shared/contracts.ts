@@ -1,12 +1,24 @@
 import { z } from 'zod'
 import { i18n } from './i18n'
+import { modelId, speakerCount, captionLanguages, captionPatch, type ProcessingState, type ProcessingDocument } from './processing'
 
 export const settingsSchema = z.object({
+  kernelAutoUpdate: z.boolean().default(true),
   workMode: z.enum(['download', 'edit']).default('download'),
   outputFormat: z.enum(['original', 'mp4', 'mkv']).default('original'),
   outputResolution: z.enum(['original', '2160', '1440', '1080', '720', '480']).default('original'),
   editVideoQuality: z.enum(['best', '1080', '720', '480']).default('best'),
   editSaveThumbnail: z.boolean().default(false),
+  downloadSubtitles: z.boolean().default(false),
+  captionLanguages: captionLanguages.default(['zh', 'en']),
+  transcriptionModel: modelId.default('minimal'),
+  transcriptionConcurrency: z.number().int().min(1).max(4).default(1),
+  transcriptionSpeakers: speakerCount.default('auto'),
+  autoTranscribe: z.boolean().default(false),
+  organizeByChannel: z.boolean().default(false),
+  embedMetadata: z.boolean().default(false),
+  embedChapters: z.boolean().default(false),
+  customFilenameTemplate: z.string().trim().max(300).refine(value => !/[\\/]/.test(value) && ![...value].some(char => char.charCodeAt(0) < 32) && !value.includes('..') && !value.replace(/\{(?:title|id|channel|artist|date)\}/g, '').match(/[{}]/)).default(''),
   browserProfileId: z.string().max(200).nullable().default(null),
   concurrency: z.number().int().min(1).max(4).default(2),
   resumeOnStart: z.boolean().default(false),
@@ -74,7 +86,7 @@ export type BrowserProfile = { id: string; browser: 'chrome' | 'edge' | 'firefox
 export type Format = { id: string; label: string; height?: number; audioOnly: boolean; extension: string; size?: number; bitrate?: number; preferredSize?: number; preferredBitrate?: number; audioLanguage?: string; audioLanguageLabel?: string; audioOriginal?: boolean }
 // Counts, author and publish time are what the platform happened to include in its listing: every one of
 // them is missing somewhere, so a card shows whichever it was given and leaves no gap for the rest.
-export type MediaStats = { views?: number; danmaku?: number; comments?: number; likes?: number; author?: string; publishedAt?: number }
+export type MediaStats = { views?: number; danmaku?: number; comments?: number; likes?: number; author?: string; artist?: string; channel?: string; publishedAt?: number }
 // 'url' is the post's own page, which only a listing has: every item of a single parse belongs to the
 // one page the result already names. It travels so the window can offer the link without asking again.
 // 'wall' marks an item the platform says this account cannot have as it stands - a paid 短剧 episode -
@@ -106,6 +118,9 @@ export type JobStatus = 'queued' | 'running' | 'paused' | 'completed' | 'cancell
 export type Job = MediaStats & {
   workMode?: Settings['workMode']; outputFormat?: Settings['outputFormat']; outputResolution?: Settings['outputResolution'];
   originalFiles?: string[]; processedFiles?: string[];
+  includeSubtitles?: boolean; captionLanguages?: string[]; autoTranscribe?: boolean; deferProcessing?: boolean;
+  transcriptionModel?: Settings['transcriptionModel']; transcriptionSpeakers?: Settings['transcriptionSpeakers'];
+  embedMetadata?: boolean; embedChapters?: boolean; customFilenameTemplate?: string;
   id: string; url: string; itemId: string; single?: boolean; sourceUrl?: string; title: string; platform: string; method: 'direct' | 'browser';
   format: string; audioOnly: boolean; status: JobStatus; progress: number; speed?: number; eta?: number;
   kind?: MediaItem['kind']; thumbnail?: string; duration?: number; downloaded?: number; total?: number; completedAt?: string;
@@ -142,6 +157,8 @@ export type HistoryEntry = {
   thumbnail?: string; parsedAt: string
 }
 export type ClientState = {
+  kernel?: import('./processing').KernelState;
+  processing?: ProcessingState;
   settings: Settings; profiles: BrowserProfile[]; jobs: Job[]; history: HistoryEntry[];
   tools: { engine: ToolInfo; ffmpeg: ToolInfo };
   // 'wall' says which permission wall a failure ran into, where it named one. Signing in fixes the
@@ -165,7 +182,7 @@ export const parseInput = z.object({ url: z.string().trim().min(1).max(8192) })
 // a task of its own.
 export const downloadKinds = ['video', 'audio', 'cover'] as const
 export type DownloadKind = typeof downloadKinds[number]
-export const downloadInput = z.object({ resultId: z.string().uuid(), itemIds: z.array(z.string().min(1).max(500)).min(1).max(500), format: z.string().max(200).default('best'), audioFormatId: z.string().min(1).max(200).default('best'), audioLanguage: z.string().regex(/^[A-Za-z0-9-]{1,35}$/).optional(), kinds: z.array(z.enum(downloadKinds)).min(1).max(3).default(['video']), subtitles: settingsSchema.shape.subtitles.removeDefault().optional(), subtitleLanguage: settingsSchema.shape.subtitleLanguage.removeDefault().optional(), outputFormat: settingsSchema.shape.outputFormat.removeDefault().optional(), outputResolution: settingsSchema.shape.outputResolution.removeDefault().optional(), audioFormat: settingsSchema.shape.audioFormat.removeDefault().optional() })
+export const downloadInput = z.object({ resultId: z.string().uuid(), itemIds: z.array(z.string().min(1).max(500)).min(1).max(500), format: z.string().max(200).default('best'), audioFormatId: z.string().min(1).max(200).default('best'), audioLanguage: z.string().regex(/^[A-Za-z0-9-]{1,35}$/).optional(), kinds: z.array(z.enum(downloadKinds)).min(1).max(3).default(['video']), subtitles: settingsSchema.shape.subtitles.removeDefault().optional(), subtitleLanguage: settingsSchema.shape.subtitleLanguage.removeDefault().optional(), outputFormat: settingsSchema.shape.outputFormat.removeDefault().optional(), outputResolution: settingsSchema.shape.outputResolution.removeDefault().optional(), audioFormat: settingsSchema.shape.audioFormat.removeDefault().optional(), includeSubtitles: z.boolean().optional() })
 // 'copy-link', 'open-page' and 'copy-path' are named as actions on the job rather than taking an
 // address from the window, because the window does not have one: job urls are redacted on their way
 // out, so a link copied from what it holds would be missing everything after the '?'.
@@ -174,6 +191,21 @@ export const downloadInput = z.object({ resultId: z.string().uuid(), itemIds: z.
 // audio only. Both add to what is on disk and never touch the job they were asked on.
 export const jobActionInput = z.object({ id: z.string().uuid(), action: z.enum(['pause', 'resume', 'retry', 'cancel', 'open', 'reveal', 'copy-link', 'open-page', 'copy-path', 'thumbnail', 'audio', 'login']) })
 export const commandSchemas = {
+  'processing:import': z.null(),
+  'processing:from-job': z.object({ id: z.string().uuid() }),
+  'processing:get': z.object({ id: z.string().uuid() }),
+  'processing:run': z.object({ id: z.string().uuid(), action: z.enum(['transcribe', 'recognize', 'speakers']), model: modelId.optional(), speakers: speakerCount.optional() }),
+  'processing:cancel': z.object({ id: z.string().uuid() }),
+  'processing:remove': z.object({ id: z.string().uuid() }),
+  'processing:captions': z.object({ id: z.string().uuid() }),
+  'processing:track': z.object({ id: z.string().uuid(), trackId: z.string() }),
+  'processing:edit': captionPatch,
+  'processing:speaker': z.object({ id: z.string().uuid(), speakerId: z.string(), name: z.string().trim().min(1).max(100) }),
+  'processing:export': z.object({ id: z.string().uuid(), format: z.enum(['txt', 'md', 'srt', 'vtt', 'soft', 'burn', 'video']) }),
+  'processing:open-export': z.object({ id: z.string().uuid(), index: z.number().int().nonnegative() }),
+  'models:download': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
+  'models:cancel': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
+  'models:remove': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
   'state:get': z.null(), 'clipboard:read': z.null(), 'browser:refresh': z.null(), 'browser:clear': z.null(),
   'clipboard:write': z.object({ text: z.string().max(8192) }),
   // Hands an address to whatever the system opens links with. Only ever http(s): a renderer that could
@@ -211,6 +243,7 @@ export const commandSchemas = {
   'cli:parse': z.object({ url: z.string().trim().min(1).max(8192), page: z.number().int().min(1).max(500).default(1) }),
   'cli:install': z.null(), 'cli:uninstall': z.null(),
   'logs:export': z.null(), 'logs:open': z.null(),
+  'kernel:check': z.null(), 'kernel:rollback': z.null(),
   'tools:check': z.null(), 'update:check': z.null(), 'update:download': z.null(), 'update:install': z.null(),
 } as const
 export type Command = keyof typeof commandSchemas
@@ -221,7 +254,7 @@ export type CommandInput<C extends Command> = z.input<(typeof commandSchemas)[C]
 export type JobFile = { path: string; exists: boolean; size?: number }
 // 'result', 'jobIds' and 'version' answer the command line; a refusal says which wall it hit, or that a
 // verification is wanted, so the command line can tell a sign-in apart from a failure.
-export type Reply = { ok: true; state: ClientState; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
+export type Reply = { ok: true; state: ClientState; document?: ProcessingDocument; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
   | { ok: false; message: string; wall?: AccessWall; verify?: boolean; loginUrl?: string }
 export interface DesktopApi {
   command<C extends Command>(command: C, input: CommandInput<C>): Promise<Reply>

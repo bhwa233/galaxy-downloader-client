@@ -8,9 +8,9 @@
   "type": "module",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "pnpm processing:build && vite",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "build": "pnpm typecheck && vite build && vite build --config vite.cli.config.ts",
+    "build": "pnpm typecheck && vite build && vite build --config vite.cli.config.ts && vite build --config vite.processing.config.ts",
     "galaxy": "vite build --config vite.cli.config.ts && GALAXY_DEV=1 node dist-electron/cli/galaxy.mjs",
     "package": "pnpm engine:build && pnpm build && electron-builder --publish never",
     "engine:dev": "node scripts/prepare-engine.mjs",
@@ -20,12 +20,15 @@
     "test:live:links": "pnpm build && playwright test --config playwright.live.config.ts links",
     "test:e2e": "pnpm build && playwright test",
     "lint": "eslint .",
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "processing:build": "vite build --config vite.processing.config.ts"
   },
   "dependencies": {
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.3",
     "i18next": "^26.4.2",
+    "opencc-js": "^1.4.2",
+    "sherpa-onnx-node": "1.13.6",
     "zod": "^4.3.6"
   },
   "devDependencies": {

@@ -35,7 +35,11 @@
     "separateFileHint": "Audio language and quality apply to the separately saved audio file.",
     "original": "Original",
     "unknownLanguage": "Unspecified language",
-    "levels": { "high": "High quality", "standard": "Standard quality", "low": "Low quality" },
+    "levels": {
+      "high": "High quality",
+      "standard": "Standard quality",
+      "low": "Low quality"
+    },
     "label": "Audio quality (source track)",
     "best": "Best source audio",
     "bestForLanguage": "Best audio for this language",
@@ -108,5 +112,6 @@
     "allInQueue_one": "This task is already downloading; nothing was added twice.",
     "allInQueue_other": "All {{count}} tasks are already downloading; nothing was added twice.",
     "oneInQueue": "“{{title}}” ({{kind}}) is already downloading."
-  }
+  },
+  "attachSubtitles": "Attach platform captions"
 }

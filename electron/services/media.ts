@@ -5,7 +5,7 @@ import { i18n } from '../../shared/i18n'
 export type RawInfo = {
   id?: string; title?: string; webpage_url?: string; original_url?: string; url?: string; ext?: string; duration?: number; thumbnail?: string;
   thumbnails?: { url?: string; width?: number }[]; _type?: string;
-  view_count?: number; comment_count?: number; uploader?: string; channel?: string; timestamp?: number; upload_date?: string;
+  view_count?: number; comment_count?: number; uploader?: string; artist?: string; channel?: string; timestamp?: number; upload_date?: string;
   extractor_key?: string; extractor?: string; vcodec?: string; entries?: RawInfo[]; playlist_index?: number; playlist_count?: number;
   formats?: RawFormat[]
 }
@@ -189,6 +189,7 @@ export function mediaResult(raw: RawInfo, url: string, method: MediaResult['meth
   const items: MediaItem[] = entries.map((entry, index) => ({
     id: String(start + index), title: entry.title || i18n.t('errors:media.item', { index: start + index }), duration: entry.duration,
     views: entry.view_count, comments: entry.comment_count,
+    artist: entry.artist || raw.artist, channel: entry.channel || raw.channel,
     author: entry.uploader || entry.channel || raw.uploader || raw.channel, publishedAt: publishedAt(entry) ?? publishedAt(raw),
     // Channel and playlist entries carry a thumbnails list instead of a single thumbnail.
     thumbnail: bestThumbnail(entry) || bestThumbnail(raw),

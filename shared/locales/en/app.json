@@ -6,7 +6,8 @@
     "all": "All tasks",
     "running": "In progress",
     "completed": "Completed",
-    "settings": "Settings"
+    "settings": "Settings",
+    "processing": "Video processing"
   },
   "workspace": "Workspace",
   "activeDownloads_one": "{{count}} task downloading",

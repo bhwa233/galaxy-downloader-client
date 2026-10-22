@@ -13,7 +13,7 @@ import type { ParsePlan } from './parser'
 import { i18n } from '../../shared/i18n'
 
 const log = logger('queue')
-type ProcessingOptions = Partial<Pick<Settings, 'subtitles' | 'subtitleLanguage' | 'outputFormat' | 'outputResolution' | 'audioFormat'>> & { audioLanguage?: string }
+type ProcessingOptions = Partial<Pick<Settings, 'subtitles' | 'subtitleLanguage' | 'outputFormat' | 'outputResolution' | 'audioFormat'>> & { audioLanguage?: string; includeSubtitles?: boolean }
 
 // Adapted from src/utils/string-utils.ts without the remote image proxy imports.
 // Cut by bytes, not characters: filesystems cap a name at 255 bytes and a Chinese character is three
@@ -39,7 +39,9 @@ function stemOf(job: Job): string {
   const name = job.filenameTemplate === 'id-title' ? `${id}-${filename(job.title)}`
     : job.filenameTemplate === 'date-title-id' ? `${job.createdAt.slice(0, 10)}-${filename(job.title)}-${id}`
     : `${filename(job.title)}-${id}`
-  return path.join(job.directory, name)
+  const custom = job.customFilenameTemplate?.replace(/\{(title|id|channel|artist|date)\}/g, (_, key: string) => ({ title: job.title, id, channel: job.channel || job.author || 'Unknown', artist: job.artist || job.author || 'Unknown', date: job.createdAt.slice(0, 10) })[key] || '')
+  const customName = custom ? filename(custom) : undefined
+  return path.join(job.directory, customName ? customName.includes(id) ? customName : `${customName}-${id}` : name)
 }
 
 // Where a job's files land. A collection or a multi-part video is one thing split into files, so its
@@ -53,6 +55,7 @@ export function directoryFor(settings: Settings, plan: ParsePlan, item: MediaIte
     : undefined
   return path.join(settings.downloadDirectory,
     ...(settings.organizeByPlatform ? [filename(plan.result.platform)] : []),
+    ...(settings.organizeByChannel && (item.channel || item.author) ? [filename(item.channel || item.author!)] : []),
     ...(collection ? [filename(collection)] : []))
 }
 
@@ -131,8 +134,9 @@ export class Queue {
       const itemId = plan.result.listing ? '*' : item.id
       const wantsAudio = !coverOnly && item.kind !== 'image' && audioOnly
       const editing = settings.workMode === 'edit' && !coverOnly && item.kind !== 'image'
-      const processing = { workMode: settings.workMode, outputFormat: editing && !wantsAudio ? subtitleOptions.outputFormat ?? settings.outputFormat : 'original', outputResolution: editing && !wantsAudio ? subtitleOptions.outputResolution ?? settings.outputResolution : 'original', audioFormat: editing && wantsAudio ? subtitleOptions.audioFormat ?? settings.audioFormat : 'best' } as const
-      const subtitles = !editing || wantsAudio ? 'off' : subtitleOptions.subtitles ?? settings.subtitles
+      const processing = { workMode: settings.workMode, outputFormat: 'original', outputResolution: 'original', audioFormat: 'best' } as const
+      const includeSubtitles = !wantsAudio && !coverOnly && item.kind !== 'image' && (subtitleOptions.includeSubtitles ?? settings.downloadSubtitles)
+      const subtitles = includeSubtitles ? 'file' : 'off'
       const subtitleLanguage = subtitleOptions.subtitleLanguage ?? settings.subtitleLanguage
       const audioLanguage = wantsAudio ? subtitleOptions.audioLanguage : undefined
       if (this.pending(url, itemId, wantsAudio, coverOnly, wantsAudio || coverOnly || item.kind === 'image' ? undefined : { subtitles, subtitleLanguage }, audioLanguage, processing)) continue
@@ -142,10 +146,12 @@ export class Queue {
         id, url, itemId, single: Boolean(plan.result.listing || source?.kind === 'engine' && source.request.info) || undefined, coverOnly: coverOnly || undefined,
         title: item.title, platform: plan.result.platform, method: plan.result.method,
         kind: coverOnly || item.kind === 'image' ? 'image' : audioOnly ? 'audio' : item.kind, thumbnail: item.thumbnail, duration: coverOnly ? undefined : item.duration,
-        views: item.views, danmaku: item.danmaku, comments: item.comments, likes: item.likes, author: item.author, publishedAt: item.publishedAt,
+        views: item.views, danmaku: item.danmaku, comments: item.comments, likes: item.likes, author: item.author, artist: item.artist, channel: item.channel, publishedAt: item.publishedAt,
         format: coverOnly || item.kind === 'image' ? 'best' : format, audioOnly: wantsAudio,
         speedLimit: settings.taskSpeedLimit, filenameTemplate: settings.filenameTemplate, videoQuality: settings.workMode === 'edit' ? settings.editVideoQuality : settings.videoQuality, ...processing,
-        subtitles, subtitleLanguage,
+        subtitles, subtitleLanguage, includeSubtitles, deferProcessing: true,
+        captionLanguages: settings.captionLanguages, autoTranscribe: editing && settings.autoTranscribe, transcriptionModel: settings.transcriptionModel, transcriptionSpeakers: settings.transcriptionSpeakers,
+        embedMetadata: editing && settings.embedMetadata, embedChapters: editing && settings.embedChapters, customFilenameTemplate: settings.customFilenameTemplate,
         audioLanguage,
         subtitleLanguages: settings.subtitleLanguages || SUBTITLE_LANGUAGES[settings.locale], subtitleAutoGenerated: settings.subtitleAutoGenerated, subtitleNormalizeOverlaps: settings.subtitleNormalizeOverlaps,
         ...(coverOnly ? {} : thumbnailsFor(settings, item.kind, wantsAudio)),
@@ -208,7 +214,7 @@ export class Queue {
     if (source.audioOnly) throw new Error(i18n.t('queue:errors.alreadyAudio'))
     if (source.kind === 'image') throw new Error(i18n.t('queue:errors.imageHasNoAudio'))
     const settings = this.store.data.settings
-    const processing = { workMode: settings.workMode, audioFormat: settings.workMode === 'edit' ? settings.audioFormat : 'best', outputFormat: 'original', outputResolution: 'original' } as const
+    const processing = { workMode: settings.workMode, audioFormat: 'best', outputFormat: 'original', outputResolution: 'original' } as const
     if (this.pending(source.url, source.itemId, true, false, undefined, undefined, processing)) throw new Error(i18n.t('queue:errors.audioPending'))
     this.jobs.unshift({
       ...source,
@@ -217,7 +223,10 @@ export class Queue {
       kind: 'audio', audioOnly: true, format: 'best', ...processing,
       originalFiles: [], processedFiles: [], stage: undefined, processingProgress: undefined, processingEta: undefined, burnRestartRequired: undefined, audioLanguage: undefined,
       // An audio file has nowhere to put a subtitle track, and its cover follows the audio setting.
-      subtitles: 'off', ...thumbnailsFor(settings, source.kind || 'video', true),
+      subtitles: 'off', includeSubtitles: false, deferProcessing: true, autoTranscribe: settings.workMode === 'edit' && settings.autoTranscribe,
+      transcriptionModel: settings.transcriptionModel, transcriptionSpeakers: settings.transcriptionSpeakers, captionLanguages: settings.captionLanguages,
+      embedMetadata: settings.workMode === 'edit' && settings.embedMetadata, embedChapters: settings.workMode === 'edit' && settings.embedChapters,
+      ...thumbnailsFor(settings, source.kind || 'video', true),
       createdAt: new Date().toISOString(),
     })
     this.log(this.jobs[0], i18n.t('queue:log.audioAdded'))
@@ -471,7 +480,7 @@ export class Queue {
         if (event.kind === 'log' && event.message) this.log(job, event.message)
       }
       const processing: Partial<EngineRequest> = {
-        workMode: job.workMode, outputFormat: job.outputFormat, outputResolution: job.outputResolution,
+        workMode: job.workMode, deferProcessing: job.deferProcessing, includeSubtitles: job.includeSubtitles, captionLanguages: job.captionLanguages, embedMetadata: job.embedMetadata, embedChapters: job.embedChapters, outputFormat: job.outputFormat, outputResolution: job.outputResolution,
         audioOnly: job.audioOnly, audioFormat: job.audioFormat,
         subtitles: job.subtitles, subtitleLanguage: job.subtitleLanguage, subtitleLanguages: job.subtitleLanguages,
         subtitleAutoGenerated: job.subtitleAutoGenerated, subtitleNormalizeOverlaps: job.subtitleNormalizeOverlaps,
@@ -481,12 +490,12 @@ export class Queue {
       if (source.kind === 'http' && !(job.audioOnly && item.kind === 'video')) {
         const file = await downloadHttp(this.fetcher, source.url, `${stem}.${source.extension}`, source.cookies, source.headers, signal, progress, { speedLimit, retries: settings.retries, timeout: settings.timeout })
         job.files.push(file)
-        if (job.workMode === 'edit' && item.kind !== 'image') {
+        if (job.workMode === 'edit' && (!job.deferProcessing || job.embedMetadata || job.embedChapters || job.embedThumbnail) && item.kind !== 'image') {
           job.originalFiles = [...new Set([...(job.originalFiles || []), file])]
           this.persist()
           request = {
             ...processing, operation: 'process', input: file, output: `${stem}.%(ext)s`, cookies: source.cookies, headers: source.headers,
-            info: { id: item.id, title: item.title, duration: item.duration, thumbnails: item.thumbnail ? [{ url: item.thumbnail }] : [] },
+            info: { id: item.id, title: item.title, artist: item.artist || item.author, channel: item.channel || item.author, duration: item.duration, thumbnails: item.thumbnail ? [{ url: item.thumbnail }] : [] },
           }
         }
       } else {

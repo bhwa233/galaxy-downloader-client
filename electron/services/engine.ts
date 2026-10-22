@@ -12,7 +12,10 @@ export type Cookie = { name: string; value: string; domain: string; path: string
 export type EngineEvent = { kind: string; message?: string; status?: string; downloaded?: number; total?: number; speed?: number; eta?: number; progress?: number; result?: unknown }
 export type EngineProfile = { browser: string; path: string }
 export type EngineRequest = {
-  operation: 'version' | 'extract' | 'download' | 'process'; profile?: EngineProfile; cookies?: Cookie[];
+  kernelWheel?: string;
+  operation: 'kernel-check' | 'version' | 'extract' | 'download' | 'process' | 'unpack' | 'inspect' | 'audio' | 'embedded-captions' | 'render' | 'captions'; profile?: EngineProfile; cookies?: Cookie[];
+  archiveFiles?: string[]; captionFile?: string; captionFiles?: { file: string; language: string }[]; renderMode?: 'soft' | 'burn' | 'video';
+  deferProcessing?: boolean; includeSubtitles?: boolean; captionLanguages?: string[]; embedMetadata?: boolean; embedChapters?: boolean;
   workMode?: 'download' | 'edit'; outputFormat?: 'original' | 'mp4' | 'mkv'; outputResolution?: string;
   input?: string;
   manifest?: boolean; pageUrl?: string; mediaTitle?: string;
@@ -85,6 +88,7 @@ export function runProcess<T>(executable: string, args: string[], input: unknown
 }
 
 export class Engine {
+  kernelWheel?: string
   // YouTube serves machine-translated titles and descriptions, defaulting to English. The interface
   // language decides which translation the extractor asks for.
   constructor(private root: string, private resources: string, private packaged: boolean, private locale: () => string = () => 'en') {}
@@ -111,6 +115,6 @@ export class Engine {
 
   request<T>(request: EngineRequest, signal?: AbortSignal, onEvent?: (event: EngineEvent) => void): Promise<T> {
     const [executable, args] = this.command
-    return runProcess<T>(executable, args, { ...request, locale: this.locale(), ffmpeg: request.operation === 'version' ? undefined : this.ffmpeg, node: process.execPath }, signal, onEvent, ['download', 'process'].includes(request.operation) ? 24 * 60 * 60 * 1000 : request.operation === 'extract' ? 300_000 : 120_000)
+    return runProcess<T>(executable, args, { kernelWheel: this.kernelWheel, ...request, locale: this.locale(), ffmpeg: request.operation === 'version' ? undefined : this.ffmpeg, node: process.execPath }, signal, onEvent, ['download', 'process', 'render', 'audio', 'unpack'].includes(request.operation) ? 24 * 60 * 60 * 1000 : ['extract', 'captions'].includes(request.operation) ? 300_000 : 120_000)
   }
 }

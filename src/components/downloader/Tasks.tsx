@@ -227,8 +227,8 @@ function Files({ job, send }: { job: Job; send: Send }) {
   })}</>
 }
 type InspectorTab = 'overview' | 'files' | 'log'
-export function TaskInspector({ job, send, close, error }: { job?: Job; send: Send; close: () => void; error?: string }) {
-  const { t } = useTranslation(['tasks', 'common'])
+export function TaskInspector({ job, send, close, error, process }: { job?: Job; send: Send; close: () => void; error?: string; process?: () => void }) {
+  const { t } = useTranslation(['tasks', 'common', 'processing'])
   const [tab, setTab] = useState<InspectorTab>('overview')
   return <Sheet open={Boolean(job)} onOpenChange={open => { if (!open) close() }}>
     <SheetContent side="right" className="sm:max-w-lg">
@@ -259,6 +259,7 @@ export function TaskInspector({ job, send, close, error }: { job?: Job; send: Se
               {job.warnings?.map(warning => <Alert key={warning}><AlertTitle>{t('subtitleWarning')}</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
               <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} />
               {job.status === 'running' && job.stage && job.stage !== 'download' && <p className="text-sm text-muted-foreground">{t(`stages.${job.stage}`)}</p>}
+              {process && job.kind !== 'image' && job.files.length > 0 && <Button variant="outline" onClick={process}>{t('processing:title')}</Button>}
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm [&_dt]:text-muted-foreground">
                 <dt>{t('fields.progress')}</dt><dd className="tabular-nums">{Math.round((job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100)}%</dd>
                 <dt>{t('fields.platformKind')}</dt><dd>{platformLabel(job.platform)} / {t(`common:kinds.${job.kind || 'video'}`)}</dd>

@@ -8,7 +8,8 @@
     "browser": "Browser",
     "appearance": "Appearance",
     "tools": "Tools & updates",
-    "editing": "Editing & output"
+    "editing": "Editing & output",
+    "processing": "Video processing"
   },
   "general": {
     "saveLocation": "Save location",
@@ -31,7 +32,7 @@
     },
     "workMode": {
       "label": "Work mode",
-      "hint": "Download mode saves original media and merges separate video and audio when needed, without conversion, subtitles or embedded artwork. Editing mode processes downloads using your format, downscaling, subtitle and artwork settings, keeping both the source and the output. Save to switch; existing tasks keep their configuration."
+      "hint": "Download mode saves original media with optional platform caption files. Editing mode reveals Video processing for models, local recognition, subtitle editing and new video exports. Automatic transcription is optional. Originals are preserved; existing download tasks keep their saved options."
     }
   },
   "download": {
@@ -113,7 +114,11 @@
       "label": "Subtitles",
       "embed": "Soft subtitles (switchable)",
       "burn": "Hard subtitles (permanent)",
-      "languageOptions": { "en": "English", "zh": "Chinese", "bilingual": "Chinese + English" },
+      "languageOptions": {
+        "en": "English",
+        "zh": "Chinese",
+        "bilingual": "Chinese + English"
+      },
       "file": "Save as separate subtitle file",
       "off": "Don't download subtitles",
       "languages": "Subtitle languages",
@@ -123,7 +128,10 @@
         "label": "Use auto-generated subtitles",
         "hint": "Fall back to the platform's speech-recognition subtitles when a language has no human-made ones."
       },
-      "normalize": { "label": "Normalize overlapping subtitle cues", "hint": "Join YouTube rolling caption fragments so one language does not render twice at once." },
+      "normalize": {
+        "label": "Normalize overlapping subtitle cues",
+        "hint": "Join YouTube rolling caption fragments so one language does not render twice at once."
+      },
       "hint": "Uses captions provided by the platform, including platform-generated captions when enabled. No client-side translation. Embedded or burned captions affect only the output, leaving the source intact."
     }
   },
@@ -187,7 +195,7 @@
   "save": "Save settings",
   "saved": "Settings saved",
   "editing": {
-    "hint": "Both source and output are kept. Output filenames include .edited and never overwrite the source.",
+    "hint": "Export to a new file and preserve the original. Video processing uses these format and resolution defaults.",
     "outputFormat": "Video output format",
     "originalFormat": "Keep original format",
     "outputResolution": "Output resolution",

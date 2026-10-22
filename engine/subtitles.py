@@ -27,9 +27,9 @@ class SubtitleDownloader(YoutubeDL):
         automatic = (automatic_captions or {}) if self.params.get('writeautomaticsub') else {}
         available = {**automatic, **manual}
         chosen = []
-        for prefix in (['zh', 'en'] if self.language == 'bilingual' else [self.language]):
+        for prefix in (self.language[:5] if isinstance(self.language, list) else ['zh', 'en'] if self.language == 'bilingual' else [self.language]):
             preferences = ['zh-Hans', 'zh-CN', 'zh', 'zh-Hant', 'zh-TW'] if prefix == 'zh' else ['en', 'en-orig', 'en-US', 'en-GB']
-            candidates = [key for key in available if key == prefix or key.startswith(prefix + '-')]
+            candidates = [key for key in available if key.lower() == prefix.lower() or key.lower().startswith(prefix.lower() + '-') or key.removeprefix('ai-').lower() == prefix.lower()]
             candidates.sort(key=lambda key: (key not in manual, preferences.index(key) if key in preferences else len(preferences), key))
             if candidates:
                 chosen.append(candidates[0])
@@ -43,6 +43,8 @@ class SubtitleDownloader(YoutubeDL):
     def _write_subtitles(self, info_dict, filename):
         # A caption CDN refusal must not prevent the media itself being saved. Keep
         # extraction, media downloads and postprocessing strict outside this call.
+        if self.params.get('galaxy_strict_captions'):
+            return super()._write_subtitles(info_dict, filename)
         previous = self.params.get('ignoreerrors')
         self.params['ignoreerrors'] = True
         try:
@@ -296,14 +298,14 @@ class SubtitleProcessor(FFmpegPostProcessor):
         elif mode != 'off' and missing:
             self.warning('缺少部分所选语言字幕，已使用现有语言字幕。', 'Some selected subtitle languages are unavailable; available captions were used.')
         combined = None
-        if language_mode == 'bilingual' and zh and en:
+        if not self.request.get('deferProcessing') and language_mode == 'bilingual' and zh and en:
             combined = os.path.splitext(info['filepath'])[0] + '.zh-en.srt'
             cues['zh-en'] = compose_bilingual(cues[zh], cues[en])
             write_srt(combined, cues['zh-en'])
             valid['zh-en'] = {'ext': 'srt', 'filepath': combined, 'name': '中文 + English'}
             info['__files_to_move'][combined] = combined
-        editing = self.request.get('workMode') == 'edit'
-        if mode == 'file' and not editing:
+        editing = self.request.get('workMode') == 'edit' and not self.request.get('deferProcessing')
+        if self.request.get('deferProcessing') or mode == 'file' and not editing:
             return delete, info
 
         original = info['filepath']

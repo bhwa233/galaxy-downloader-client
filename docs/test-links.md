@@ -594,3 +594,51 @@ Linux x64 的准备 / 打包流程改用 **BtbN n8.1.3-9-g29e619e767，autobuild
 用户要求 commit 并升小版本，package.json 从 0.5.0 升至 0.5.1。本次提交包含前述任务仅列表显示、状态固定右上角、模式名称仅在设置显示及区别说明、左上角版本号、设置右上角保存与最小铺满页面，以及 B 站番剧毫秒时长转换和连带体积估算修复。依赖及 lockfile 未变，未修改测试规格。
 
 业务变更后的 `pnpm check` 已通过（typecheck、Lint、66 项单测与构建），实际客户端及 B 站验证见前文。升版本后重新运行 `pnpm build`（含 typecheck）通过，`git diff --check` 通过。既有 E2E 仍在等待已按产品要求移除的卡片按钮，此次没有重跑或修改该测试，不宣称 E2E 全部通过。本次仅本地提交，未推送、未创建 tag。
+
+
+## 2026-10-22：视频处理、离线 ASR 与内核后台更新
+
+工作目录 `/home/bhwa233/code/electron-client`。全部新验证通过真实 Linux Electron、真实引擎和实际模型完成，使用独立的 `CLIENT_TEST_DATA`；未新增或修改 Vitest、Playwright 或 live 规格。临时驱动脚本已删除，证据留在忽略目录 `test-results/processing-20261022/`。
+
+| 实际来源／操作 | 结果 |
+| --- | --- |
+| [Whisper.cpp JFK WAV](https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/samples/jfk.wav) | 客户端下载、按模板保存后自动转录；Whisper Tiny 在本机识别出完整英文句子。已安装模型时阻断主窗口 HTTP 后重新识别成功，未出现 HTTP 请求。 |
+| [Sherpa 四人中文样本](https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/0-four-speakers-zh.wav) | 实际下载 SenseVoice、Silero VAD、pyannote 分割和 CAM++ 模型；56.86 秒音频生成 17 行字幕，指定 4 人得到 4 位说话人；改自动聚类仍得到 4 人，逐行文字、ID、时间和词数据保留。 |
+| 字幕编辑与说话人 | 主窗口编辑首行并保存为“这是人工编辑的字幕。”；重命名“主持人”后全文／说话人搜索命中 4 行。另对带人工修改的英文稿重新标注为 1 人，文字及 500～10500 ms 时间保持不变。过期 revision 拒绝覆盖。原生对话框导入 SRT 后，切回原轨仍保留已编辑文本；未知语言显示为文件名，写入标准 und 标签。 |
+| 已有字幕优先 | 导入带 en／zh 独立 SRT 的媒体；选未安装的 Qwen3-ASR 1.7B 运行“读取字幕或识别”，直接完成，未下载模型。支持切换轨道。 |
+| 播放器 | 文档 UUID 协议返回正确媒体类型和 Content-Length；Range `bytes=0-15` 得 206、16 字节；越界得 416；视频时长 11.4 秒，点击第二行即跳至 5 秒。没有文件路径型 IPC。 |
+| 字幕与视频导出 | 实际导出 TXT、Markdown、SRT、VTT、双轨 en／zh 软字幕 MKV、英文及中文烧字幕 MP4；FFmpeg 全片解码通过。中文截图 `burn-zh-frame.png` 无缺字；原片 SHA-256 始终为 `5c873a69e1a31ba33980d0514c33a58575f664f2d94c65808c143b1e9e9d5484`。 |
+| 分辨率 | 640×360 原片按 1080p 导出仍为 640×360；1920×1080 测试媒体按 480p 导出为 852×480，只降不升。 |
+| 元数据与封面 | 引擎处理实际媒体，保留原片及 `.edited.mp4`，写入 title、artist 与两个章节；独立验证从真实 GitHub 下载 PNG、保存并作为 attached picture 写入副本。 |
+| 并发、取消及模型状态 | 并发设 1 时两个识别请求分别 running／queued；取消首个后第二个运行。未安装模型任务进入 waiting-model，可取消。已安装说话人模型删除后 ready=false；Whisper Base 下载取消后无就绪标记、无残留 staging。单人识别仍启用 VAD；辅助模型共享下载期间取消文档能立即释放队列位，再次启动可复用该下载并完成识别。 |
+| 模式隔离与输入校验 | 下载模式视频处理导航为 0，模型操作被主进程拒绝；记录和已下载模型保留。6 种字幕语言被拒绝，非法文档 ID 被拒绝。 |
+| yt-dlp 更新／回退 | 从官方 PyPI 获取 2026.10.21 wheel、校验并激活，实际版本由 2026.08.19 变为 2026.10.21；回退到打包基线成功，重启能验证并加载安装版本。独立 PyInstaller 引擎也通过候选 wheel 兼容检查，并实际在 2026.10.21 内核下下载 TED 两种平台字幕。 |
+| 打包的识别进程 | Linux `electron-builder --dir` 打包成功，`.node` 与同目录 `.so` 在 asar.unpacked；以打包应用的 Electron 启动 asar 内 worker，离线识别 JFK 成功、退出码 0。 |
+
+TED 字幕来源：[Candace Parker — How to break down barriers and not accept limits](https://www.ted.com/talks/candace_parker_how_to_break_down_barriers_and_not_accept_limits)。旧 2026.08.19 内核解析失败；更新至 2026.10.21 后取得 en（244 行）与 zh-cn（250 行）VTT。真实探针发现 captions 操作在构造 YoutubeDL 后设置 outtmpl 会破坏其规范化结构，已改为构造前配置；修复后两种语言下载成功，字幕下载错误严格上报。
+
+完整客户端链路也已实测：新建 TED 180p 下载，模板文件保存至 `Candace Parker/`，原片和写入元数据的 `.edited.mkv` 都保留；未勾选附带字幕但开启下载后自动转录，选中的 Qwen3-ASR 1.7B 未安装。下载完成后工作台自动从平台取得 en／zh-cn 两轨，英文清洗后 225 行，状态 completed，Qwen 仍未安装，未启动 ASR。renderer pageerror=0。截图 `test-results/driver/processing-ted.png`、`processing-models.png`。
+
+真实 TED HLS 字幕还暴露了缺少空行与重复边界 cue：原解析器会把下一行时间戳混入正文。已按时间戳边界解析、忽略空 cue 并去重，客户端重取平台字幕后为 225 行，首行严格从 621 ms 到 5460 ms，正文不再含时间戳。
+
+修复中还发现“只附带平台字幕”的新任务会进入旧视频加工器，对 WAV 尝试映射视频流而失败；已在 deferProcessing 路径只做字幕文件处理，不重写原媒体，重试同一真实下载后完成并自动转录。早期播放器协议缺少明确分段响应导致 WAV 时长为 Infinity，已实现 200／206／416 与正确长度；重验视频时长、seekable 与跳播正常。
+
+`pnpm check` 通过：typecheck、Lint、66 项单测（10 文件）及构建。`pnpm engine:build` 成功。现有 E2E 实际运行，先成功完成解析、下载与日志校验，然后在 `test/e2e/e2e.spec.ts:50` 等待已删除的“卡片视图”按钮失败；没有改动测试或宣称 E2E 全绿。
+
+验证限制：本轮实际运行的 ASR 为 Whisper Tiny 与 SenseVoice；其他家族及更大变体已接入，但未逐一下载、推理或比较准确率。当前仅验证 Linux x64 CPU，Windows、macOS 与 GPU 未实机验证。模型准确率不由短样本保证；部分上游归档下载量大于最终模型体积，界面已有说明。
+
+
+## 2026-10-22：选择媒体未列出已下载任务
+
+真实用户数据中有 1 个已完成且媒体文件仍在的任务，处理文档为 0。复制任务状态到隔离用户目录、启动真实 Electron 后复现：“选择媒体”选项为 `[]`，无 renderer 异常。根因是下拉只使用 processing.documents，而已有下载仅在从任务详情打开、手动导入或自动转录时才注册为文档。
+
+修复后主进程从已完成任务的原片／媒体文件中提供可选来源，只返回任务 ID、标题与文件名；过滤图片、空文件、丢失文件及越出任务目录的路径。选择后复用 processing:from-job 注册并载入，已有文档按源路径与文件签名去重。导入和自动处理使用同一文件校验逻辑；不会因为打开或选择而启动 ASR、下载模型。空列表禁用并提示先下载／导入；现有 Choice 原语支持占位文字。
+
+验证：
+
+- 同一份真实状态，修复前 options=[]；修复后直接出现已下载的 MKV（官方预告片）。实际选中后载入 1:13 的播放器，创建文档关联正确任务，模型下载数为 0；再次展开仅 1 个选项，无重复，原媒体仍存在，renderer pageerror=0。
+- 在隔离状态中将文件指向不存在路径，来源不再出现，下拉禁用且显示“暂无可用媒体，请先下载或导入”；尝试从该任务载入被主进程拒绝。
+- 用户开发实例保持运行，主进程已提供 1 个可选的已下载媒体，用户真实处理记录仍为 0，没有为验证操作改动真实记录。
+- pnpm check 通过（typecheck、Lint、66 项既有单测与构建）；后续选择状态保护改动后再次 build（含 typecheck）和 lint 通过，git diff --check 通过。未新增／修改测试规格；未重跑已知因“卡片视图”旧选择器失败的 E2E。
+
+证据：test-results/media-picker/before-options.png、after-options.png、after-loaded.png、empty.png；临时驱动与隔离用户目录已删除。

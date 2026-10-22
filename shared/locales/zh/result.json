@@ -34,7 +34,11 @@
     "separateFileHint": "音频语言和音质用于单独保存的音频文件。",
     "original": "原声",
     "unknownLanguage": "未标注语言",
-    "levels": { "high": "高音质", "standard": "标准音质", "low": "低音质" },
+    "levels": {
+      "high": "高音质",
+      "standard": "标准音质",
+      "low": "低音质"
+    },
     "label": "音质（原始音轨）",
     "best": "最高音质（原始音轨）",
     "bestForLanguage": "最高音质（当前语言）",
@@ -94,5 +98,6 @@
     "inQueue": "已在下载队列中",
     "allInQueue_other": "这 {{count}} 个任务都已经在下载，没有重复添加。",
     "oneInQueue": "「{{title}}」的{{kind}}已经在下载。"
-  }
+  },
+  "attachSubtitles": "附带平台字幕"
 }

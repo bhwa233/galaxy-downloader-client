@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { MediaCard, MediaGrid, MediaRow } from './MediaCard'
-import { Field, FieldLabel, FieldSet, FieldLegend, FieldGroup } from '@/components/ui/field'
+import { Field, FieldLabel } from '@/components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from '@/components/ui/toast'
@@ -122,20 +122,8 @@ export function Result({ result, parse, settings, send, login, connecting, close
   const [format, setFormat] = useState('best')
   const [audioFormatId, setAudioFormatId] = useState('best')
   const [audioLanguageOverride, setAudioLanguageOverride] = useState<string>()
-  const { t: subtitleText } = useTranslation('settings')
-  const [subtitleOverride, setSubtitleOverride] = useState<Settings['subtitles']>()
-  const [languageOverride, setLanguageOverride] = useState<Settings['subtitleLanguage']>()
-  const editing = settings.workMode === 'edit'
-  const [outputFormat, setOutputFormat] = useState<Settings['outputFormat']>()
-  const [outputResolution, setOutputResolution] = useState<Settings['outputResolution']>()
-  const [audioOutput, setAudioOutput] = useState<Settings['audioFormat']>()
-  const subtitleOptions = {
-    subtitles: editing ? subtitleOverride ?? settings.subtitles : 'off' as const,
-    subtitleLanguage: languageOverride ?? settings.subtitleLanguage,
-    outputFormat: editing ? outputFormat ?? settings.outputFormat : 'original' as const,
-    outputResolution: editing ? outputResolution ?? settings.outputResolution : 'original' as const,
-    audioFormat: editing ? audioOutput ?? settings.audioFormat : 'best' as const,
-  }
+  const [includeSubtitles, setIncludeSubtitles] = useState(settings.downloadSubtitles)
+  const subtitleOptions = { includeSubtitles, audioFormat: 'best' as const }
   // What to download of each ticked item, any combination of the three. Back to the media alone on
   // every parse, so a choice made for one result does not quietly carry over to the next.
   const [kinds, setKinds] = useState<DownloadKind[]>(['video'])
@@ -279,7 +267,6 @@ export function Result({ result, parse, settings, send, login, connecting, close
   const skipped = pictures
     ? pictured < queuedItems.length ? [t('missing.cover', { count: queuedItems.length - pictured })] : []
     : kinds.filter(kind => counts[kind] < queuedItems.length).map(kind => t(`missing.${kind}`, { count: queuedItems.length - counts[kind] }))
-  const processingMedia = editing && !pictures && (kinds.includes('video') || kinds.includes('audio')) && queuedItems.some(item => item.kind !== 'image')
   const selectAll = (checked: boolean) => { const ids = pickable.map(item => item.id); setSelected(current => checked ? [...new Set([...current, ...ids])] : current.filter(id => !ids.includes(id))) }
   const download = () => {
     if (submitting) return
@@ -406,19 +393,10 @@ export function Result({ result, parse, settings, send, login, connecting, close
         {queuedBytes && (kinds.includes('video') || audioOnlyMode) && !pictures ? ` · ${t('about', { size: formatBytes(queuedBytes) })}` : ''}
         {skipped.length ? t('skipped', { list: skipped.join(t('listSeparator')) }) : ''}
       </span>
-      {processingMedia && <FieldSet className="w-full">
-        <FieldLegend variant="label">{subtitleText('sections.editing')}</FieldLegend>
-        <FieldGroup className="flex-row flex-wrap items-end gap-3">
-          {kinds.includes('video') && queuedItems.some(item => item.kind === 'video') && <>
-            <Choice className="w-40" label={subtitleText('editing.outputFormat')} value={subtitleOptions.outputFormat} onChange={value => setOutputFormat(value as Settings['outputFormat'])} options={[{ value: 'original', label: subtitleText('editing.originalFormat') }, { value: 'mp4', label: 'MP4' }, { value: 'mkv', label: 'MKV' }]} />
-            <Choice className="w-44" label={subtitleText('editing.outputResolution')} value={subtitleOptions.outputResolution} onChange={value => setOutputResolution(value as Settings['outputResolution'])} options={[{ value: 'original', label: subtitleText('editing.originalResolution') }, ...['2160', '1440', '1080', '720', '480'].map(value => ({ value, label: `${value}p` }))]} />
-        <Choice className="w-44" label={subtitleText('files.subtitles.label')} disabled={pictures || !kinds.includes('video') || !queuedItems.some(item => item.kind === 'video')} value={subtitleOptions.subtitles} onChange={value => setSubtitleOverride(value as Settings['subtitles'])} options={(['embed', 'burn', 'file', 'off'] as const).map(value => ({ value, label: subtitleText(`files.subtitles.${value}`) }))} />
-        <Choice className="w-32" label={subtitleText('files.subtitles.languages')} disabled={pictures || !kinds.includes('video') || subtitleOptions.subtitles === 'off' || !queuedItems.some(item => item.kind === 'video')} value={subtitleOptions.subtitleLanguage} onChange={value => setLanguageOverride(value as Settings['subtitleLanguage'])} options={(['en', 'zh', 'bilingual'] as const).map(value => ({ value, label: subtitleText(`files.subtitles.languageOptions.${value}`) }))} />
-          </>}
-          {kinds.includes('audio') && <Choice className="w-48" label={subtitleText('files.audioFormat.label')} value={subtitleOptions.audioFormat} onChange={value => setAudioOutput(value as Settings['audioFormat'])} options={[{ value: 'best', label: subtitleText('files.audioFormat.best') }, ...['mp3', 'm4a', 'flac'].map(value => ({ value, label: value.toUpperCase() }))]} />}
-        </FieldGroup>
-        <p className="text-xs text-muted-foreground">{subtitleText('editing.hint')} {subtitleText('editing.resolutionHint')}</p>
-      </FieldSet>}
+      {!pictures && kinds.includes('video') && <Field orientation="horizontal" className="w-fit">
+        <Checkbox id="download-platform-subtitles" checked={includeSubtitles} onCheckedChange={checked => setIncludeSubtitles(checked === true)} />
+        <FieldLabel htmlFor="download-platform-subtitles">{t('attachSubtitles')}</FieldLabel>
+      </Field>}
       <div className="ml-auto flex flex-wrap items-center gap-3">
         {/* 下载内容: any combination of the media, its audio and its cover. Never empty - unticking the
             last one leaves it ticked. The audio format is 设置's, not chosen here. */}
@@ -439,7 +417,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
           <FolderOpen /><span className="truncate">{settings.downloadDirectory}</span>
         </Button>
         {/* Enqueueing says so and leaves the listing where it is: the tasks are there whenever they look. */}
-        <Button disabled={!queueing.length || submitting} onClick={download}><Download />{processingMedia ? t('download.process', { count: tasks }) : pictures ? t('download.pictures', { count: tasks }) : kinds.length > 1 ? t('download.files', { count: tasks }) : kinds[0] === 'video' ? t('download.items', { count: tasks }) : kinds[0] === 'audio' ? t('download.audio', { count: tasks }) : t('download.cover', { count: tasks })}</Button>
+        <Button disabled={!queueing.length || submitting} onClick={download}><Download />{pictures ? t('download.pictures', { count: tasks }) : kinds.length > 1 ? t('download.files', { count: tasks }) : kinds[0] === 'video' ? t('download.items', { count: tasks }) : kinds[0] === 'audio' ? t('download.audio', { count: tasks }) : t('download.cover', { count: tasks })}</Button>
       </div>
       {!pictures && kinds.includes('audio') && kinds.includes('video') && <p className="w-full text-xs text-muted-foreground">{t('audioQuality.separateFileHint')}</p>}
     </div>
