@@ -9,7 +9,7 @@ import type { RawInfo } from './media'
 const log = logger('engine')
 
 export type Cookie = { name: string; value: string; domain: string; path: string; secure: boolean; expires: number }
-export type EngineEvent = { kind: string; message?: string; status?: string; downloaded?: number; total?: number; speed?: number; eta?: number; progress?: number; result?: unknown }
+export type EngineEvent = { kind: string; code?: string; message?: string; status?: string; downloaded?: number; total?: number; speed?: number; eta?: number; progress?: number; result?: unknown }
 export type EngineProfile = { browser: string; path: string }
 export type EngineRequest = {
   kernelWheel?: string;
@@ -33,13 +33,18 @@ export function redact(message: string): string {
   }).replace(/((?:cookie|authorization|token|password)\s*[:=]\s*)[^\r\n]+/gi, '$1[redacted]').slice(0, 2000)
 }
 
+export class EngineProtocolError extends Error {}
+
 // Node's process API provides bounded pipes and cancellation; no shell wrapper or command-string library is needed.
 export function runProcess<T>(executable: string, args: string[], input: unknown, signal?: AbortSignal, onEvent?: (event: EngineEvent) => void, timeout = 120_000): Promise<T> {
   signal?.throwIfAborted()
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PYTHONUNBUFFERED: '1' } })
+    const child = spawn(executable, args, { shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PYTHONUNBUFFERED: '1', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } })
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
     let result: T | undefined
     let error = ''
+    let protocolFailure = false
+    let failureCode: string | undefined
     let bytes = 0
     let timedOut = false
     const started = Date.now()
@@ -61,7 +66,7 @@ export function runProcess<T>(executable: string, args: string[], input: unknown
       try {
         const event = JSON.parse(line) as EngineEvent
         if (event.kind === 'result') result = event.result as T
-        else if (event.kind === 'error') error = redact(event.message || i18n.t('queue:errors.engineFailed'))
+        else if (event.kind === 'error') { failureCode = event.code; protocolFailure ||= event.code === 'protocol'; error = redact(event.message || i18n.t('queue:errors.engineFailed')) }
         else {
           // yt-dlp's own messages. A caller that listens - a download - files them in the job's log,
           // which reaches this file too; progress ticks are left out, there are hundreds of them.
@@ -72,7 +77,7 @@ export function runProcess<T>(executable: string, args: string[], input: unknown
     })
     child.stderr.on('data', chunk => { error = (error + redact(String(chunk))).slice(-4000) })
     child.stdin.on('error', () => { /* Early process exit is handled by close. */ })
-    child.on('error', failure => { error = failure.message })
+    child.on('error', failure => { error = failure.message; failureCode = (failure as NodeJS.ErrnoException).code })
     child.on('close', code => {
       clearTimeout(timer)
       signal?.removeEventListener('abort', stop)
@@ -80,10 +85,15 @@ export function runProcess<T>(executable: string, args: string[], input: unknown
       const took = `${Date.now() - started}ms`
       if (signal?.aborted) { log.info(`取消 ${label} ${took}`); reject(new DOMException(i18n.t('queue:errors.cancelled'), 'AbortError')) }
       else if (timedOut) { log.warn(`超时 ${label} ${took}`); reject(new Error(i18n.t('queue:errors.timeout'))) }
-      else if (code !== 0 || result === undefined) { log.warn(`失败 ${label} 退出码 ${code} ${took}：${error.slice(-1500)}`); reject(new Error(error || i18n.t('queue:errors.engineExited', { code: String(code) }))) }
+      else if (code !== 0 || result === undefined) {
+        log.warn(`失败 ${label} 退出码 ${code} ${took}：${error.slice(-1500)}`)
+        const failure = protocolFailure ? new EngineProtocolError(i18n.t('queue:errors.engineProtocol')) : new Error(error || i18n.t('queue:errors.engineExited', { code: String(code) }))
+        if (failureCode) Object.assign(failure, { code: failureCode })
+        reject(failure)
+      }
       else { log.info(`完成 ${label} ${took}`); resolve(result) }
     })
-    child.stdin.end(JSON.stringify(input))
+    child.stdin.end(JSON.stringify(input), 'utf8')
   })
 }
 

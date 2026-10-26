@@ -5,8 +5,8 @@ import type { Job, MediaItem, Settings } from '../../shared/contracts'
 import { Store } from './store'
 import { asAccessDenied } from './access'
 import { LoginRequired } from './login'
-import { Engine, redact, type EngineEvent, type EngineRequest } from './engine'
-import { downloadHttp, type Fetcher } from './http-download'
+import { Engine, EngineProtocolError, redact, type EngineEvent, type EngineRequest } from './engine'
+import { downloadHttp, isFileFailure, type Fetcher } from './http-download'
 import { checkCover } from './cover'
 import { logger } from './log'
 import type { ParsePlan } from './parser'
@@ -400,7 +400,9 @@ export class Queue {
         if (job.stage === 'burn') job.burnRestartRequired = true
         job.status = 'failed'; job.error = denied ? denied.message : redact(String(error)); this.log(job, job.error)
         job.wall = denied?.wall ?? (error instanceof LoginRequired ? 'login' : undefined)
-        if (!denied) this.resumeLater(job)
+        // A protocol or local path failure cannot be repaired by downloading again.
+        const localFailure = error instanceof EngineProtocolError || isFileFailure(error)
+        if (!denied && !localFailure) this.resumeLater(job)
       }).finally(() => { this.running.delete(job.id); job.speed = undefined; job.eta = undefined; job.processingEta = undefined; this.persist(); this.pump() })
     }
   }

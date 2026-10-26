@@ -54,6 +54,7 @@
     "timeout": "操作超时，请重试",
     "engineExited": "本地引擎退出 ({{code}})",
     "ffmpegMissing": "缺少 FFmpeg，请重新安装客户端或运行 pnpm install",
-    "engineMissing": "缺少本地解析引擎。开发环境请运行 pnpm engine:dev；安装版请重新安装。"
+    "engineMissing": "缺少本地解析引擎。开发环境请运行 pnpm engine:dev；安装版请重新安装。",
+    "engineProtocol": "本地引擎通信数据无效，请重试或更新客户端。"
   }
 }

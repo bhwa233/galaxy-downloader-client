@@ -2,29 +2,16 @@
 import json
 import os
 import sys
+import errno
 from shutil import copyfile
 from http.cookiejar import Cookie
 from urllib.parse import urlsplit
 from hashlib import sha256
 
-# A wheel is authorized and verified by main. Prefer it over PyInstaller's frozen yt_dlp;
-# each process reads this once so background updates cannot change an in-flight job.
-_REQUEST = json.load(sys.stdin)
-if _REQUEST.get('kernelWheel'):
-    import importlib.abc
-    import importlib.machinery
-
-    class KernelFinder(importlib.abc.MetaPathFinder):
-        def find_spec(self, fullname, path=None, target=None):
-            if fullname == 'yt_dlp' or fullname.startswith('yt_dlp.'):
-                return importlib.machinery.PathFinder.find_spec(fullname, path or [_REQUEST['kernelWheel']])
-            return None
-
-    sys.meta_path.insert(0, KernelFinder())
-
-from yt_dlp.version import __version__
-from yt_dlp.utils import DownloadError
-from subtitles import SubtitleDownloader, SubtitleProcessor
+# Pipes use the Windows ANSI codepage by default. This protocol is UTF-8 even
+# in a frozen executable, where interpreter environment flags may be ignored.
+for stream in (sys.stdin, sys.stdout, sys.stderr):
+    stream.reconfigure(encoding='utf-8', errors='strict' if stream is sys.stdin else 'backslashreplace')
 
 
 def emit(kind, **data):
@@ -46,7 +33,31 @@ class Logger:
 
 
 def main():
-    request = _REQUEST
+    try:
+        request = json.load(sys.stdin)
+        if not isinstance(request, dict) or not isinstance(request.get('operation'), str):
+            raise ValueError('Expected an engine request object with an operation')
+    except (UnicodeError, ValueError) as error:
+        emit('error', code='protocol', message=f'Invalid local engine request: {error}')
+        sys.exit(1)
+    # A wheel is authorized and verified by main. Prefer it over the frozen
+    # yt_dlp, and fix its version for the lifetime of this engine process.
+    if request.get('kernelWheel'):
+        import importlib.abc
+        import importlib.machinery
+
+        class KernelFinder(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname == 'yt_dlp' or fullname.startswith('yt_dlp.'):
+                    return importlib.machinery.PathFinder.find_spec(fullname, path or [request['kernelWheel']])
+                return None
+
+        sys.meta_path.insert(0, KernelFinder())
+
+    from yt_dlp.version import __version__
+    from yt_dlp.utils import DownloadError
+    from subtitles import SubtitleDownloader, SubtitleProcessor
+
     operation = request['operation']
     if operation in ('version', 'kernel-check'):
         if operation == 'kernel-check':
@@ -73,6 +84,8 @@ def main():
     options = {
         'logger': logger, 'quiet': True, 'no_warnings': False,
         'socket_timeout': request.get('timeout', 30), 'retries': request.get('retries', 3), 'fragment_retries': request.get('retries', 3),
+        # Keep file failures distinguishable from network retries in the client.
+        'file_access_retries': 0,
         'ratelimit': request.get('speedLimit') or None,
         'noplaylist': False, 'playlistend': 100, 'cachedir': False,
         'ffmpeg_location': request.get('ffmpeg'),
@@ -300,5 +313,15 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Do not emit tracebacks / request data: either can contain credentials.
-        emit('error', message=str(error))
+        details, seen, cause = {}, set(), error
+        while isinstance(cause, BaseException) and id(cause) not in seen:
+            seen.add(id(cause))
+            # Network/SSL exceptions can also inherit OSError; only file errors
+            # carry a filename. yt-dlp preserves wrapped causes in exc_info.
+            if isinstance(cause, OSError) and cause.filename is not None and cause.errno in errno.errorcode:
+                details['code'] = errno.errorcode[cause.errno]
+                break
+            info = getattr(cause, 'exc_info', None)
+            cause = (info[1] if isinstance(info, tuple) and len(info) > 1 else None) or cause.__cause__ or cause.__context__
+        emit('error', message=str(error), **details)
         sys.exit(1)

@@ -221,6 +221,7 @@ export class EmbeddedBrowser {
       host.on('closed', this.releasePreview)
     }
     preview.onClosed = onClosed
+    preview.view.webContents.setAudioMuted(false)
     void preview.view.webContents.loadURL(url)
     preview.view.webContents.focus()
   }
@@ -236,6 +237,7 @@ export class EmbeddedBrowser {
     const { host, onClosed } = preview
     preview.host = undefined; preview.onClosed = undefined; preview.fullscreen = false
     host.off('resize', this.fitPreview); host.off('closed', this.releasePreview)
+    preview.view.webContents.setAudioMuted(true)
     if (!host.isDestroyed()) host.contentView.removeChildView(preview.view)
     void preview.view.webContents.loadURL('about:blank')
     onClosed?.()
@@ -274,6 +276,8 @@ export class EmbeddedBrowser {
       // A hidden window has its timers throttled, which starves the scroll loop a listing needs.
       webPreferences: { session: this.session, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
     })
+    // Metadata collection must keep requesting media, but must never play it aloud.
+    window.webContents.setAudioMuted(true)
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     return window
   }
@@ -384,6 +388,12 @@ export class EmbeddedBrowser {
   // been destroyed", a page load aborted mid-way). So they queue behind each other.
   private reading: Promise<unknown> = Promise.resolve()
 
+  releaseIdleListing(): void {
+    const reading = this.reading
+    // Never destroy the page under an active read or a newer pagination request.
+    void reading.then(() => { if (this.reading === reading) this.release() })
+  }
+
   async inspectProfile(url: string, index: number, group: string | undefined, signal: AbortSignal): Promise<Listing | undefined> {
     const turn = this.reading.then(() => this.inspectNow(url, index, group, signal))
     this.reading = turn.catch(() => {})
@@ -398,7 +408,7 @@ export class EmbeddedBrowser {
     const reused = this.open?.address === address && !this.open.window.isDestroyed()
     try { return await this.readListing(adapter, url, address, index, group, signal) }
     catch (error) {
-      signal.throwIfAborted()
+      if (signal.aborted) { this.release(); signal.throwIfAborted() }
       // A page held open since the last turn can have been discarded, navigated by the site, or simply
       // gone stale. That is not something to report to the user, so the window is thrown away and the
       // listing asked for once more on a fresh one. A refusal is not retried: it would be refused again.

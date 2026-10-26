@@ -642,3 +642,29 @@ TED 字幕来源：[Candace Parker — How to break down barriers and not accept
 - pnpm check 通过（typecheck、Lint、66 项既有单测与构建）；后续选择状态保护改动后再次 build（含 typecheck）和 lint 通过，git diff --check 通过。未新增／修改测试规格；未重跑已知因“卡片视图”旧选择器失败的 E2E。
 
 证据：test-results/media-picker/before-options.png、after-options.png、after-loaded.png、empty.png；临时驱动与隔离用户目录已删除。
+
+
+## 2026-10-26：issues #9 / #10 的编码、路径与后台声音修复
+
+来源：[文件标题乱码／后台声音 #9](https://github.com/bhwa233/galaxy-downloader-client/issues/9)、[B 站解析 Invalid escape #10](https://github.com/bhwa233/galaxy-downloader-client/issues/10)。#9 附件 main.log 的 0.4.3 Windows 会话中既有 Invalid escape，也有合并正常完成、随后读取乱码路径 ENOENT 的记录；#10 的 0.4.4 截图为同类 Invalid escape。当前 main 与 feat 原代码都没有固定 Python 管道编码，隐藏采集窗口也未静音。
+
+修改仅在 `/home/bhwa233/code/electron-client`，不更改 Windows 旧仓库源文件或依赖。未新增／修改任何持久化测试规格，未修改 GitHub issues。本次修复的补丁版本为 0.5.2。
+
+| 场景 | 实际结果 |
+| --- | --- |
+| 同一请求、不同管道编码 | 原始 HEAD 源码接收包含 `C:\中\繁體😀\movie.mp4` 的 UTF-8 JSON，在 GBK 模式下复现 Invalid escape；新源码在相同条件下正常返回。Linux 与原生 Windows Python 均验证。 |
+| Windows 打包引擎 | 使用现有 Windows Python 3.12.6 / PyInstaller 6.22.3，从正确 Linux 工作区源码打包，产物位于 Windows 临时目录的“中文 安装😀”中；Windows Node 24.0.2 通过真实 pipe 发送请求，强制 PYTHONIOENCODING=gbk、PYTHONUTF8=0 仍成功。 |
+| 错误协议 | 非法 JSON／非字符串 operation 返回 kind=error、code=protocol、退出 1，无 traceback；不存在的中文／Emoji 文件路径保留原文并返回 ENOENT。真实 Node 引擎封装将协议错误识别为 EngineProtocolError、将系统文件错误码传给调用者。 |
+| Windows 中文文件下载和合并 | 原生 Windows 引擎曾从 W3Schools mov_bbb.mp4 实际下载 788493 字节至中文、繁体、空格与 Emoji 目录。最终版本回归使用该真实缓存素材拆成视频和音频两条 HTTP 轨，由真实 yt-dlp / Windows FFmpeg 下载并合并；成品 583023 字节，文件可 stat，含音视频轨，全片解码退出 0、无解码错误。 |
+| issue #10 实际 B 站链接 | 原生 Windows 最终打包引擎解析 `https://www.bilibili.com/video/BV1WJ7K6vEFz/`，取得正确中文标题及 15 个格式；按不高于 360p 下载，中文／Emoji 路径下生成 3368248 字节 MP4，全片解码退出 0，错误输出为空。 |
+| 隐藏窗口与预览 | 真实 Electron 加载原始浏览器模块，隐藏窗口 muted=false；修复后的同一构造路径 muted=true。iframe 中真实语音 WAV 的 currentTime 推进到约 1.56 秒且 paused=false，表明保留媒体加载与播放管线、仅抑制声音。主动预览 muted=false，关闭立即 true，重新打开 false。 |
+| 客户端完整链路 | 隔离用户目录运行真实 Linux Electron，继承 GBK 环境变量；通过本地 HTTP 重放上述真实公开素材，中文／繁体／Emoji 文件名下载 completed，字节与源文件一致，真实引擎返回时长 10.03 秒。原生对话框指定保存目录，未改用户真实设置。 |
+| 本地失败不重试 | 将隔离保存目录设为不可写，实际 yt-dlp 下载失败，文件访问重试为 0，队列 attempts 未增长、无 20／60 秒自动续传。实际 HTTP 传输同样返回 EACCES，仅请求 1 次；关闭失败响应，未继续重复拉取。清空后任务数 0，renderer pageerror=0。 |
+
+Windows 旧二进制在本机版本探测中原本就能成功，未把它伪装成失败基线；稳定失败基线来自相同源码在明确的 GBK 管道环境中读取 UTF-8 请求。Windows 宿主码页与冻结解释器配置会改变症状，因此没有要求用户改英文目录或修改系统区域设置。
+
+验证过程中，Linux 外网探针先后遇到旧代理连接失败和连接关闭，Windows 重复访问 W3Schools 也遇到过 TLS EOF；没有修改产品网络策略来掩盖它们。最终 Linux 客户端读写权限验证采用实际已下载素材的本地重放，真实站点解析／下载由原生 Windows 引擎完成，范围分别记录。新 errno 转发只识别携带 filename 的系统文件异常，避免将同样继承 OSError 的 SSL 错误误认为权限问题。
+
+门禁：pnpm check（typecheck、lint、66 项既有单测及构建）通过；Linux、Windows PyInstaller 引擎均实际构建。现有 Electron E2E 再次执行，完成解析和下载后仍在 `test/e2e/e2e.spec.ts:50` 等待已删除的“卡片视图”按钮失败；未改测试，也未宣称 E2E 全绿。Windows 验证覆盖原生 Node／Python／打包引擎／FFmpeg，不等同于完整 NSIS 安装器与 Windows Electron GUI 回归。
+
+证据在忽略目录 `test-results/issues-20261026/`：browser-result.json、client-result.json、windows-result.json，以及 Windows 临时目录内的原生引擎与媒体。一次性驱动、基线源文件和隔离用户目录在验证后删除。

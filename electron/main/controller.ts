@@ -435,7 +435,7 @@ export class Controller {
         }
         case 'jobs:batch': { const { action, batchId, deleteFiles } = commandSchemas['jobs:batch'].parse(input); await this.queue.batch(action, batchId, deleteFiles); break }
         case 'jobs:limit': { const { id, speedLimit } = commandSchemas['jobs:limit'].parse(input); this.queue.limit(id, speedLimit); break }
-        case 'jobs:clear': await this.queue.clear(commandSchemas['jobs:clear'].parse(input).deleteFiles); break
+        case 'jobs:clear': await this.queue.clear(commandSchemas['jobs:clear'].parse(input).deleteFiles); this.browser.releaseIdleListing(); break
         case 'history:remove': {
           const { url } = commandSchemas['history:remove'].parse(input)
           this.store.data.history = this.store.data.history.filter(entry => entry.url !== url); this.store.save(); break
@@ -476,6 +476,7 @@ export class Controller {
         case 'jobs:remove': {
           const { id, deleteFiles } = commandSchemas['jobs:remove'].parse(input)
           await this.queue.remove(id, deleteFiles)
+          if (!this.queue.jobs.length) this.browser.releaseIdleListing()
           break
         }
         case 'clipboard:write': await clipboard.writeText(commandSchemas['clipboard:write'].parse(input).text); break

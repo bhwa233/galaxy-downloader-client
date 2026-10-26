@@ -48,6 +48,12 @@ export async function fetchWithCookies(fetcher: Fetcher, address: string, cookie
 }
 
 type Checkpoint = { source: string; etag?: string; modified?: string }
+// Reuse OS error codes for both transport retries and the queue's delayed retry.
+// Repeating a request cannot repair a missing, unwritable or full destination.
+export function isFileFailure(error: unknown): boolean {
+  return ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'ENAMETOOLONG', 'EINVAL', 'ENOSPC', 'EDQUOT', 'EROFS', 'EISDIR'].includes((error as NodeJS.ErrnoException | undefined)?.code || '')
+}
+
 export async function downloadHttp(fetcher: Fetcher, url: string, destination: string, cookies: Cookie[], headers: Record<string, string>, signal: AbortSignal, progress: (fraction: number, stats?: { downloaded: number; total: number; speed: number; eta?: number }) => void, options: { speedLimit?: number; retries?: number; timeout?: number } = {}): Promise<string> {
   await mkdir(path.dirname(destination), { recursive: true })
   const temporary = `${destination}.part`
@@ -109,8 +115,9 @@ export async function downloadHttp(fetcher: Fetcher, url: string, destination: s
     } catch (error) {
       signal.throwIfAborted(); failure = timeout.signal.aborted ? new Error(i18n.t('queue:errors.connectionTimeout')) : error
       log.warn(`第 ${attempt + 1} 次失败 ${url}`, failure)
+      if (isFileFailure(error)) throw error
     }
-    finally { clearTimeout(timer!) }
+    finally { clearTimeout(timer!); timeout.abort() }
   }
   throw failure
 }

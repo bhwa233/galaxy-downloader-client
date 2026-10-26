@@ -54,6 +54,7 @@
     "timeout": "Operation timed out; try again",
     "engineExited": "Local engine exited ({{code}})",
     "ffmpegMissing": "FFmpeg is missing; reinstall the client or run pnpm install",
-    "engineMissing": "The local parsing engine is missing. In development run pnpm engine:dev; otherwise reinstall."
+    "engineMissing": "The local parsing engine is missing. In development run pnpm engine:dev; otherwise reinstall.",
+    "engineProtocol": "Invalid local engine communication. Retry or update the client."
   }
 }
