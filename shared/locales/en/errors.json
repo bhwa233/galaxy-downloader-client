@@ -2,6 +2,7 @@
   "parse": {
     "incompleteTracks": "Couldn't read the complete video and audio. Parse the link again.",
     "xiaohongshuProfile": "Xiaohongshu profiles can't be parsed yet. Use a link to a single note instead.",
+    "notAResource": "This link can't be parsed: it is a platform home or feed page, not a work or a listing. Paste a link to a specific video, collection, or author page.",
     "collectionEmpty": "Nothing in this collection can be downloaded: no episodes were read, or every episode must be bought separately",
     "listingCollectionEmpty": "Nothing was read from this collection. Open the sign-in window, sign in or complete verification, then try again.",
     "listingProfileEmpty": "No posts were read from this profile. Open the sign-in window, sign in or complete verification, then try again.",
@@ -58,7 +59,7 @@
     "apiMessage": "Bilibili API returned {{code}}: {{message}}",
     "series": "Series",
     "collection": "Collection",
-    "parts": "Parts",
+    "original": "Original",
     "wbiKeys": "Couldn't get the WBI signing keys",
     "uploads": "{{author}}'s uploads"
   },
@@ -78,6 +79,7 @@
     "collectionEmpty": "No posts were read from this collection. Open the sign-in window, sign in, then try again.",
     "authorCollection": "{{author}}'s collection",
     "collection": "Collection",
+    "original": "Original",
     "show": "Short drama {{id}}",
     "episodes_one": " ({{count}} episode)",
     "episodes_other": " ({{count}} episodes)",

@@ -113,6 +113,6 @@ export const weixin: ProfileAdapter = {
     const title = body.getalbum_resp?.album_info?.title?.trim() || body.getalbum_resp?.base_info?.title?.trim()
     return onePage('articles', title || i18n.t('errors:weixin.collection'), entries, {
       index: page, size: COUNT, hasMore: body.getalbum_resp?.continue_flag === '1',
-    })
+    }, 'uploads')
   },
 }

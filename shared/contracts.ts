@@ -91,16 +91,25 @@ export type MediaStats = { views?: number; danmaku?: number; comments?: number; 
 // one page the result already names. It travels so the window can offer the link without asking again.
 // 'wall' marks an item the platform says this account cannot have as it stands - a paid 短剧 episode -
 // known before anything is downloaded. Such an item is shown but cannot be picked.
-export type MediaItem = MediaStats & { id: string; title: string; url?: string; duration?: number; thumbnail?: string; kind: 'video' | 'audio' | 'image'; formats: Format[]; audioFormats?: Format[]; wall?: AccessWall }
+// 'mark' is a word the listing put on the one entry it is pointing at - the 合集's copy of the video the
+// user pasted, whose tab is otherwise a list of sixty titles - already worded by the listing itself.
+export type MediaItem = MediaStats & { id: string; title: string; url?: string; duration?: number; thumbnail?: string; kind: 'video' | 'audio' | 'image'; formats: Format[]; audioFormats?: Format[]; mark?: string; wall?: AccessWall }
 // A creator profile is served one page at a time; the next page is fetched only when the user asks for it.
 export type Pagination = { index: number; size: number; total?: number; hasMore: boolean }
 // What kind of listing produced a result. Both kinds are made of separate posts with pages of their
 // own, which is what decides how a download names itself; only a collection is saved to a directory.
 export type ListingKind = 'profile' | 'collection'
+// How a tab names itself: by what kind of list it holds, never by the list's own name, so a 哔哩哔哩
+// 合集 and a YouTube playlist read the same way in every language. The list's name still travels in
+// the group's 'title', where the tab shows it on hover instead of in the tab strip. A group without
+// a kind keeps showing its title, which is how a single-group listing still says where it came from.
+export type GroupKind = 'work' | 'parts' | 'collection' | 'files' | 'uploads' | 'shorts' | 'streams' | 'shows'
 // One tab of a result. A listing is usually a single group, so no tab is shown; a 哔哩哔哩 video that is
 // both multi-part and part of a collection is two, and each turns its pages on its own.
 // 'directory' is the name this group's downloads are filed under, which only a collection has.
-export type MediaGroup = { id: string; title: string; directory?: string; itemIds: string[]; pagination?: Pagination }
+// 'position' is where the work being looked at sits inside this group's list - the 5th of 72 episodes -
+// so the tab can say 5/72 instead of only how many there are. Only the group that holds the work has it.
+export type MediaGroup = { id: string; title: string; kind?: GroupKind; directory?: string; itemIds: string[]; pagination?: Pagination; position?: { index: number; total: number } }
 // 'truncated' is set where the engine stopped short of the whole playlist rather than reaching its end,
 // so the window can say how many were listed instead of presenting a cut-off list as the complete one.
 // 'formats' is a listing's quality tiers, read off its first video after the listing arrives - a

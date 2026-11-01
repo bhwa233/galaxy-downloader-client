@@ -142,6 +142,6 @@ export const bilibili: ProfileAdapter = {
     const entries = videos.map(entryOf).filter((entry): entry is ListingEntry => Boolean(entry))
     const total = body.data?.page?.count
     const author = videos.find(video => video.author)?.author
-    return onePage('uploads', author ? i18n.t('errors:bilibili.uploads', { author }) : undefined, entries, { index: page, size: PAGE_SIZE, total, hasMore: total === undefined ? entries.length === PAGE_SIZE : page * PAGE_SIZE < total })
+    return onePage('uploads', author ? i18n.t('errors:bilibili.uploads', { author }) : undefined, entries, { index: page, size: PAGE_SIZE, total, hasMore: total === undefined ? entries.length === PAGE_SIZE : page * PAGE_SIZE < total }, 'uploads')
   },
 }

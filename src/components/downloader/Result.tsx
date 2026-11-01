@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { Check, Copy, Download, ExternalLink, FolderOpen, Image as ImageIcon, ImageDown, LayoutGrid, Link as LinkIcon, List, ListChecks, Music2, Play, Search, Video, X } from 'lucide-react'
@@ -9,11 +9,13 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { MediaCard, MediaGrid, MediaRow } from './MediaCard'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
+import { InView } from '@/components/ui/in-view'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from '@/components/ui/toast'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Choice } from './Choice'
+import { DurationFilter, durationBucket, type DurationChoice, type DurationMinutes } from './DurationFilter'
 import { fixableBySignIn, wallTitle } from './walls'
 import { formatBytes, platformLabel } from '@/lib/utils'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -43,6 +45,14 @@ type Actions = {
 type ViewProps = { items: MediaItem[]; actions: Actions }
 // How far back 时间 reaches, in days; 'all' does not filter.
 const PERIODS = [{ value: 'all', key: 'all' }, { value: '7', key: 'week' }, { value: '30', key: 'month' }, { value: '90', key: 'quarter' }, { value: '365', key: 'year' }] as const
+// Cards put on screen at once, and the size of each batch after it. A 494-entry 合集 mounts as 120
+// cards, another 120 when the end of the list comes into view: paint cost on a scroll grows with the
+// number of cards mounted (measured 2026-11-01: 120 -> ~12ms a frame, 494 -> ~24ms), so the rest of
+// the list waits for the scroll instead of sitting in the layout from the first frame.
+const BATCH = 120
+// A browser without IntersectionObserver cannot tell us the end of the list came into view; there the
+// same batch is asked for with a button instead, which is how 加载更多 has always worked.
+const canWatchScroll = typeof IntersectionObserver !== 'undefined'
 type T = TFunction<['result', 'common']>
 // A picture is already on screen as its cover, and a locked item would not play for this account.
 const previewable = (item: MediaItem) => item.kind !== 'image' && !item.wall
@@ -138,6 +148,10 @@ export function Result({ result, parse, settings, send, login, connecting, close
   const [keyword, setKeyword] = useState('')
   const [period, setPeriod] = useState('all')
   const [since, setSince] = useState<number>()
+  // 时长 shares the header with 时间: three presets cut by the clock, and a range typed in where the
+  // presets do not fit. Kept as minutes here; the list works in seconds.
+  const [duration, setDuration] = useState<DurationChoice>('all')
+  const [customDuration, setCustomDuration] = useState<DurationMinutes>({})
   // The last card toggled, which a Shift+click or 选中到这里 extends from, and whether the click being
   // handled right now had Shift held.
   const anchor = useRef<string | undefined>(undefined)
@@ -147,24 +161,52 @@ export function Result({ result, parse, settings, send, login, connecting, close
   // Only the open tab is on screen; the selection stays whole, so what was ticked in the other one is
   // still downloaded. Pagination belongs to the tab as well: 分P arrive in one reply and a 合集 has pages.
   const inGroup = group ? result.items.filter(item => group.itemIds.includes(item.id)) : result.items
+  // 只看 splits a listing by kind, but only where the list holds both kinds: a tab of videos has
+  // nothing to split, and 图片 there could only mean "save every cover", one task per card. A single
+  // work is not a batch either, so the control is absent there too.
+  const mixed = Boolean(result.listing) && inGroup.some(item => item.kind === 'image') && inGroup.some(item => item.kind !== 'image')
+  // Narrower than the ticked control: a tab without both kinds ignores what the other one chose.
+  const picked = mixed ? only : 'all'
   // 只看 narrows what is on screen, which is also what 全选 picks - a filter that only hid rows while
-  // the button below still queued everything would be a filter in name only. Off unless the result is
-  // a listing: a single work is not a batch and has nothing to filter.
+  // the button below still queued everything would be a filter in name only.
   // 图片 takes the listing as pictures: a 图文's own and every video's cover, which is what it then
   // downloads - a video picked there is saved as its cover, not as the video.
-  const pictures = Boolean(result.listing) && only === 'image'
+  const pictures = Boolean(result.listing) && picked === 'image'
   // Both narrow what is loaded, like 只看, and so what 全选 picks. 时间 is offered only where the
   // platform said when anything was published; an item it said nothing about is left out once a
   // period is picked, since it cannot be shown to be inside it.
   const searchable = inGroup.length > 1
   const dated = searchable && inGroup.some(item => item.publishedAt !== undefined)
+  // 时长 is offered where it can actually narrow something: two of the three buckets are in use, or the
+  // runs at least differ, which is where the free range earns its place. A list whose items all run the
+  // same length has nothing to pick from, so the control stays away.
+  const seconds = inGroup.map(item => item.duration).filter((value): value is number => value !== undefined)
+  const durated = searchable && seconds.length > 1 && (new Set(seconds.map(durationBucket)).size > 1 || Math.min(...seconds) !== Math.max(...seconds))
+  // A hidden control filters nothing, the way a tab without both kinds keeps 只看 from applying.
+  const durationFilter = durated ? duration : 'all'
   const needle = keyword.trim().toLocaleLowerCase()
   const matches = (item: MediaItem) => (!needle || item.title.toLocaleLowerCase().includes(needle))
     && (since === undefined || (item.publishedAt !== undefined && item.publishedAt >= since))
-  const visible = (!result.listing ? inGroup : inGroup.filter(item => only === 'all' || (only === 'image' ? item.kind === 'image' || hasCover(item) : item.kind !== 'image'))).filter(matches)
+  // An item whose length the platform did not say cannot be shown to be inside a range, so it is left
+  // out while one is on - the same rule 时间 follows for a missing date.
+  const within = (item: MediaItem) => durationFilter === 'all' || (item.duration !== undefined && (durationFilter === 'custom'
+    ? (customDuration.min === undefined || item.duration >= customDuration.min * 60) && (customDuration.max === undefined || item.duration <= customDuration.max * 60)
+    : durationBucket(item.duration) === durationFilter))
+  const visible = (!result.listing ? inGroup : inGroup.filter(item => picked === 'all' || (picked === 'image' ? item.kind === 'image' || hasCover(item) : item.kind !== 'image'))).filter(matches).filter(within)
+  // What is mounted grows a batch at a time as the list is scrolled: the cards below the fold cost
+  // paint on every scroll frame while they are in the layout, and a 合集 can hold hundreds of them.
+  // Back to the first batch whenever what the list holds changes - another tab, another filter -
+  // instead of staying where the last one was scrolled to.
+  const [shown, setShown] = useState(BATCH)
+  useEffect(() => { setShown(BATCH) }, [group?.id, picked, needle, since, durationFilter, customDuration.min, customDuration.max])
+  const listed = visible.slice(0, shown)
+  const omitted = visible.length - listed.length
   // 设置 → 单次批量上限. Not editable here: one place to set it, and the result says when it applied.
   const cap = settings.batchLimit > 0 ? settings.batchLimit : undefined
   const pagination = group?.pagination
+  // What the header says under the title, and under the tabs where there are any: the platform, and how
+  // much of the open list is on screen. The 本视频 tab is a single card, so only 分P / 合集 say it.
+  const subtitle = `${platformLabel(result.platform)} · ${pagination?.total ? t('loadedOf', { total: pagination.total, loaded: inGroup.length }) : t('common:items', { count: inGroup.length })}`
   // The next page is added below what is already here; nothing loaded so far goes away.
   const loadMore = () => { if (loading || !pagination?.hasMore) return; setLoading(true); void send('media:page', { resultId: result.id, page: pagination.index + 1, groupId: group?.id }).finally(() => setLoading(false)) }
   // Covers carry the meaning in a listing or a set of pictures; a single video reads better as a row.
@@ -317,40 +359,50 @@ export function Result({ result, parse, settings, send, login, connecting, close
   const queuedBytes = queueing.reduce((sum, id) => sum + (bytesOf(result.items.find(item => item.id === id)!) || 0), 0)
   // No card of its own: the page is the new-task page and this is its result, so one title, one close.
   return <section aria-label={t('title')} className="flex flex-col gap-4">
-    <div className="flex items-start gap-3 border-t pt-4">
-      <div className="min-w-0 flex-1">
+    {/* One row: where the result has tabs they take the head themselves and the buttons follow, so the
+        strip sits on the same line as 关键字/时间/视图 instead of on a line of its own. */}
+    <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+      {/* The pasted work's own title, where the result is one list. With tabs the tabs themselves name
+          what is here - 单视频, 多P, 合集 - and the work's title would only repeat the card below. */}
+      {!tabs && <div className="min-w-0 flex-1">
         <h2 className="line-clamp-2 font-medium break-words" title={result.title}>{result.title}</h2>
-        <p className="text-xs text-muted-foreground">
-          {platformLabel(result.platform)} · {pagination?.total ? t('loadedOf', { total: pagination.total, loaded: inGroup.length }) : t('common:items', { count: inGroup.length })}
-        </p>
-      </div>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </div>}
+      {/* A tab says what kind of list it holds - 单视频, 多P, 合集 - and keeps the list's own name as
+          the hover hint, so the strip reads the same way on every platform. The badge is where the
+          work sits in that list - 59/72 - and is left off the tab holding the work itself. */}
+      {tabs && <Tabs value={group?.id} onValueChange={value => setTab(String(value))}>
+        <TabsList>{tabs.map(entry => {
+          const label = entry.kind ? t(`groups.${entry.kind}`) : entry.title
+          return <TabsTrigger key={entry.id} value={entry.id} title={entry.kind && entry.title !== label ? `${label} · ${entry.title}` : undefined}>{label}
+            {entry.kind !== 'work' && <Badge variant="secondary">{entry.position ? `${entry.position.index}/${entry.position.total}` : entry.pagination?.total ?? entry.itemIds.length}</Badge>}
+          </TabsTrigger>
+        })}</TabsList>
+      </Tabs>}
+      {tabs && <div className="flex-1" />}
+      {/* 只看 only where the open list actually holds both kinds: on a tab of videos there is nothing
+          to split, so the control is not offered at all. */}
+      {mixed && <ToggleGroup spacing={0} variant="outline" size="sm" value={[picked]} onValueChange={value => { const next = value[0]; if (next) setOnly(String(next)) }}>
+        <ToggleGroupItem value="all">{t('onlyAll')}</ToggleGroupItem>
+        <ToggleGroupItem value="video">{t('common:kinds.video')}</ToggleGroupItem>
+        <ToggleGroupItem value="image">{t('common:kinds.picture')}</ToggleGroupItem>
+      </ToggleGroup>}
       {searchable && <InputGroup className="w-44">
         <InputGroupInput aria-label={t('keywordLabel')} placeholder={t('keywordPlaceholder')} value={keyword} onChange={event => setKeyword(event.target.value)} />
         <InputGroupAddon><Search /></InputGroupAddon>
       </InputGroup>}
       {dated && <Choice className="w-28" label={t('published')} hideLabel value={period} options={PERIODS.map(entry => ({ value: entry.value, label: t(`periods.${entry.key}`) }))}
         onChange={value => { setPeriod(value); setSince(value === 'all' ? undefined : Date.now() / 1000 - Number(value) * 86_400) }} />}
+      {durated && <DurationFilter className="w-32" value={duration} custom={customDuration}
+        onChange={(next, range) => { setDuration(next); setCustomDuration(range) }} />}
       <ToggleGroup spacing={0} variant="outline" value={[view]} onValueChange={value => { const next = value[0]; if (next && next !== view) void send('settings:save', { ...settings, resultView: next as Settings['resultView'] }) }}>
         <ToggleGroupItem value="list" aria-label={t('listView')}><List /></ToggleGroupItem>
         <ToggleGroupItem value="grid" aria-label={t('gridView')}><LayoutGrid /></ToggleGroupItem>
       </ToggleGroup>
       <Button variant="ghost" size="icon" aria-label={t('clearResult')} title={t('clearResult')} onClick={close}><X /></Button>
     </div>
-    {/* Only where the same parse produced two listings - a 哔哩哔哩 video that is multi-part and also
-        belongs to a collection. Switching sends no request: both arrived with the parse, and what was
-        ticked in the other tab stays ticked and stays in the download below. */}
-    {(tabs || result.listing) && <div className="flex flex-wrap items-center gap-3">
-      {tabs && <Tabs value={group?.id} onValueChange={value => setTab(String(value))}>
-        <TabsList>{tabs.map(entry => <TabsTrigger key={entry.id} value={entry.id}>{entry.title}<Badge variant="secondary">{entry.pagination?.total ?? entry.itemIds.length}</Badge></TabsTrigger>)}</TabsList>
-      </Tabs>}
-      {/* 只看 only on a listing: a single work is not a batch and has nothing to filter. It narrows
-          what is on screen, which is also what 全选 takes. */}
-      {result.listing && <ToggleGroup spacing={0} variant="outline" size="sm" value={[only]} onValueChange={value => { const next = value[0]; if (next) setOnly(String(next)) }}>
-        <ToggleGroupItem value="all">{t('onlyAll')}</ToggleGroupItem>
-        <ToggleGroupItem value="video">{t('common:kinds.video')}</ToggleGroupItem>
-        <ToggleGroupItem value="image">{t('common:kinds.picture')}</ToggleGroupItem>
-      </ToggleGroup>}
-    </div>}
+    {/* Under the tab whose list it counts: the 单视频 tab is one card and has nothing to add up. */}
+    {tabs && group?.kind !== 'work' && <p className="-mt-2 text-xs text-muted-foreground">{subtitle}</p>}
     {/* The engine stops a playlist at its own limit, so a list that reached it is only its front. */}
     {result.truncated && <Alert>
       <AlertTitle>{t('truncated.title', { count: result.truncated.shown })}</AlertTitle>
@@ -363,7 +415,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
         padding keeps the selected card's ring from being clipped at the edge. */}
     <div className="-mx-1 flex flex-col gap-4 p-1">
       {!visible.length && inGroup.length ? <p className="py-8 text-center text-sm text-muted-foreground">{t('noMatch')}</p>
-        : view === 'grid' ? <ThumbnailGrid items={visible} actions={actions} /> : <ItemList items={visible} actions={actions} />}
+        : view === 'grid' ? <ThumbnailGrid items={listed} actions={actions} /> : <ItemList items={listed} actions={actions} />}
       {/* A result on screen with a message attached means the page the user asked for did not arrive.
           It is reported here, at the end of the list, next to the control they used. */}
       {parse.message && <Alert variant="destructive">
@@ -379,6 +431,13 @@ export function Result({ result, parse, settings, send, login, connecting, close
           {loading ? <Spinner aria-hidden="true" /> : null}{loading ? t('loading') : t('loadMore')}
         </Button>
       </div>}
+      {/* The rest of a long list follows a batch at a time: another batch when the end comes into
+          view, or the same batch from a button where the browser cannot watch for that. */}
+      {omitted > 0 && (canWatchScroll
+        ? <InView onEnter={() => setShown(count => count + BATCH)} />
+        : <div className="flex justify-center">
+          <Button variant="outline" onClick={() => setShown(count => count + BATCH)}>{t('loadMore')}</Button>
+        </div>)}
     </div>
     {/* Pinned to the bottom of the page while the list scrolls, so what is ticked can be downloaded
         from wherever the user is in it, instead of scrolling back to the top for the button. */}

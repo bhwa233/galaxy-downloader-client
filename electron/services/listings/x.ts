@@ -181,7 +181,7 @@ export const x: ProfileAdapter = {
       cursor = more
     }
     if (!entries.size && page === 1) throw new LoginRequired(i18n.t('errors:x.empty'))
-    return onePage('posts', i18n.t('errors:x.media', { handle }), [...entries.values()], { index: page, size: COUNT, hasMore: Boolean(more) })
+    return onePage('posts', i18n.t('errors:x.media', { handle }), [...entries.values()], { index: page, size: COUNT, hasMore: Boolean(more) }, 'uploads')
   },
 }
 
@@ -238,6 +238,6 @@ export const xPost: ProfileAdapter = {
         duration: item.video_info?.duration_millis ? Math.round(item.video_info.duration_millis / 1000) : undefined,
       }
     }).filter((entry): entry is ListingEntry => Boolean(entry))
-    return { title: text, kind: 'post', groups: [{ id: 'files', entries, pagination: { index: 1, size: entries.length, hasMore: false } }] }
+    return { title: text, kind: 'post', groups: [{ id: 'files', kind: 'files', entries, pagination: { index: 1, size: entries.length, hasMore: false } }] }
   },
 }

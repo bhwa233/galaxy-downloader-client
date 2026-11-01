@@ -110,7 +110,7 @@ The code is organised as follows:
 
 ## Releases
 
-Bump `version` in `package.json` and merge to `main`. When no tag exists for that version yet, CI builds Windows x64 (NSIS), macOS arm64 (dmg/zip) and Linux x64 (AppImage), then publishes them together as a GitHub Release tagged with the bare version (for example `0.3.0`). Pushes that leave the version unchanged only run the checks.
+Bump `version` in `package.json`, add the matching `docs/releases/<version>.md`, and merge to `main`. The notes file starts with a level-one heading containing the release title, followed by the user-facing changes; it becomes the GitHub Release body. When no tag exists for that version yet, CI requires non-empty notes, builds Windows x64 (NSIS), macOS arm64 (dmg/zip) and Linux x64 (AppImage), then publishes them together as a GitHub Release tagged with the bare version (for example `0.6.0`). Pushes that leave the version unchanged only run the checks.
 
 ## Disclaimer
 

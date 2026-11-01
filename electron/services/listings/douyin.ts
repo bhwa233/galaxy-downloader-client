@@ -5,7 +5,7 @@
 // answers status_code 0 with a full page of posts. This is the route the client already takes.
 import { i18n } from '../../../shared/i18n'
 import { LoginRequired, VerificationRequired } from '../login'
-import { isRecord, onePage, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
+import { isRecord, onePage, type ListingEntry, type ListingGroup, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 
 // What the page asks for. It is answered with a few more than it asked, so the page size is never
 // assumed: every reply reports the length it actually held.
@@ -33,7 +33,7 @@ type Post = {
   video?: { cover?: { url_list?: string[] }; duration?: number }
   images?: Image[] | null
   author?: { nickname?: string }
-  mix_info?: { mix_name?: string }
+  mix_info?: { mix_id?: string; mix_name?: string }
   // 'play_count' is always zero on the web listing, so it is never read: a card saying 0 plays for a
   // post with four hundred thousand likes would be worse than a card saying nothing.
   statistics?: { digg_count?: number; comment_count?: number }
@@ -176,7 +176,7 @@ export const douyin: ProfileAdapter = {
     const author = (body.aweme_list || []).find(post => post.author?.nickname)?.author?.nickname
     // The reply holds a few more than were asked for, so the page reports what it actually carried.
     const named = ({ post: 'errors:douyin.posts', like: 'errors:douyin.likes', recommend: 'errors:douyin.recommended' } as const)[tab]
-    return onePage('posts', author ? i18n.t(named, { author }) : undefined, entries, { index: page, size: entries.length, hasMore: Boolean(body.has_more && body.max_cursor) })
+    return onePage('posts', author ? i18n.t(named, { author }) : undefined, entries, { index: page, size: entries.length, hasMore: Boolean(body.has_more && body.max_cursor) }, 'uploads')
   },
 }
 
@@ -220,7 +220,7 @@ async function mixPage(fetch: PageRequest['fetch'], mix: string, page: number, s
   const named = (body.aweme_list || []).find(post => post.mix_info?.mix_name?.trim())?.mix_info?.mix_name?.trim()
   const author = (body.aweme_list || []).find(post => post.author?.nickname)?.author?.nickname
   const title = named || (author ? i18n.t('errors:douyin.authorCollection', { author }) : i18n.t('errors:douyin.collection'))
-  return { title, kind: 'collection', groups: [{ id: 'collection', title, directory: title, entries, pagination: { index: page, size: entries.length, hasMore: Boolean(body.has_more) } }] }
+  return { title, kind: 'collection', groups: [{ id: 'collection', kind: 'collection', title, directory: title, entries, pagination: { index: page, size: entries.length, hasMore: Boolean(body.has_more) } }] }
 }
 
 export const douyinCollection: ProfileAdapter = {
@@ -236,10 +236,22 @@ export const douyinCollection: ProfileAdapter = {
 
 // A work's own page. Like the 哔哩哔哩 one beside it, this claims more than it lists: only the work can
 // say whether a 合集 is behind it, so it reads the work and stands down when there is not - which is
-// every ordinary 抖音 video, and is the engine's job.
+// every ordinary 抖音 video, and is the engine's job. Where there is one, the work leads as its own tab
+// and the 合集 follows, the same shape a 哔哩哔哩 video in a 合集 gets.
 function awemeIdOf(url: URL): string {
   if (!/(^|\.)douyin\.com$/.test(url.hostname)) return ''
   return /^\/(?:video|note)\/(\d+)/.exec(url.pathname)?.[1] || ''
+}
+
+// The pasted work as its own tab, ahead of the 合集 it belongs to. Its id has to differ from the 合集
+// entry's, which is the same work: both would otherwise be keyed by one aweme id and share a selection.
+function workGroup(entry: ListingEntry): ListingGroup {
+  return {
+    // Labelled 单视频 by its kind, like the 哔哩哔哩 one; the work's own words are the hover hint.
+    id: 'work', kind: 'work', title: entry.title, entries: [{ ...entry, id: `${entry.id}-work` }],
+    // One entry, and nothing behind it: a tab that cannot grow has no page to turn.
+    pagination: { index: 1, size: 1, hasMore: false },
+  }
 }
 
 export const douyinVideo: ProfileAdapter = {
@@ -251,12 +263,31 @@ export const douyinVideo: ProfileAdapter = {
     if (!aweme) throw new Error(i18n.t('errors:listing.noWorkId'))
     const query = new URLSearchParams({ ...CLIENT, aweme_id: aweme })
     const response = await fetch(`${HOST}/aweme/v1/web/aweme/detail/?${query}`, { signal })
-    const body = await response.json().catch(() => undefined) as { aweme_detail?: { mix_info?: { mix_id?: string } } } | undefined
+    const body = await response.json().catch(() => undefined) as { aweme_detail?: Post } | undefined
     // No detail, no mix field, or no mix: one work, which the engine downloads on its own. Standing
     // down here is the common case, not the exception.
-    const mix = isRecord(body) ? body.aweme_detail?.mix_info?.mix_id : undefined
+    const detail = isRecord(body) ? body.aweme_detail : undefined
+    const mix = detail?.mix_info?.mix_id
     if (response.status >= 400 || !mix) return undefined
-    return await mixPage(fetch, String(mix), group === 'collection' ? page : 1, signal)
+    const listing = await mixPage(fetch, String(mix), group === 'collection' ? page : 1, signal)
+    if (!listing) return undefined
+    // The work is one of the 合集's own entries; mark that copy, so the collection tab answers which one
+    // it is instead of leaving sixty cards to be read through. Its tab also says where it sits - but
+    // only a 合集 that ended on this page can: a cursor reports no total, so a page that still has more
+    // behind it cannot say which of them this is.
+    const marked = listing.groups.map(found => {
+      const index = found.entries.findIndex(entry => entry.id === aweme)
+      const total = found.pagination.total ?? (found.pagination.hasMore ? undefined : found.entries.length)
+      return {
+        ...found,
+        position: index >= 0 && total !== undefined ? { index: index + 1, total } : undefined,
+        entries: found.entries.map(entry => entry.id === aweme ? { ...entry, mark: i18n.t('errors:douyin.original') } : entry),
+      }
+    })
+    const own = detail ? entryOf(detail) : undefined
+    // A detail reply that could not be read as a work still lists the 合集; there is simply no tab in
+    // front of it then.
+    return { title: listing.title, kind: 'collection', groups: own ? [workGroup(own), ...marked] : marked }
   },
 }
 
@@ -288,6 +319,6 @@ export const douyinSeries: ProfileAdapter = {
       }
     })
     if (!entries.length && page === 1) throw new LoginRequired(i18n.t('errors:douyin.showsEmpty'))
-    return onePage('shows', i18n.t('errors:douyin.shows'), entries, { index: page, size: SHOWS, hasMore: Boolean(body.has_more) })
+    return onePage('shows', i18n.t('errors:douyin.shows'), entries, { index: page, size: SHOWS, hasMore: Boolean(body.has_more) }, 'shows')
   },
 }

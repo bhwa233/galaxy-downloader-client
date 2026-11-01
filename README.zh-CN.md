@@ -110,7 +110,7 @@ pnpm package         # 打包引擎并构建当前平台的安装包
 
 ## 发布
 
-修改 `package.json` 里的 `version` 并合并到 `main`。如果这个版本还没有对应的 tag，CI 会构建 Windows x64（NSIS）、macOS arm64（dmg/zip）和 Linux x64（AppImage），并以版本号本身作为 tag（例如 `0.3.0`）发布到 GitHub Release。版本号不变的推送只会运行检查。
+修改 `package.json` 里的 `version`，同时新增对应的 `docs/releases/<version>.md`，再合并到 `main`。说明文件以包含 Release 标题的一级标题开头，后面整理面向用户的更新内容；文件内容直接作为 GitHub Release 正文。如果这个版本还没有对应的 tag，CI 会先检查说明文件非空，再构建 Windows x64（NSIS）、macOS arm64（dmg/zip）和 Linux x64（AppImage），并以版本号本身作为 tag（例如 `0.6.0`）发布。版本号不变的推送只会运行检查。
 
 ## 免责声明
 

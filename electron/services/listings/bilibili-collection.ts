@@ -24,14 +24,22 @@ type ArchivesResponse = {
     page?: { total?: number }
   }
 }
+// One episode of a 合集, as the video page's own reply carries it. 'arc' is the same archive the paged
+// collection endpoint answers with, so the two routes build their entries from one shape.
+type Episode = { bvid?: string; title?: string; arc?: Archive & { author?: { name?: string } } }
+type Season = {
+  id?: number; title?: string; mid?: number
+  sections?: { id?: number; title?: string; episodes?: Episode[] }[]
+}
 type ViewResponse = {
   code?: number; message?: string
   data?: {
     bvid?: string; title?: string; pic?: string; owner?: { name?: string }
+    duration?: number; pubdate?: number; stat?: { view?: number }
     pages?: { page?: number; part?: string; duration?: number }[]
-    // The episodes ride along in this reply too, but they are read from the collection endpoint
-    // instead: that one is the same call every later page makes, so there is one shape to maintain.
-    ugc_season?: { id?: number; title?: string; mid?: number }
+    // The whole 合集 rides along in this reply - every section, every episode of it - so the collection
+    // tab of a video page costs no second request.
+    ugc_season?: Season
   }
 }
 
@@ -46,6 +54,43 @@ function archiveOf(archive: Archive): ListingEntry | undefined {
     title: archive.title?.trim() || i18n.t('errors:bilibili.video', { id: archive.bvid }),
     thumbnail: https(archive.pic || '') || undefined, kind: 'video',
     duration: count(archive.duration), views: count(archive.stat?.view), publishedAt: archive.pubdate || undefined,
+  }
+}
+
+// One episode of a 合集, from the video page's own reply. An 'arc' the reply did not carry costs the card
+// its cover and counts, not its place in the list: the episode's own name and address still stand.
+function episodeOf(episode: Episode, own: string): ListingEntry | undefined {
+  const bvid = episode.bvid?.trim()
+  if (!bvid) return undefined
+  const arc: Archive & { author?: { name?: string } } = episode.arc || {}
+  return {
+    id: bvid, url: `https://www.bilibili.com/video/${bvid}`,
+    title: episode.title?.trim() || arc.title?.trim() || i18n.t('errors:bilibili.video', { id: bvid }),
+    thumbnail: https(arc.pic || '') || undefined, kind: 'video',
+    duration: count(arc.duration), views: count(arc.stat?.view), publishedAt: arc.pubdate || undefined,
+    author: arc.author?.name?.trim() || undefined,
+    // Which of these is the one that was pasted: a list of sixty titles otherwise has to be read to find
+    // out, and the whole point of this route is to land on the video rather than on the 合集.
+    mark: bvid === own ? i18n.t('errors:bilibili.original') : undefined,
+  }
+}
+
+// The whole 合集, as the tab it becomes. Every episode rides along in the video's own reply, so the tab
+// is complete without a second request - and so is where the video being parsed sits in it.
+function seasonOf(season: Season, own: string): ListingGroup | undefined {
+  const sections = season.sections || []
+  const entries = sections.flatMap(section => section.episodes || []).map(episode => episodeOf(episode, own)).filter((entry): entry is ListingEntry => Boolean(entry))
+  // A reply that names a 合集 but carries no episodes of it teaches nothing about the list; the caller
+  // then asks the paged endpoint instead of drawing an empty tab.
+  if (!entries.length) return undefined
+  const title = season.title?.trim() || i18n.t('errors:bilibili.collection')
+  const index = entries.findIndex(entry => entry.id === own)
+  return {
+    id: 'collection', kind: 'collection', title, directory: title, entries,
+    // Every episode arrived with the video, so there is never a second page of them.
+    pagination: { index: 1, size: entries.length, total: entries.length, hasMore: false },
+    // Where the pasted video is in the 合集: the tab then says 59/72 instead of just 72.
+    position: index < 0 ? undefined : { index: index + 1, total: entries.length },
   }
 }
 
@@ -94,7 +139,7 @@ export async function collectionGroup(request: Pick<PageRequest, 'fetch' | 'sign
   const title = named || body.data?.meta?.name?.trim() || i18n.t(source.type === 'series' ? 'errors:bilibili.series' : 'errors:bilibili.collection')
   const total = body.data?.page?.total ?? body.data?.meta?.total
   return {
-    id: 'collection', title, directory: title, entries,
+    id: 'collection', kind: 'collection', title, directory: title, entries,
     pagination: { index: page, size: PAGE_SIZE, total, hasMore: total === undefined ? entries.length === PAGE_SIZE : page * PAGE_SIZE < total },
   }
 }
@@ -137,7 +182,7 @@ export const bilibiliBangumi: ProfileAdapter = {
       return { id: String(id), url: `https://www.bilibili.com/bangumi/play/ep${id}`, title: episode.long_title?.trim() || episode.title?.trim() || `第 ${(page - 1) * PAGE + index + 1} 集`, thumbnail: cover || undefined, kind: 'video', duration: milliseconds === undefined ? undefined : milliseconds / 1000, publishedAt: count(episode.pub_time) }
     }).filter((entry): entry is ListingEntry => Boolean(entry))
     const total = count(result?.total) ?? episodes.length
-    return { title: result?.title?.trim() || i18n.t('errors:bilibili.collection'), kind: 'collection', groups: [{ id: 'collection', title: result?.title?.trim() || i18n.t('errors:bilibili.collection'), directory: result?.title?.trim(), entries, pagination: { index: page, size: PAGE, total, hasMore: page * PAGE < total } }] }
+    return { title: result?.title?.trim() || i18n.t('errors:bilibili.collection'), kind: 'collection', groups: [{ id: 'collection', kind: 'collection', title: result?.title?.trim() || i18n.t('errors:bilibili.collection'), directory: result?.title?.trim(), entries, pagination: { index: page, size: PAGE, total, hasMore: page * PAGE < total } }] }
   },
 }
 
@@ -149,9 +194,11 @@ function bvidOf(url: URL): string {
   return /^\/video\/(BV[0-9A-Za-z]+)/.exec(url.pathname)?.[1] || ''
 }
 
-// A video link is one of three things and the address does not say which, so this reads the video once
-// and then decides: a multi-part video lists its parts, a video inside a 合集 lists the collection, one
-// that is both lists both, and an ordinary single video is handed back to the engine untouched.
+// A video link is one of four things and the address does not say which, so this reads the video once
+// and then decides: a multi-part video lists its parts, a video inside a 合集 lists the video itself and
+// the 合集 beside it, one that is both lists both (parts first), and an ordinary single video is handed
+// back to the engine untouched. Where the video has a tab of its own it leads, so a pasted link is
+// ticked and ready to download instead of being buried in the 合集 it is one episode of.
 export const bilibiliVideo: ProfileAdapter = {
   id: 'bilibili-video',
   matches(url) { return Boolean(bvidOf(url)) },
@@ -164,15 +211,19 @@ export const bilibiliVideo: ProfileAdapter = {
     if (!data) return undefined
     const author = data.owner?.name?.trim() || undefined
     const cover = https(data.pic || '') || undefined
+    const title = data.title?.trim() || i18n.t('errors:bilibili.video', { id: bvid })
     const parts = data.pages || []
     // A real multi-part video with p=1 explicitly names its first part, so keep single-part extraction.
     if (url.searchParams.get('p') && parts.length > 1) return undefined
     const season = data.ugc_season
+    // The 合集 arrives with the video, so its tab is complete before anything else is asked for. Only a
+    // reply that did not carry the episodes falls back to the paged endpoint.
+    const collected = season?.id && season.mid ? seasonOf(season, bvid) : undefined
     const groups: ListingGroup[] = []
     if (parts.length > 1) {
-      const title = data.title?.trim() || i18n.t('errors:bilibili.video', { id: bvid })
       groups.push({
-        id: 'parts', title: i18n.t('errors:bilibili.parts'), directory: title,
+        // The tab says 多P by its kind; the hover hint carries the video's own title.
+        id: 'parts', kind: 'parts', title, directory: title,
         // The part's own id has to differ from a 合集 entry's, because a 合集 contains the video being
         // looked at: both would otherwise be keyed by this same bvid and share one selection.
         entries: parts.map((part, index) => ({
@@ -186,7 +237,8 @@ export const bilibiliVideo: ProfileAdapter = {
         pagination: { index: 1, size: parts.length, total: parts.length, hasMore: false },
       })
     }
-    if (season?.id && season.mid) {
+    if (collected) groups.push(collected)
+    else if (season?.id && season.mid) {
       const source: Source = { mid: String(season.mid), sid: String(season.id), type: 'season' }
       // Only the tab being turned moves; the other keeps the page it was already showing.
       const wanted = group === 'collection' || !groups.length ? page : 1
@@ -194,6 +246,20 @@ export const bilibiliVideo: ProfileAdapter = {
     }
     // Neither a part list nor a collection: one video, which the engine already handles on its own.
     if (!groups.length) return undefined
-    return { title: data.title?.trim() || groups[0].title, kind: 'collection', groups }
+    // A single-part video leads with itself: its own card first and already ticked, the 合集 it belongs
+    // to being the tab beside it, where 59/72 says where in that 合集 this video is. A multi-part video
+    // already leads with its parts, which are it.
+    if (parts.length <= 1) groups.unshift({
+      // Labelled 单视频 by its kind; the video's own title is the hover hint, so the card below does not
+      // merely repeat the tab.
+      id: 'work', kind: 'work', title,
+      entries: [{
+        id: `${bvid}-p1`, url: `https://www.bilibili.com/video/${bvid}`, title, thumbnail: cover, kind: 'video',
+        duration: count(data.duration) ?? count(parts[0]?.duration), views: count(data.stat?.view), author, publishedAt: data.pubdate || undefined,
+      }],
+      // One entry, and nothing behind it: a tab that cannot grow has no page to turn.
+      pagination: { index: 1, size: 1, hasMore: false },
+    })
+    return { title, kind: 'collection', groups }
   },
 }

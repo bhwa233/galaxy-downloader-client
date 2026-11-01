@@ -41,6 +41,11 @@ jobs:
             echo "Tag $version already exists, skipping release."
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
+            notes="docs/releases/$version.md"
+            if [ ! -s "$notes" ] || ! grep -q '[^[:space:]]' "$notes"; then
+              echo "::error file=$notes::Missing or empty release notes for $version."
+              exit 1
+            fi
             echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -84,6 +89,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }
       - run: ls -laR dist
@@ -92,8 +98,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          notes="docs/releases/$VERSION.md"
+          title=$(head -n 1 "$notes")
           find dist -type f -print0 | xargs -0 gh release create "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "$VERSION" \
-            --generate-notes
+            --title "${title#\# }" \
+            --notes-file "$notes"

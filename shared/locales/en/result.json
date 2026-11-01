@@ -3,6 +3,16 @@
   "preview": "Preview",
   "openingPage": "Opening page…",
   "about": "≈ {{size}}",
+  "groups": {
+    "work": "Single video",
+    "parts": "Multi-part",
+    "collection": "Collection",
+    "files": "Files",
+    "uploads": "Posts",
+    "shorts": "Shorts",
+    "streams": "Streams",
+    "shows": "Shows"
+  },
   "menu": {
     "downloadOne": "Download this item",
     "select": "Select",
@@ -58,6 +68,25 @@
   },
   "listView": "List view",
   "gridView": "Thumbnail view",
+  "duration": "Duration",
+  "durations": {
+    "all": "Any duration",
+    "short": "Under 1 min",
+    "medium": "1–10 min",
+    "long": "Over 10 min",
+    "custom": "Custom…"
+  },
+  "customDuration": {
+    "title": "Custom duration",
+    "description": "Leave a field empty for no limit. Both ends are included; time is in minutes.",
+    "min": "Shortest (min)",
+    "max": "Longest (min)",
+    "unlimited": "No limit",
+    "between": "{{min}}–{{max}} min",
+    "under": "≤ {{max}} min",
+    "over": "≥ {{min}} min",
+    "apply": "Apply"
+  },
   "clearResult": "Clear parse result",
   "onlyAll": "All",
   "truncated": {

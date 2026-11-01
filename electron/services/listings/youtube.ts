@@ -205,7 +205,7 @@ export const youtube: ProfileAdapter = {
       token = harvest(gridOf(data), entries)
       // Every page before the requested one is paid for, then dropped: only the page asked for is shown.
       for (let reached = 1; reached < page; reached += 1) {
-        if (!token) return onePage('videos', undefined, [], { index: page, size: PAGE_SIZE, hasMore: false })
+        if (!token) return onePage('videos', undefined, [], { index: page, size: PAGE_SIZE, hasMore: false }, 'uploads')
         held.tokens.set(reached, token)
         entries.clear()
         token = await continuation(token)
@@ -217,6 +217,6 @@ export const youtube: ProfileAdapter = {
     // 短片 arrive in larger batches than 影片, so the page reports what it actually held.
     return onePage('videos', channel ? i18n.t('errors:youtube.videos', { channel }) : undefined,
       [...entries.values()].map(entry => ({ ...entry, author: entry.author || channel })),
-      { index: page, size: entries.size || PAGE_SIZE, hasMore: Boolean(token) })
+      { index: page, size: entries.size || PAGE_SIZE, hasMore: Boolean(token) }, 'uploads')
   },
 }

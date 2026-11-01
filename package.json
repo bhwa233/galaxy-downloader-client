@@ -1,6 +1,6 @@
 {
   "name": "galaxy-downloader",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "private": true,
   "description": "Local-first media downloader with browser login-state support.",
   "license": "AGPL-3.0-only",
@@ -28,6 +28,7 @@
     "electron-updater": "^6.8.3",
     "i18next": "^26.4.2",
     "opencc-js": "^1.4.2",
+    "react-intersection-observer": "11.0.1",
     "sherpa-onnx-node": "1.13.6",
     "zod": "^4.3.6"
   },

@@ -34,8 +34,16 @@ export function isProfileUrl(url: string): boolean {
 
 // Listings the client will not walk. Saying so is kinder than letting the address fall through to a
 // route that was never going to serve it and failing there for a reason that reads like a login problem.
+// Home and feed pages are the other half of that: no extractor takes them, the page route reads no
+// media from them, and the sign-in hint that follows is about the wrong thing.
 const REFUSED: { host: RegExp; path: RegExp; message: () => string }[] = [
   { host: /(^|\.)xiaohongshu\.com$/, path: /\/user\/profile\//, message: () => i18n.t('errors:parse.xiaohongshuProfile') },
+  { host: /(^|\.)bilibili\.com$/, path: /^\/$|^\/v(\/|$)|^\/video\/?$|^\/bangumi\/?$|^\/anime\/?$|^\/dynamic|^\/feed/, message: () => i18n.t('errors:parse.notAResource') },
+  { host: /(^|\.)douyin\.com$/, path: /^\/$|^\/discover|^\/hot|^\/search/, message: () => i18n.t('errors:parse.notAResource') },
+  { host: /(^|\.)youtube\.com$/, path: /^\/$|^\/feed\/|^\/results/, message: () => i18n.t('errors:parse.notAResource') },
+  { host: /(^|\.)(x|twitter)\.com$/, path: /^\/$|^\/home|^\/explore|^\/search/, message: () => i18n.t('errors:parse.notAResource') },
+  { host: /(^|\.)weibo\.com$/, path: /^\/$|^\/hot|^\/search/, message: () => i18n.t('errors:parse.notAResource') },
+  { host: /(^|\.)instagram\.com$/, path: /^\/$|^\/explore/, message: () => i18n.t('errors:parse.notAResource') },
 ]
 
 // Pages a platform sends a visitor to instead of the one they asked for, when it wants a check passed
@@ -234,7 +242,7 @@ export class Parser {
       for (const found of listing.groups) {
         // Entry ids are the platform's own post ids, so the same post keeps its id across pages.
         const entries = found.entries.slice(0, Math.max(0, MOST - items.length))
-        groups.push({ id: found.id, title: found.title || i18n.t('errors:parse.group'), directory: found.directory, itemIds: entries.map(entry => entry.id), pagination: found.pagination })
+        groups.push({ id: found.id, title: found.title || i18n.t('errors:parse.group'), kind: found.kind, directory: found.directory, itemIds: entries.map(entry => entry.id), pagination: found.pagination, position: found.position })
         for (const entry of entries) {
           // The post's own address is kept on the item: the window offers it as a link, and it is the
           // same public page the listing was read from.
@@ -245,6 +253,13 @@ export class Parser {
       }
       if (!items.length) throw new LoginRequired(i18n.t(listing.kind === 'collection' ? 'errors:parse.listingCollectionEmpty' : 'errors:parse.listingProfileEmpty'))
       const result: MediaResult = { id: randomUUID(), url, title: listing.title, platform: platformOf(url), method: 'browser', listing: listing.kind, groups, items }
+      // A listing that arrives whole - a 合集 read in one reply - can be larger than MOST: only its
+      // front is on screen, and saying so is what keeps the cut from reading as the whole list.
+      const listed = listing.groups.reduce((sum, found) => sum + found.entries.length, 0)
+      if (listed > items.length) {
+        const total = listing.groups.reduce((sum, found) => sum + (found.pagination?.total ?? found.entries.length), 0)
+        result.truncated = { shown: items.length, total: total > items.length ? total : undefined }
+      }
       return { result, sources, catalog: new Map(items.map(item => [item.id, item])) }
     }
     if (!browserOnly) {

@@ -3,6 +3,16 @@
   "preview": "预览",
   "openingPage": "正在打开页面…",
   "about": "约 {{size}}",
+  "groups": {
+    "work": "单视频",
+    "parts": "多P",
+    "collection": "合集",
+    "files": "文件",
+    "uploads": "作品",
+    "shorts": "短视频",
+    "streams": "直播",
+    "shows": "短剧"
+  },
   "menu": {
     "downloadOne": "下载这一项",
     "select": "选中",
@@ -57,6 +67,25 @@
   },
   "listView": "结果列表视图",
   "gridView": "结果缩略图视图",
+  "duration": "时长",
+  "durations": {
+    "all": "全部时长",
+    "short": "1 分钟以内",
+    "medium": "1–10 分钟",
+    "long": "10 分钟以上",
+    "custom": "自定义…"
+  },
+  "customDuration": {
+    "title": "自定义时长",
+    "description": "留空表示不限，两端都包含，按分钟计。",
+    "min": "最短（分钟）",
+    "max": "最长（分钟）",
+    "unlimited": "不限",
+    "between": "{{min}}–{{max}} 分钟",
+    "under": "≤ {{max}} 分钟",
+    "over": "≥ {{min}} 分钟",
+    "apply": "应用"
+  },
   "clearResult": "清除解析结果",
   "onlyAll": "全部",
   "truncated": {

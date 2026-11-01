@@ -2,6 +2,112 @@
 
 本文汇总全部平台的测试链接，供实现与验收时使用。**状态列只有两种**：已验证 = 在真实浏览器里打开并确认过可用；待补 = 还没有拿到可用的样本。拿不到的都写了原因，不要凭空编链接。
 
+## 2026-11-01：0.6.0 发布准备与回归
+
+版本从 0.5.2 升至 0.6.0，更新说明保存在 `docs/releases/0.6.0.md`：中文正文、折叠英文摘要及 0.5.2 至 0.6.0 的提交对比链接。发布工作流在新版本没有 tag 时检查对应说明非空；三个平台构建成功后，从同一提交检出文件，使用一级标题作为 Release 标题、文件全文作为正文。
+
+用户本轮明确允许修改测试。`test/collections.test.ts` 的过期断言已调整为单P 视频属于合集时返回 `work`、`collection`，并核对首组只指向粘贴的视频、首组无后续页、合集保留所请求的页码。已有 Electron E2E 还保留了任务区「卡片视图」切换与恢复断言，而任务区已在 0.5.1 改为仅列表；本轮移除这两处过期操作，保留真实下载、文件字节、搜索、设置、主题、重启恢复与 renderer 隔离检查。
+
+Windows 原生验证结果：
+
+| 检查 | 结果 |
+| --- | --- |
+| `pnpm check` | 通过：类型检查、Lint、66 项单测和 renderer / main / preload / CLI / 离线处理 worker 构建全部完成 |
+| 构建后的 Electron E2E | `pnpm exec playwright test --output=test-results/e2e-release-0.6.0`，1 passed（18.1 秒）；与 `pnpm test:e2e` 使用同一构建和测试入口 |
+| Release 工作流演练 | 一次性脚本解析实际 YAML 并运行其中的 Bash：缺文件及纯空白正文被拒；有效说明允许发布；已有 tag 跳过；以替身 `gh` 确认标题、正文文件、提交和含空格的附件路径均完整传入，未访问发布 API |
+| Markdown | `markdownlint-cli@0.48.0` 检查新版本说明与中英文 README，通过；扩展检查三份既有文档时发现历史格式问题，并对照 HEAD 确认原有 67 处。本轮新增的重复「抖音」标题已改名，未批量改写历史记录 |
+| 真实 B 站解析 | 构建后的 Electron，以隔离临时用户目录打开 <https://www.bilibili.com/video/BV19dx369EDD/>；显示 `v0.6.0`，「单视频」默认选中，旁边「合集 59/72」；合集有 72 条与「原视频」角标；未入队下载 |
+| 真实时长筛选 | 同一窗口选「1 分钟以内」显示 9 条；自定义 2–4 分钟显示 32 条；renderer pageerror 为 0 |
+
+本机 pnpm 默认在运行脚本前自动安装依赖，被无 TTY 的目录替换提示阻断；仅在验证进程中关闭 `verify_deps_before_run` 与 `manage_package_manager_versions` 后完成检查，没有改项目配置。最初单测曾因 Windows 临时目录重命名 `EPERM` 失败，重跑为 66 通过；E2E 首次生成视频也因系统临时目录 `Permission denied` 失败，改用仓库 `test-results/release-0.6.0-temp` 作为验证进程的 TEMP / TMP 后通过。引擎准备命令安装 PyInstaller 时长时间停留在下载元数据，已终止该安装；本轮真实解析与 E2E 使用现有 `.venv` 中的 yt-dlp 2026.8.19。没有修改下载器实现来规避环境故障。
+
+截图位于忽略目录 `test-results/driver/release-0.6.0-{work,collection,duration,custom-duration}.png`。一次性工作流探针已删除，临时客户端已关闭。抖音登录态、多P 加合集组合和跨平台安装包不由本轮本机实测覆盖；长列表分批挂载的性能证据沿用下节，未重复测帧率。
+
+## 客户端实测结果（2026-11-01，长合集分批挂载）
+
+494 条合集 <https://www.bilibili.com/video/BV1daxy6JENt/>（小松绿Viridis）之前一次挂完 494 张卡，滚动肉眼可见掉帧。实测根因是挂载卡片数：同一页面只改变挂载数量，全部 494 张时慢滚（500px/s）`p50` 18ms / 快滚（2400px/s）`p50` 24ms，挂 120 张时 12ms，挂 40 张时 6ms，72 条的合集本来就是 6ms；滚动 2 秒里主线程 `TaskDuration` 2.06–2.25s（完全占满），而 layout/style 只占 0.13s，时间花在 paint/raster/compositing 上。虚拟化没有现成件，所以按用户拍板的方案 B 做了分批挂载：先挂 120 张，`InView`（`react-intersection-observer`，`rootMargin: 320px`）进入视野时再挂下一批，直到全部挂完。
+
+真实 Electron 窗口验证（dev 构建，窗口以 `--remote-debugging-port=9333` 启动，探针走 CDP 填「媒体链接」、点「解析」，切到「合集」后按帧测滚动）：
+
+| 操作 | 读到 | 截图 |
+| --- | --- | --- |
+| 解析 494 条合集，切「合集」 | 首屏只挂 120 张卡、120 个 `img`、2727 个节点、`scrollHeight` 6285；副标题仍是「共 494 项，已加载 494 项」 | `test-results/driver/bilibili-video-lazy-first.png` |
+| 120 张挂载时慢滚 / 快滚各 2 秒 | `p50` 6ms / 12ms（全量时是 18ms / 24ms），`over33` 只有 3 帧 | — |
+| 滚到底（6 轮） | 卡片数 126 → 246 → 366 → 486 → 500（含「全选」「字幕」两个 `label`），`scrollHeight` 6285 → 12198 → 18110 → 24022 → 24795，最后一批只补剩下的 14 张 | `-lazy-bottom.png` |
+
+`pnpm typecheck` 与 `pnpm lint` 通过（实际是直接调 `node node_modules/typescript/bin/tsc` 与 eslint）；一次性探针已删除，没有新增或修改测试用例。
+
+取舍：滚到后面挂载数仍会累积回全部 494 张（此时帧时间回到 ~24ms），真正封顶要靠虚拟化，这轮没做；全选 / 下载 / 筛选仍按筛选后的整个列表算，没挂载的条目也会被选中。没有 `IntersectionObserver` 的环境退化成底部「加载更多」按钮（这条没有在真实环境里验，Electron 里 IO 总是存在）。
+
+## 客户端实测结果（2026-11-01，时长筛选）
+
+结果区在「时间」右边多了一个「时长」下拉：1 分钟以内 / 1–10 分钟 / 10 分钟以上 / 自定义…，只在当前 tab 的条目能按长度分出差别时出现。「自定义…」打开对话框，按分钟填「最短 / 最长」（留空表示不限、两端都包含，最短大于最长会自动对调）。它与 关键字 / 时间 / 只看 按 AND 组合，同时作用于显示与全选；平台没给时长的条目在筛选开启时被排除。
+
+真实 Electron 窗口验证（dev 构建，窗口以 `--remote-debugging-port=9333` 启动，探针走 CDP 填「媒体链接」、点「解析」后读 DOM）：
+
+| 操作 | 读到 | 截图 |
+| --- | --- | --- |
+| 解析 <https://www.bilibili.com/video/BV19dx369EDD/>，切到「合集 59/72」 | 「时长」下拉出现，默认「全部时长」，列表 72 项 | `test-results/driver/bilibili-video-duration-all.png` |
+| 选「1 分钟以内」 | 触发文字「1 分钟以内」，可见 9 条（0:04–0:53），底部「已选 1 / 9」 | `-duration-short.png` |
+| 选「自定义…」填 2 / 4 应用 | 触发文字「2–4 分钟」，可见 32 条（2:xx–4:xx），底部「已选 1 / 32」 | `-duration-custom.png`、`-duration-dialog.png` |
+| 再开对话框填 5 / 2 应用 | 自动对调成「2–5 分钟」，可见 51 条 | — |
+| 对话框里点「全部时长」 | 回到 72 项 | — |
+| 切到「单视频」tab | 「时长」下拉消失（单条没有可筛的）；切回合集后所选仍在 | — |
+
+`pnpm typecheck` 与 `pnpm lint` 通过（实际是直接调 `node node_modules/typescript/bin/tsc` 与 eslint，因为 `pnpm <script>` 在这个环境里会自装 pnpm 而被拒）；一次性探针已删除，没有新增或修改测试用例。
+
+未覆盖：混排列表（抖音主页、X / Instagram 单帖）里没时长的条目会在筛选开启时被排除，本轮没有登录态样本复验；「所有条目完全等长」的列表（控件不出现）也没有在线样本。
+
+## 客户端实测结果（2026-10-31，视频链接优先显示原视频）
+
+粘 <https://www.bilibili.com/video/BV19dx369EDD/> 时，之前只列出所属合集的 64 条，默认勾选合集第一条；原视频在合集里排第 59 条，既不好找，直接点「下载」还会下成别的视频。现在单P 且属于合集时出两个 tab：「本视频」排第一并默认打开，合集条目一次给全（来自同一次 `wbi/view` 的 `ugc_season`，不再额外调合集分页接口），合集里与当前视频同一个 BV 的条目打「原视频」角标，本视频标题带「第 N / M 集」。
+
+验证用了两路，都是真实 B 站、匿名：
+
+1. 一次性 `tsc` 探针直接调 `electron/services/listings/bilibili-collection.ts` 的 `bilibiliVideo.fetchPage`（真实 `fetch` + `Referer`），打印每个 `ListingGroup` 的 id、标题、条目数、分页与标记。
+2. 真实 Electron 客户端窗口：以 `--remote-debugging-port` 启动构建后的客户端，CDP 填「媒体链接」、点「解析」，读 `[role=tab]` 的 `aria-selected`、勾选数量与角标，再滚到标记条目截图。
+
+| 链接 | 结果 | 结论 |
+| --- | --- | --- |
+| <https://www.bilibili.com/video/BV19dx369EDD/> | 探针：`work`「本视频 · 第 59 / 64 集」1 条 + `collection`「小松绿💚」64 条（`pagination hasMore:false`），合集第 59 条带「原视频」；窗口：两个 tab「本视频 · 第 59 / 72 集」（默认选中，已选 1 项）与「小松绿💚 72」，合集视图已加载 72 项、没有「加载更多」，第 59 条卡片右上角显示「原视频」 | ✅ 原视频优先、合集全量、角标正确 |
+| <https://www.bilibili.com/video/BV1Ps421u7ju> | 探针：`work`「本视频 · 第 2 / 3 集」+ `collection`「少女乐队」3 条，第 2 条带「原视频」 | ✅ 集序号与标记 |
+| <https://www.bilibili.com/video/BV1GJ411x7h7> | 探针：`(stood down)`，回落引擎，单视频行为不变 | ✅ 不带合集时不接管 |
+
+两路采集相隔约 10 小时，同一个合集从 64 集涨到 72 集，符合合集仍在更新，不是解析不一致。
+
+第三路（2026-11-01）：本地解析引擎装好（`.venv` 里的 yt-dlp `2026.08.19`）后，用同一个真实窗口再解析一次 `BV19dx369EDD`。日志确认走 `列表适配器 bilibili-video`、73 条；随后为主条目采样画质，第一次 `extract` 因 yt-dlp 读不了 Chrome cookie（`Failed to decrypt with DPAPI`）失败，客户端按设计自动改为不带 cookie 重试并成功（`完成 extract … 3418ms`）。结果页默认停留在「本视频」tab、该条已勾选，显示「已选 1 / 1 · 约 20.7 MB」，画质菜单不再停在「读取中」；没有入队下载。截图：`test-results/driver/bilibili-video-work-tab-engine.png`。
+
+未覆盖：抖音的同批改动（本作品 + 合集两个 tab、原作品角标）缺少登录账号的 `persist:media` 会话，没有在真实响应上复验。
+
+回归：`pnpm typecheck`、`pnpm lint` 通过；既有单测 65 通过、1 失败——`test/collections.test.ts` 里「单P + 合集只有一个 tab」的断言因本次规则变化已过期，按原型阶段的规矩没有改测试。一次性探针与 CDP 脚本已删除，没有新增或修改测试用例。截图：`test-results/driver/bilibili-video-work-tab.png`、`test-results/driver/bilibili-video-collection-tab.png`、`test-results/driver/bilibili-video-original-mark.png`。
+
+第四路（2026-11-01，tab 与头部显示收敛）：把「第 N / M 集」从「本视频」tab 移走，改成容器 tab 的徽章「59/72」（`ListingGroup`/`MediaGroup.position`）；有多个 tab 时不再显示结果区大标题，副标题挪到 tab 条下方、只在 分P/合集 tab 显示。真实窗口（`--remote-debugging-port`，CDP 驱动）解析 `BV19dx369EDD` 读到：`h2` 为 null；两个 tab「本视频」「小松绿💚 59/72」，默认打开本视频、该条已勾选；切到合集后 tab 条下方出现「哔哩哔哩 · 共 72 项，已加载 72 项」，第 59 条带「原视频」。`pnpm typecheck`、`pnpm lint` 通过。截图：`test-results/driver/bilibili-video-tab-badge-work.png`、`test-results/driver/bilibili-video-tab-badge-collection.png`。
+
+## 客户端实测结果（2026-11-01，tab 只写类型词）
+
+tab 文案不再由各平台自己拼（「本视频」「分P」「本作品」各一套），改成组上的 `kind` 决定的类型词：`单视频` / `多P` / `合集`，列表自己的名字（合集名、视频标题）降为 tab 的悬停提示。`GroupKind` 在 `shared/contracts.ts`，文案在 `result.json` 的 `groups.*`，各适配器只声明 kind（哔哩哔哩视频页、抖音作品页、各平台主页、X/Instagram 单帖文件、抖音短剧目录都归了词条，YouTube 频道等单列表结果不受影响）。这样其它平台出多 tab 时直接复用同一套词，不用再造一组中文。
+
+验证：
+
+1. 一次性 `tsc` 探针用假的 `wbi/view` 回复驱动 `bilibiliVideo.fetchPage`：多P+合集 → `parts`（`title` 是视频标题）+ `collection`（`title` 是合集名，`position` 2/2）；单P+合集 → `work`（`title` 是视频标题）+ `collection`。`Collection` 的 `directory` 仍是合集名，落盘不受文案影响。
+2. 真实 Electron 窗口（dev 构建 + CDP）：解析 <https://www.bilibili.com/video/BV19dx369EDD/>，`[role=tab]` 读到两个 tab，文本 `单视频`（默认选中）与 `合集 59/72`，`title` 属性分别是「单视频 · 【小松绿】…」与「合集 · 小松绿💚」；结果区没有大标题，单视频 tab 下没有副标题，已选 `1/1 · 约 20.7 MB`；切到合集后仍是 72 项、第 59 条「原视频」（见上一节）。截图：`test-results/driver/bilibili-video-tab-kind.png`。
+
+未覆盖：多P+合集没有可用的在线样本（`BV1bK411W797` 是 23P 但不在合集里，`BV1MwxY63Eer` 是 17 集合集但单P），所以 `多P` tab 只有假回复的证据；抖音侧（作品页 + mix）未在登录账号下复验，文案机制与哔哩哔哩共用。`pnpm typecheck`、`pnpm lint` 通过，没有新增或修改测试用例，一次性探针脚本与截图目录已删除。
+
+## 客户端实测结果（2026-11-01，tab 与按钮同排、只看收敛）
+
+结果区原先两行：上一行是标题与 关键字 / 时间 / 视图 / 关闭，下一行是 tab 条与「全部 / 视频 / 图片」。现在合成一行——有 tab 时 tab 占左侧、按钮靠右；没有 tab 时这一行仍是标题。副标题「平台 · 共 N 项，已加载 N 项」仍在下方、只跟 多P/合集 tab 显示。
+
+「只看」改成只在**当前列表同时含图文与视频**时出现（`src/components/downloader/Result.tsx` 的 `mixed`）：纯视频列表（视频页的多P/合集、UP 主页）没有可筛的东西，`图片` 在那里只会把每张封面各排一个任务；图文与视频混排的列表（抖音主页、X / Instagram 单帖等）照旧显示，仍同时作用于显示与全选。单个作品的卡片仍有右键「下载封面」。
+
+真实 Electron 窗口（dev 构建 + CDP）解析 <https://www.bilibili.com/video/BV19dx369EDD/>：`h2` 为 null，`[role=tab]` 两个「单视频」（默认选中）/「合集 59/72」，与视图切换、关闭在同一行，页面上没有「全部」筛选按钮；切到合集后出现副标题「哔哩哔哩 · 共 72 项，已加载 72 项」。`pnpm typecheck`、`pnpm lint` 通过，没有新增或修改测试用例；一次性 CDP 脚本已删除。截图：`test-results/driver/bilibili-video-row-work.png`、`test-results/driver/bilibili-video-row-collection.png`。混排列表下的「只看」本轮没有重新验证（没有可用的登录态样本）。
+
+## 客户端实测结果（2026-11-01，首页/信息流链接的报错）
+
+粘 <https://www.bilibili.com/?page=Moments> 这类平台首页或信息流地址时，以前会先让引擎试两次（`Unsupported URL`），再回退到应用内浏览器读到 0 个媒体，最后按「已知平台页面为空」报「需要登录才能继续」——登录其实解决不了。现在 `electron/services/parser.ts` 的拒绝表在解析入口就拦下各平台的首页/信息流路径（bilibili `/`、`/v/…`、`/video/`、`/bangumi/`、`/anime/`、`/dynamic`、`/feed`；抖音 `/`、`/discover`、`/hot`、`/search`；YouTube `/feed/`、`/results`；X `/home`、`/explore`、`/search`；微博 `/hot`、`/search`；Instagram `/explore`），文案是「暂不支持解析这个链接：它是平台首页或信息流，不是作品页或列表页。请粘贴具体的视频、合集或作者主页链接。」（`errors:parse.notAResource`）。
+
+真实 Electron 窗口实测：该链接 0.7 秒返回「解析未完成」+ 上述文案，没有登录按钮，也不再等浏览器预热；同一窗口随后解析 <https://www.bilibili.com/video/BV1MwxY63Eer/> 正常（「本视频 · 第 1 / 17 集」+ 合集两个 tab，默认本视频）。`pnpm typecheck`、`pnpm lint` 通过，没有新增或修改测试用例。截图：`test-results/driver/unsupported-home.png`。
+
 ## 客户端实测结果（2026-10-13，平台原始音轨音质选择）
 
 之前结果页只显示视频画质，选音频后禁用画质菜单，引擎也始终覆盖成 `bestaudio/best`。现在解析保留独立的 `audioFormats`（格式 ID、编码/容器、平台报告的码率与大小），音频模式显示「音质（原始音轨）」；音视频同时下载时两个菜单分别生效。合集复用已有的首条视频采样请求取得音轨，翻页保留所选音轨。只有真实可用的源音轨会显示，默认「最高音质」，不提供凭空创建的码率档位。

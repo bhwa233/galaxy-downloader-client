@@ -163,7 +163,7 @@ export const instagram: ProfileAdapter = {
     if (!entries.length && page === 1) throw new LoginRequired(i18n.t('errors:instagram.profileEmpty'))
     return onePage('posts', i18n.t(found.reels ? 'errors:instagram.reels' : 'errors:instagram.posts', { user: found.user }), entries, {
       index: page, size: COUNT, hasMore: Boolean(connection?.page_info?.has_next_page && connection.page_info.end_cursor),
-    })
+    }, 'uploads')
   },
 }
 
@@ -219,6 +219,6 @@ export const instagramPost: ProfileAdapter = {
         duration: file.video_duration ? Math.round(file.video_duration) : undefined,
       }
     }).filter((entry): entry is ListingEntry => Boolean(entry))
-    return { title: text, kind: 'post', groups: [{ id: 'files', entries, pagination: { index: 1, size: entries.length, hasMore: false } }] }
+    return { title: text, kind: 'post', groups: [{ id: 'files', kind: 'files', entries, pagination: { index: 1, size: entries.length, hasMore: false } }] }
   },
 }

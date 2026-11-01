@@ -104,7 +104,9 @@ export class Controller {
     const entry: HistoryEntry = {
       url: result.url, title: result.title, platform: result.platform,
       listing: result.groups?.some(group => group.id === 'parts') ? 'parts' : result.listing,
-      count: result.groups?.[0]?.pagination?.total ?? result.items.length,
+      // The largest count any tab holds rather than the first tab's: a result can lead with a one-entry
+      // tab now, and its total would otherwise be what the history says the whole thing is.
+      count: result.groups?.length ? Math.max(...result.groups.map(group => group.pagination?.total ?? group.itemIds.length)) : result.items.length,
       thumbnail: result.items.find(item => item.thumbnail && /^https?:/.test(item.thumbnail))?.thumbnail,
       parsedAt: new Date().toISOString(),
     }

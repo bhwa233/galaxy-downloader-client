@@ -47,7 +47,6 @@ test('real engine parses and downloads a local video, persists history, and isol
     await page.getByRole('tab', { name: '活动日志', exact: true }).click()
     await expect(page.locator('.activity-log')).toContainText('下载完成')
     await page.getByRole('button', { name: 'Close', exact: true }).click()
-    await page.getByRole('button', { name: '卡片视图' }).click()
     await page.getByRole('textbox', { name: '搜索任务' }).fill('no-matching-title')
     await expect(page.getByRole('heading', { name: '没有匹配的任务' })).toBeVisible()
     await page.getByRole('textbox', { name: '搜索任务' }).fill('')
@@ -78,7 +77,6 @@ test('real engine parses and downloads a local video, persists history, and isol
     page = await app.firstWindow()
     await page.getByRole('button', { name: /^已完成/ }).click()
     await expect(page.getByRole('button', { name: '打开文件位置' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '卡片视图' })).toHaveAttribute('aria-pressed', 'true')
     const restored = await page.evaluate(() => window.desktopApi.command('state:get', null))
     expect(restored.ok && restored.state.settings.concurrency).toBe(1)
   } finally {

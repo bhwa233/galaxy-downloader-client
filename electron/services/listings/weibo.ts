@@ -96,6 +96,6 @@ export const weibo: ProfileAdapter = {
       // Counted against what the feed held, not against what survived the filter: a page of text-only
       // posts is a page with nothing to download, not the end of the profile.
       hasMore: total === undefined ? list.length >= PAGE_SIZE : page * PAGE_SIZE < total,
-    })
+    }, 'uploads')
   },
 }
