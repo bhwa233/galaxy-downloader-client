@@ -13,6 +13,7 @@ A local-first desktop media downloader. Paste a link — a video, a post, a whol
 - **Parse locally.** yt-dlp and FFmpeg ship with the app; parsing, downloading, merging and conversion all run on your machine.
 - **Your own sign-ins.** Sign in to platforms in the app's built-in browser (Settings → Browser), or let it read an installed Chrome, Edge or Firefox profile. Members-only and signed-in content downloads as it does for you in the browser.
 - **Whole profiles and collections.** A creator's uploads, a Bilibili collection or multi-part video, a Douyin collection or short-drama series, a YouTube channel or playlist, a WeChat article album — listed page by page, with select all, Shift-click ranges, keyword and publish-time filters, and a per-batch cap.
+- **Creator subscriptions.** Follow Bilibili, Douyin and YouTube creators, filter updates by platform or creator, and receive local notifications. Checks default to every 24 hours and can be configured under Settings → Subscriptions. Existing works establish a quiet baseline. Click a work or Parse creator profile to parse it in the app, then choose quality and confirm the download. Separate external-link buttons open the original platform pages. Monitoring runs while the app is open, including in the tray.
 - **Choose what to save.** Video at a chosen quality, audio only (kept as-is or converted to MP3/M4A/FLAC), cover images, subtitles (embedded or as files). Showing only images turns every video into its cover.
 - **Preview before downloading.** Open any item's page in a preview dialog, signed in, without leaving the app.
 - **A real task manager.** Pause, resume, retry and cancel single tasks or whole batches; automatic resume after a broken transfer; speed limits; clear explanations when a download fails — sign-in, membership, purchase, encryption, expired link, network or disk — with the fix one click away.
@@ -110,7 +111,7 @@ The code is organised as follows:
 
 ## Releases
 
-Bump `version` in `package.json`, add the matching `docs/releases/<version>.md`, and merge to `main`. The notes file starts with a level-one heading used only as the release title; the remaining lines become the GitHub Release body. When no tag exists for that version yet, CI requires non-empty notes, builds Windows x64 (NSIS), macOS arm64 (dmg/zip) and Linux x64 (AppImage), then publishes them together as a GitHub Release tagged with the bare version (for example `0.6.0`). Pushes that leave the version unchanged only run the checks.
+Bump `version` in `package.json`, add the matching `docs/releases/<version>.md`, and merge to `main`. The notes file starts with a level-one heading used only as the release title; the remaining lines become the GitHub Release body. When no tag exists for that version yet, CI requires non-empty notes, builds Windows x64 (NSIS), macOS arm64 (dmg/zip) and Linux x64 (AppImage), then publishes them together as a GitHub Release tagged with the bare version (for example `0.7.0`). Pushes that leave the version unchanged only run the checks.
 
 ## Disclaimer
 

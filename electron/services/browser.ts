@@ -4,7 +4,7 @@ import type { Cookie } from './engine'
 import { acceptLanguageFor, chromeUserAgent, clientHints, fetchMetadata, relatedTo } from './identity'
 import { findAdapter } from './listings'
 import { PACE, Pace, pause } from './listings/pace'
-import { LoginRequired } from './login'
+import { LoginRequired, VerificationRequired } from './login'
 import { head, logger } from './log'
 import { i18n } from '../../shared/i18n'
 import type { Fetcher, Fingerprint, ListingGroup, ProfileAdapter } from './listings/types'
@@ -18,7 +18,7 @@ export type BrowserMedia = { player?: { width: number; height: number; duration?
 // 'area' is where the window's preview dialog wants the page; 'host' is the window it is shown in,
 // left off while the preview is closed.
 type PreviewView = { view: WebContentsView; host?: BrowserWindow; area: Rectangle; fullscreen: boolean; onClosed?: () => void }
-export type Listing = { title: string; kind: ListingKind | 'post'; groups: ListingGroup[]; cookies: Cookie[]; userAgent: string }
+export type Listing = { title: string; kind: ListingKind | 'post'; groups: ListingGroup[]; cookies: Cookie[]; userAgent: string; owner?: import('./listings/types').ListingOwner }
 export type { ListingEntry, ListingGroup, Pagination } from './listings/types'
 
 const log = logger('browser')
@@ -412,7 +412,7 @@ export class EmbeddedBrowser {
       // A page held open since the last turn can have been discarded, navigated by the site, or simply
       // gone stale. That is not something to report to the user, so the window is thrown away and the
       // listing asked for once more on a fresh one. A refusal is not retried: it would be refused again.
-      if (!reused || error instanceof LoginRequired) throw error
+      if (!reused || error instanceof LoginRequired || error instanceof VerificationRequired) throw error
       log.warn(`[listing ${adapter.id}] 复用的窗口不可用，重开一次`, error)
       this.release()
       return await this.readListing(adapter, url, address, index, group, signal)
@@ -473,7 +473,7 @@ export class EmbeddedBrowser {
     const entries = listing.groups.flatMap(group => group.entries)
     log.info(`[listing ${adapter.id} 第 ${index} 页] 预热 ${warmed - opened}ms · 加载 ${loaded - warmed}ms · 停顿 ${settled - loaded}ms · 取数 ${asked - settled}ms · 合计 ${asked - opened}ms · ${entries.length} 条`)
     return {
-      title: listing.title || i18n.t('errors:browser.profileTitle'), kind: listing.kind || 'profile', groups: listing.groups, userAgent: this.userAgent,
+      title: listing.title || i18n.t('errors:browser.profileTitle'), kind: listing.kind || 'profile', groups: listing.groups, owner: listing.owner, userAgent: this.userAgent,
       cookies: await this.cookiesFor([held.window.webContents.getURL(), ...relatedTo(url), ...entries.map(entry => entry.url)]),
     }
   }

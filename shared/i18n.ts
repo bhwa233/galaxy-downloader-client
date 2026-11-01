@@ -19,6 +19,8 @@ import enQueue from './locales/en/queue.json'
 import enDesktop from './locales/en/desktop.json'
 import zhProcessing from './locales/zh/processing.json'
 import enProcessing from './locales/en/processing.json'
+import zhSubscriptions from './locales/zh/subscriptions.json'
+import enSubscriptions from './locales/en/subscriptions.json'
 
 // One i18next instance for both processes: the window's text and what the main process says to the
 // user - errors, a task's activity log, notifications, the tray - come from the same dictionaries.
@@ -27,10 +29,10 @@ import enProcessing from './locales/en/processing.json'
 // A namespace per area, so the window and the main process each own theirs: common, app, tasks,
 // result, settings and history are the window's; errors, queue and desktop the main process's.
 // Diagnostics written to the log file stay as they are - they are for whoever reads the log.
-const zh = { processing: zhProcessing, common: zhCommon, app: zhApp, tasks: zhTasks, result: zhResult, settings: zhSettings, history: zhHistory, errors: zhErrors, queue: zhQueue, desktop: zhDesktop }
+const zh = { subscriptions: zhSubscriptions, processing: zhProcessing, common: zhCommon, app: zhApp, tasks: zhTasks, result: zhResult, settings: zhSettings, history: zhHistory, errors: zhErrors, queue: zhQueue, desktop: zhDesktop }
 // Typed against the Chinese dictionaries, so an English one missing a key fails the typecheck.
 // English may carry more keys than Chinese: its plurals take '_one' beside '_other'.
-const en: typeof zh = { processing: enProcessing, common: enCommon, app: enApp, tasks: enTasks, result: enResult, settings: enSettings, history: enHistory, errors: enErrors, queue: enQueue, desktop: enDesktop }
+const en: typeof zh = { subscriptions: enSubscriptions, processing: enProcessing, common: enCommon, app: enApp, tasks: enTasks, result: enResult, settings: enSettings, history: enHistory, errors: enErrors, queue: enQueue, desktop: enDesktop }
 
 declare module 'i18next' {
   interface CustomTypeOptions { defaultNS: 'common'; resources: typeof zh }

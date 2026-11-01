@@ -1,5 +1,11 @@
 {
   "notificationCompleted": "Download complete",
+  "notifications": {
+    "title": "System notifications", "ready": "Native notifications are ready", "unavailable": "Could not connect to system notifications. Check system notification settings and try again.",
+    "test": "Send test notification", "testing": "Sending…", "sent": "The system accepted the test notification. Check the notification center; Do Not Disturb may hide the banner.",
+    "testTitle": "Galaxy Downloader · Notification test", "testBody": "Native notifications are connected. New creator works will appear as system notifications. Click a notification to return to the app.",
+    "failed": "The system could not show the notification. Check notification permissions.", "timeout": "The system did not confirm the notification. Check notification permissions and try again.", "closed": "The notification was closed."
+  },
   "coverFilename": "Cover",
   "tray": {
     "open": "Open Galaxy",

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Download, ExternalLink, FileX, FolderOpen, Image as ImageIcon, Layers, Link as LinkIcon, LogIn, Music, Pause, Play, RotateCcw, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -143,30 +143,43 @@ function Metrics({ job }: { job: Job }) {
     {job.status === 'running' && job.stage && job.stage !== 'download' && <span>{job.processingEta === undefined ? t('estimating') : t('estimatedRemaining', { time: formatDuration(job.processingEta) })}</span>}
   </div>
 }
+// Tasks and subscription updates use this same row: cover size, title, metadata and action placement
+// change together. Callers supply their own state and actions rather than fabricating download jobs.
+export function TaskListRow({ title, subtitle, cover, coverShape = 'landscape', status, actions, select, selectLabel, density = 'comfortable', children }: {
+  title: string; subtitle: ReactNode; cover: ReactNode; status?: ReactNode; actions: ReactNode;
+  select: () => void; selectLabel: string; coverShape?: 'square' | 'landscape'; density?: Settings['density']; children?: ReactNode;
+}) {
+  const compact = density === 'compact'
+  return <Item variant="outline" size={compact ? 'sm' : 'default'} className="min-w-0 flex-nowrap items-stretch">
+    <ItemMedia variant="image" className={compact ? 'size-12 group-data-[size=sm]/item:size-12' : coverShape === 'square' ? 'size-14' : 'h-14 w-20'}>
+      <button className="size-full" onClick={select} aria-label={selectLabel}>{cover}</button>
+    </ItemMedia>
+    <ItemContent className="min-w-0 gap-1.5">
+      <ItemTitle className="w-full min-w-0"><button className="min-w-0 truncate text-left" onClick={select} title={title}>{title}</button></ItemTitle>
+      <ItemDescription>{subtitle}</ItemDescription>
+      {children}
+    </ItemContent>
+    <ItemActions className="shrink-0 flex-col items-end justify-between">
+      {status}
+      <div className="flex items-center gap-1">{actions}</div>
+    </ItemActions>
+  </Item>
+}
 export function TaskCard({ job, send, select, density = 'comfortable' }: { job: Job; send: Send; select: () => void; density?: Settings['density'] }) {
   const { t } = useTranslation(['tasks', 'common'])
-  const compact = density === 'compact'
   // The batch is named on every task of it rather than as a header above a group: the list is sorted
   // and filtered by the user, so tasks of one batch are not necessarily next to each other.
   const subtitle = <>{platformLabel(job.platform)} · {localTime(job.createdAt)}{job.batchId ? ` · ${t('batchLabel', { title: job.batchTitle || t('thisParse') })}` : ''}</>
-  return <JobMenu job={job} send={send}><Item variant="outline" size={compact ? 'sm' : 'default'} className="flex-nowrap items-stretch">
-    <ItemMedia variant="image" className={compact ? 'size-12' : 'h-14 w-20'}>
-      <button className="size-full" onClick={select} aria-label={t('viewTask', { title: job.title })}><Cover job={job} /></button>
-    </ItemMedia>
-    <ItemContent className="min-w-0 gap-1.5">
-      <ItemTitle className="w-full min-w-0"><button className="min-w-0 truncate text-left" onClick={select} title={job.title}>{job.title}</button></ItemTitle>
-      <ItemDescription>{subtitle}</ItemDescription>
+  return <JobMenu job={job} send={send}><TaskListRow title={job.title} subtitle={subtitle}
+    cover={<Cover job={job} />} select={select} selectLabel={t('viewTask', { title: job.title })} density={density}
+    status={<span className={cn('text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>}
+    actions={<Actions job={job} send={send} />}>
       {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
       <Metrics job={job} />
       {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
       {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
-    </ItemContent>
-    <ItemActions className="shrink-0 flex-col items-end justify-between">
-      <span className={cn('text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>
-      <div className="flex items-center gap-1"><Actions job={job} send={send} /></div>
-    </ItemActions>
-  </Item></JobMenu>
+  </TaskListRow></JobMenu>
 }
 // What a failure was and what to do about it. A permission wall is known for certain, from the engine's
 // own wording, and its message already says what to do. Anything else is read off the error the way a

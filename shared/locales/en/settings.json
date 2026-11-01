@@ -2,6 +2,7 @@
   "title": "Settings",
   "description": "Settings stay on this device. Mode and processing options apply to new tasks only.",
   "sections": {
+    "subscriptions": "Subscriptions",
     "general": "General",
     "download": "Download",
     "files": "Files & media",

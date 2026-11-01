@@ -1,9 +1,9 @@
 import { i18n } from '../../../shared/i18n'
 import type { Settings } from '../../../shared/contracts'
 import { seconds } from './text'
-import { onePage, type Fetcher, type Fingerprint, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
+import { onePage, type Fetcher, type Fingerprint, type ListingEntry, type ListingOwner, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 import { keyOf, mixinKey, signQuery } from './wbi'
-import { VerificationRequired } from '../login'
+import { LoginRequired, VerificationRequired } from '../login'
 
 // What the 投稿 grid asks for in one request, so a page here is the same page the site would serve.
 const PAGE_SIZE = 40
@@ -137,11 +137,31 @@ export const bilibili: ProfileAdapter = {
     // Risk control answers with an HTML challenge page rather than JSON; that is a closed route, not a reply.
     const body = await response.json().catch(() => { throw new VerificationRequired(i18n.t('errors:bilibili.verification')) }) as SearchResponse
     // -352 and -799 are the risk-control rejections; both mean this route is closed for now.
-    if (body.code) throw new Error(body.message ? i18n.t('errors:bilibili.apiMessage', { code: body.code, message: body.message }) : i18n.t('errors:bilibili.api', { code: body.code }))
+    if (body.code) {
+      const message = body.message ? i18n.t('errors:bilibili.apiMessage', { code: body.code, message: body.message }) : i18n.t('errors:bilibili.api', { code: body.code })
+      if (body.code === -352 || body.code === -799) throw new VerificationRequired(message)
+      if (body.code === -101) throw new LoginRequired(message)
+      throw new Error(message)
+    }
     const videos = body.data?.list?.vlist || []
     const entries = videos.map(entryOf).filter((entry): entry is ListingEntry => Boolean(entry))
     const total = body.data?.page?.count
     const author = videos.find(video => video.author)?.author
-    return onePage('uploads', author ? i18n.t('errors:bilibili.uploads', { author }) : undefined, entries, { index: page, size: PAGE_SIZE, total, hasMore: total === undefined ? entries.length === PAGE_SIZE : page * PAGE_SIZE < total }, 'uploads')
+    let owner: ListingOwner | undefined = author ? { id: mid, name: author } : undefined
+    // The uploads endpoint has author names but no avatars. Read the public account card once on
+    // the first page; optional profile metadata must not turn a readable uploads list into a failure.
+    if (page === 1) {
+      const profile = await fetch(`https://api.bilibili.com/x/web-interface/card?mid=${mid}`, {
+        referrer: `https://space.bilibili.com/${mid}/upload/video`, signal,
+      }).then(response => response.json()).catch(() => undefined) as { code?: number; data?: { card?: { mid?: string | number; name?: string; face?: string } } } | undefined
+      signal.throwIfAborted()
+      const card = profile?.code === 0 ? profile.data?.card : undefined
+      if (card && String(card.mid) === mid) {
+        const avatar = (card.face || '').replace(/^http:\/\//, 'https://').replace(/^\/\//, 'https://')
+        owner = { id: mid, name: card.name?.trim() || author || mid, avatar: avatar.startsWith('https://') ? avatar : undefined }
+      }
+    }
+    return { ...onePage('uploads', author ? i18n.t('errors:bilibili.uploads', { author }) : undefined, entries, { index: page, size: PAGE_SIZE, total, hasMore: total === undefined ? entries.length === PAGE_SIZE : page * PAGE_SIZE < total }, 'uploads'),
+      owner }
   },
 }

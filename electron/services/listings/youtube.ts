@@ -161,7 +161,7 @@ const handleOf = (url: URL) => /^\/(@[^/]+|channel\/[\w-]+|c\/[^/]+|user\/[^/]+)
 // version it carries, its name, and the continuation token each page ended on. 'tokens.get(n)' is the
 // token that fetches page n + 1. One listing at a time is all that can be on screen, so a second one
 // replaces the first rather than accumulating.
-let walked: { key: string; api?: string; version: string; channel?: string; tokens: Map<number, string> } | undefined
+let walked: { key: string; api?: string; version: string; channel?: string; owner?: import('./types').ListingOwner; tokens: Map<number, string> } | undefined
 
 export const youtube: ProfileAdapter = {
   id: 'youtube',
@@ -202,6 +202,9 @@ export const youtube: ProfileAdapter = {
       held.api = /"INNERTUBE_API_KEY":"([\w-]+)"/.exec(html)?.[1]
       held.version = /"INNERTUBE_CLIENT_VERSION":"([\d.]+)"/.exec(html)?.[1] || CLIENT_VERSION
       held.channel = channelOf(data)
+      const owner = at(data, 'metadata', 'channelMetadataRenderer')
+      const ownerId = stringAt(owner, 'externalId')
+      if (ownerId && held.channel) held.owner = { id: ownerId, name: held.channel, avatar: widest(listAt(owner, 'avatar', 'thumbnails')) }
       token = harvest(gridOf(data), entries)
       // Every page before the requested one is paid for, then dropped: only the page asked for is shown.
       for (let reached = 1; reached < page; reached += 1) {
@@ -215,8 +218,8 @@ export const youtube: ProfileAdapter = {
     const channel = held.channel
     // A channel listing leaves the owner off every row, because the whole page is one owner.
     // 短片 arrive in larger batches than 影片, so the page reports what it actually held.
-    return onePage('videos', channel ? i18n.t('errors:youtube.videos', { channel }) : undefined,
+    return { ...onePage('videos', channel ? i18n.t('errors:youtube.videos', { channel }) : undefined,
       [...entries.values()].map(entry => ({ ...entry, author: entry.author || channel })),
-      { index: page, size: entries.size || PAGE_SIZE, hasMore: Boolean(token) }, 'uploads')
+      { index: page, size: entries.size || PAGE_SIZE, hasMore: Boolean(token) }, 'uploads'), owner: held.owner }
   },
 }
