@@ -18,7 +18,7 @@ export const settingsSchema = z.object({
   organizeByChannel: z.boolean().default(false),
   embedMetadata: z.boolean().default(false),
   embedChapters: z.boolean().default(false),
-  customFilenameTemplate: z.string().trim().max(300).refine(value => !/[\\/]/.test(value) && ![...value].some(char => char.charCodeAt(0) < 32) && !value.includes('..') && !value.replace(/\{(?:title|id|channel|artist|date)\}/g, '').match(/[{}]/)).default(''),
+  customFilenameTemplate: z.string().trim().max(300).refine(value => !/[\\/]/.test(value) && ![...value].some(char => char.charCodeAt(0) < 32) && !value.includes('..') && !value.replace(/\{(?:title|id|authorId|author|channel|artist|date)\}/g, '').match(/[{}]/)).default(''),
   browserProfileId: z.string().max(200).nullable().default(null),
   concurrency: z.number().int().min(1).max(4).default(2),
   resumeOnStart: z.boolean().default(false),
@@ -32,7 +32,8 @@ export const settingsSchema = z.object({
   // hundreds of posts, which is rarely what is meant. The result area says when the cap applied.
   batchLimit: z.number().int().min(0).max(500).default(20),
   timeout: z.number().int().min(5).max(300).default(30),
-  filenameTemplate: z.enum(['title-id', 'id-title', 'date-title-id']).default('title-id'),
+  // Old values still describe saved jobs; new jobs use the clean naming presets.
+  filenameTemplate: z.enum(['title', 'author-title', 'author-date-title', 'custom', 'title-id', 'id-title', 'date-title-id']).default('author-title'),
   organizeByPlatform: z.boolean().default(false),
   // A collection or a multi-part video is one thing split into files, so its parts are kept together
   // under a directory named after it. On by default: a 87-part 合集 dropped into the download folder
@@ -86,14 +87,14 @@ export type BrowserProfile = { id: string; browser: 'chrome' | 'edge' | 'firefox
 export type Format = { id: string; label: string; height?: number; audioOnly: boolean; extension: string; size?: number; bitrate?: number; preferredSize?: number; preferredBitrate?: number; audioLanguage?: string; audioLanguageLabel?: string; audioOriginal?: boolean }
 // Counts, author and publish time are what the platform happened to include in its listing: every one of
 // them is missing somewhere, so a card shows whichever it was given and leaves no gap for the rest.
-export type MediaStats = { views?: number; danmaku?: number; comments?: number; likes?: number; author?: string; artist?: string; channel?: string; publishedAt?: number }
+export type MediaStats = { views?: number; danmaku?: number; comments?: number; likes?: number; author?: string; authorId?: string; artist?: string; channel?: string; publishedAt?: number }
 // 'url' is the post's own page, which only a listing has: every item of a single parse belongs to the
 // one page the result already names. It travels so the window can offer the link without asking again.
 // 'wall' marks an item the platform says this account cannot have as it stands - a paid 短剧 episode -
 // known before anything is downloaded. Such an item is shown but cannot be picked.
 // 'mark' is a word the listing put on the one entry it is pointing at - the 合集's copy of the video the
 // user pasted, whose tab is otherwise a list of sixty titles - already worded by the listing itself.
-export type MediaItem = MediaStats & { id: string; title: string; url?: string; duration?: number; thumbnail?: string; kind: 'video' | 'audio' | 'image'; formats: Format[]; audioFormats?: Format[]; mark?: string; wall?: AccessWall }
+export type MediaItem = MediaStats & { id: string; mediaId?: string; title: string; url?: string; duration?: number; thumbnail?: string; kind: 'video' | 'audio' | 'image'; formats: Format[]; audioFormats?: Format[]; mark?: string; wall?: AccessWall }
 // A creator profile is served one page at a time; the next page is fetched only when the user asks for it.
 export type Pagination = { index: number; size: number; total?: number; hasMore: boolean }
 // What kind of listing produced a result. Both kinds are made of separate posts with pages of their
@@ -109,7 +110,20 @@ export type GroupKind = 'work' | 'parts' | 'collection' | 'files' | 'uploads' | 
 // 'directory' is the name this group's downloads are filed under, which only a collection has.
 // 'position' is where the work being looked at sits inside this group's list - the 5th of 72 episodes -
 // so the tab can say 5/72 instead of only how many there are. Only the group that holds the work has it.
-export type MediaGroup = { id: string; title: string; kind?: GroupKind; directory?: string; itemIds: string[]; pagination?: Pagination; position?: { index: number; total: number } }
+export const listingQuerySchema = z.object({
+  keyword: z.string().trim().max(200).default(''),
+  sort: z.enum(['original', 'reverse', 'newest', 'oldest']).default('original'),
+  since: z.number().finite().nonnegative().optional(), before: z.number().finite().positive().optional(),
+  kind: z.enum(['all', 'video', 'image']).default('all'),
+  durationMin: z.number().finite().nonnegative().optional(), durationMax: z.number().finite().nonnegative().optional(),
+}).refine(value => value.since === undefined || value.before === undefined || value.since < value.before)
+  .refine(value => value.durationMin === undefined || value.durationMax === undefined || value.durationMin <= value.durationMax)
+export type ListingQuery = z.infer<typeof listingQuerySchema>
+export type ListingSearchState = {
+  query: ListingQuery; status: 'ready' | 'running' | 'stopped' | 'completed' | 'interrupted' | 'limited'
+  scanned: number; matched: number; missingDates: number; total?: number; nativeOrder?: boolean
+}
+export type MediaGroup = { id: string; title: string; kind?: GroupKind; directory?: string; itemIds: string[]; allItemIds?: string[]; pagination?: Pagination; position?: { index: number; total: number }; search?: ListingSearchState }
 // 'truncated' is set where the engine stopped short of the whole playlist rather than reaching its end,
 // so the window can say how many were listed instead of presenting a cut-off list as the complete one.
 // 'formats' is a listing's quality tiers, read off its first video after the listing arrives - a
@@ -125,6 +139,8 @@ export type JobStatus = 'queued' | 'running' | 'paused' | 'completed' | 'cancell
 // detail is the only place left that can say who published it and when.
 // single survives splitting and restarts: a numeric file id still belongs to one work.
 export type Job = MediaStats & {
+  // New jobs reserve a clean basename and download in a private per-job directory. Absent on legacy jobs.
+  outputName?: string; namingVersion?: 2; namingStarted?: boolean;
   workMode?: Settings['workMode']; outputFormat?: Settings['outputFormat']; outputResolution?: Settings['outputResolution'];
   originalFiles?: string[]; processedFiles?: string[];
   includeSubtitles?: boolean; captionLanguages?: string[]; autoTranscribe?: boolean; deferProcessing?: boolean;
@@ -224,6 +240,8 @@ export const commandSchemas = {
   'media:parse': parseInput, 'media:cancel': z.null(), 'media:download': downloadInput,
   // 'groupId' names the tab being turned; a result with one group leaves it off and gets that one.
   'media:page': z.object({ resultId: z.string().uuid(), page: z.number().int().min(1).max(500), groupId: z.string().min(1).max(100).optional() }),
+  'media:query': z.object({ resultId: z.string().uuid(), groupId: z.string().min(1).max(100), query: listingQuerySchema, scan: z.boolean().default(true) }),
+  'media:query-stop': z.object({ resultId: z.string().uuid(), groupId: z.string().min(1).max(100) }),
   // Watching one item before downloading it. Named by id, like a download: the main process decides
   // what to open, so the window never hands it an address to load.
   'media:preview': z.object({ resultId: z.string().uuid(), itemId: z.string().min(1).max(500) }),

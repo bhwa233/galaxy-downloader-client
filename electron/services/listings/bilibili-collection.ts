@@ -14,7 +14,7 @@ const API = 'https://api.bilibili.com'
 // What the site's own collection grid asks for.
 const PAGE_SIZE = 30
 
-type Archive = { bvid?: string; title?: string; pic?: string; duration?: number; pubdate?: number; stat?: { view?: number } }
+type Archive = { bvid?: string; title?: string; pic?: string; duration?: number; pubdate?: number; stat?: { view?: number }; author?: { name?: string; mid?: number }; owner?: { name?: string; mid?: number } }
 type ArchivesResponse = {
   code?: number; message?: string
   data?: {
@@ -34,7 +34,7 @@ type Season = {
 type ViewResponse = {
   code?: number; message?: string
   data?: {
-    bvid?: string; title?: string; pic?: string; owner?: { name?: string }
+    bvid?: string; title?: string; pic?: string; owner?: { name?: string; mid?: number }
     duration?: number; pubdate?: number; stat?: { view?: number }
     pages?: { page?: number; part?: string; duration?: number }[]
     // The whole 合集 rides along in this reply - every section, every episode of it - so the collection
@@ -54,6 +54,8 @@ function archiveOf(archive: Archive): ListingEntry | undefined {
     title: archive.title?.trim() || i18n.t('errors:bilibili.video', { id: archive.bvid }),
     thumbnail: https(archive.pic || '') || undefined, kind: 'video',
     duration: count(archive.duration), views: count(archive.stat?.view), publishedAt: archive.pubdate || undefined,
+    author: archive.owner?.name || archive.author?.name,
+    authorId: archive.owner?.mid || archive.author?.mid ? String(archive.owner?.mid || archive.author?.mid) : undefined,
   }
 }
 
@@ -69,6 +71,7 @@ function episodeOf(episode: Episode, own: string): ListingEntry | undefined {
     thumbnail: https(arc.pic || '') || undefined, kind: 'video',
     duration: count(arc.duration), views: count(arc.stat?.view), publishedAt: arc.pubdate || undefined,
     author: arc.author?.name?.trim() || undefined,
+    authorId: arc.author?.mid || arc.owner?.mid ? String(arc.author?.mid || arc.owner?.mid) : undefined,
     // Which of these is the one that was pasted: a list of sixty titles otherwise has to be read to find
     // out, and the whole point of this route is to land on the video rather than on the 合集.
     mark: bvid === own ? i18n.t('errors:bilibili.original') : undefined,
@@ -127,10 +130,10 @@ async function read<T>(fetch: PageRequest['fetch'], address: string, referrer: s
 
 // One page of a 合集 or a 系列, as the group it becomes. Shared by the collection adapter and by a video
 // page that turns out to belong to one.
-export async function collectionGroup(request: Pick<PageRequest, 'fetch' | 'signal'>, source: Source, page: number, referrer: string, named?: string): Promise<ListingGroup> {
+export async function collectionGroup(request: Pick<PageRequest, 'fetch' | 'signal' | 'order'>, source: Source, page: number, referrer: string, named?: string): Promise<ListingGroup> {
   const { fetch, signal } = request
   const query = source.type === 'season'
-    ? `x/polymer/web-space/seasons_archives_list?mid=${source.mid}&season_id=${source.sid}&sort_reverse=false&page_num=${page}&page_size=${PAGE_SIZE}`
+    ? `x/polymer/web-space/seasons_archives_list?mid=${source.mid}&season_id=${source.sid}&sort_reverse=${request.order === 'reverse'}&page_num=${page}&page_size=${PAGE_SIZE}`
     : `x/series/archives?mid=${source.mid}&series_id=${source.sid}&only_normal=true&sort=desc&pn=${page}&ps=${PAGE_SIZE}`
   const body = await read<ArchivesResponse>(fetch, `${API}/${query}`, referrer, signal)
   const entries = (body.data?.archives || []).map(archiveOf).filter((entry): entry is ListingEntry => Boolean(entry))
@@ -149,10 +152,10 @@ export const bilibiliCollection: ProfileAdapter = {
   matches(url) { return Boolean(sourceOf(url)) },
   // The collection page is its own entry point; nothing has to be rewritten to reach the grid.
   entryUrl(url) { return url.href },
-  async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage> {
+  async fetchPage({ url, page, fetch, signal, order }: PageRequest): Promise<ListingPage> {
     const source = sourceOf(url)
     if (!source) throw new Error(i18n.t('errors:listing.noCollectionId'))
-    const group = await collectionGroup({ fetch, signal }, source, page, url.href)
+    const group = await collectionGroup({ fetch, signal, order }, source, page, url.href)
     return { title: group.title, kind: 'collection', groups: [group] }
   },
 }
@@ -231,7 +234,7 @@ export const bilibiliVideo: ProfileAdapter = {
           url: `https://www.bilibili.com/video/${bvid}?p=${part.page || index + 1}`,
           // The part's own name, as the site shows it, with no index added in front of it.
           title: part.part?.trim() || `${title} P${part.page || index + 1}`,
-          thumbnail: cover, kind: 'video' as const, duration: count(part.duration), author,
+          thumbnail: cover, kind: 'video' as const, duration: count(part.duration), author, authorId: data.owner?.mid ? String(data.owner.mid) : undefined,
         })),
         // Every part arrives in the one reply, so there is never a second page of them.
         pagination: { index: 1, size: parts.length, total: parts.length, hasMore: false },
@@ -255,7 +258,7 @@ export const bilibiliVideo: ProfileAdapter = {
       id: 'work', kind: 'work', title,
       entries: [{
         id: `${bvid}-p1`, url: `https://www.bilibili.com/video/${bvid}`, title, thumbnail: cover, kind: 'video',
-        duration: count(data.duration) ?? count(parts[0]?.duration), views: count(data.stat?.view), author, publishedAt: data.pubdate || undefined,
+        duration: count(data.duration) ?? count(parts[0]?.duration), views: count(data.stat?.view), author, authorId: data.owner?.mid ? String(data.owner.mid) : undefined, publishedAt: data.pubdate || undefined,
       }],
       // One entry, and nothing behind it: a tab that cannot grow has no page to turn.
       pagination: { index: 1, size: 1, hasMore: false },

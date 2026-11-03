@@ -19,10 +19,9 @@ export type ParsePlan = { result: MediaResult; sources: Map<string, DownloadSour
 // 'page' and 'group' say which page of which tab is wanted; 'single' asks for the one piece of media
 // the address names and nothing around it, which is what a queued job re-resolving itself wants: its
 // URL is one post out of a listing, and expanding that listing again would download all of it.
-export type ParseOptions = { browserOnly?: boolean; page?: number; group?: string; single?: boolean }
+export type ParseOptions = { browserOnly?: boolean; page?: number; group?: string; order?: 'reverse'; single?: boolean }
 // How many items of a listing are kept. A collection of several hundred still fits; the cap is there so
 // one parse cannot fill the window with more rows than anyone picks from.
-const MOST = 500
 
 // Creator home pages are listings of posts, so they take the browser listing route instead of yt-dlp.
 // Only where an adapter knows the platform's listing API: that route asks the API from inside a page
@@ -173,9 +172,10 @@ export class Parser {
   // batch and the directory. Pages are walked one after another, at the listing's own pace.
   async expand(url: string, profile: EngineProfile | undefined, signal: AbortSignal): Promise<ParsePlan> {
     let plan: ParsePlan | undefined
-    for (let page = 1; page <= 50; page += 1) {
+    for (let page = 1; ; page += 1) {
       const next = await this.read(url, profile, signal, { page, group: 'collection' })
       const group = next.result.groups?.find(found => found.id === 'collection')
+      const countBefore = plan?.result.items.length || 0
       if (!plan) {
         // What cannot be bought here is not queued: a paid 短剧 episode would only fail as a task.
         plan = next
@@ -193,7 +193,8 @@ export class Parser {
           plan.result.groups?.[0]?.itemIds.push(item.id)
         }
       }
-      if (!group?.pagination?.hasMore || plan.result.items.length >= MOST) break
+      if (!group?.pagination?.hasMore) break
+      if (page > 1 && plan.result.items.length === countBefore) throw new Error(i18n.t('errors:parse.listingStalled'))
     }
     if (!plan?.result.items.length) throw new Error(i18n.t('errors:parse.collectionEmpty'))
     return plan
@@ -213,7 +214,7 @@ export class Parser {
     return plan
   }
 
-  private async read(url: string, profile: EngineProfile | undefined, signal: AbortSignal, { browserOnly = false, page = 1, group, single = false }: ParseOptions): Promise<ParsePlan> {
+  private async read(url: string, profile: EngineProfile | undefined, signal: AbortSignal, { browserOnly = false, page = 1, group, order, single = false }: ParseOptions): Promise<ParsePlan> {
     const refusal = refusalFor(url)
     if (refusal) throw new Error(refusal)
     // An adapter can claim an address and then stand down once it has read it - a 哔哩哔哩 video with no
@@ -222,7 +223,7 @@ export class Parser {
     // all of it - except the ones that read a single post, which is what that job needs.
     const adapter = findAdapter(url)
     log.info(`解析 ${url}${page > 1 ? ` 第 ${page} 页` : ''}${group ? ` · ${group}` : ''}${single ? ' · 单个作品' : ''}${browserOnly ? ' · 仅浏览器' : ''}${adapter ? ` · 列表适配器 ${adapter.id}` : ''}`)
-    const listing = adapter && (!single || adapter.post) ? await this.browser.inspectProfile(url, page, group, signal) : undefined
+    const listing = adapter && (!single || adapter.post) ? await this.browser.inspectProfile(url, page, group, signal, order) : undefined
     if (listing?.kind === 'post') {
       // One work's files, each fetched as it is: the adapter already has every address, and the
       // engine is the thing that could not read this post.
@@ -241,7 +242,7 @@ export class Parser {
       const sources = new Map<string, DownloadSource>()
       for (const found of listing.groups) {
         // Entry ids are the platform's own post ids, so the same post keeps its id across pages.
-        const entries = found.entries.slice(0, Math.max(0, MOST - items.length))
+        const entries = found.entries
         groups.push({ id: found.id, title: found.title || i18n.t('errors:parse.group'), kind: found.kind, directory: found.directory, itemIds: entries.map(entry => entry.id), pagination: found.pagination, position: found.position })
         for (const entry of entries) {
           // The post's own address is kept on the item: the window offers it as a link, and it is the
@@ -251,15 +252,8 @@ export class Parser {
           sources.set(entry.id, whole ? { kind: 'collection', url: entry.url } : { kind: 'engine', request: { operation: 'download', url: entry.url, cookies: listing.cookies, headers: { Referer: url, 'User-Agent': listing.userAgent } } })
         }
       }
-      if (!items.length) throw new LoginRequired(i18n.t(listing.kind === 'collection' ? 'errors:parse.listingCollectionEmpty' : 'errors:parse.listingProfileEmpty'))
+      if (!items.length && page === 1) throw new LoginRequired(i18n.t(listing.kind === 'collection' ? 'errors:parse.listingCollectionEmpty' : 'errors:parse.listingProfileEmpty'))
       const result: MediaResult = { id: randomUUID(), url, title: listing.title, platform: platformOf(url), method: 'browser', listing: listing.kind, groups, items }
-      // A listing that arrives whole - a 合集 read in one reply - can be larger than MOST: only its
-      // front is on screen, and saying so is what keeps the cut from reading as the whole list.
-      const listed = listing.groups.reduce((sum, found) => sum + found.entries.length, 0)
-      if (listed > items.length) {
-        const total = listing.groups.reduce((sum, found) => sum + (found.pagination?.total ?? found.entries.length), 0)
-        result.truncated = { shown: items.length, total: total > items.length ? total : undefined }
-      }
       return { result, sources, catalog: new Map(items.map(item => [item.id, item])) }
     }
     if (!browserOnly) {
@@ -343,8 +337,8 @@ export class Parser {
     // attempt would only cost a failure. Everything else is offered to it first, because a real
     // extractor beats a DOM sweep whenever there is one.
     if (!media.images.length && !media.article) {
-      const request: EngineRequest = { operation: 'extract', url: media.url, cookies: media.cookies, headers: { Referer: media.url, 'User-Agent': media.userAgent } }
-      try { return this.fromEngine(await this.extract(request, signal), request, 'browser') }
+      const request: EngineRequest = { operation: 'extract', url: media.url, cookies: media.cookies, headers: { Referer: media.url, 'User-Agent': media.userAgent }, ...(page > 1 ? { playliststart: (page - 1) * 100 + 1, playlistend: page * 100 } : {}) }
+      try { return this.fromEngine(await this.extract(request, signal), request, 'browser', page) }
       catch (error) { signal.throwIfAborted(); log.info('用浏览器身份再交给引擎也失败，改读页面', error) }
     }
     // An article holds several kinds at once - 微信公众号 puts pictures, a music card and a video in

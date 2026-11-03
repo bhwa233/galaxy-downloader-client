@@ -12,7 +12,8 @@
     "challenge": "This site requires access verification. Open the verification page, complete the check, then close it and retry.",
     "pageEmptyKnown": "The page offered nothing to download. If it needs a sign-in to view, open the sign-in window, sign in or complete verification, then try again.",
     "pageEmpty": "This page has nothing to download.",
-    "expired": "This parse result has expired. Parse the link again."
+    "expired": "This parse result has expired. Parse the link again.",
+    "listingStalled": "The platform returned no new collection entries. The full collection could not be confirmed; try again later."
   },
   "browser": {
     "loginTitle": "Sign in",

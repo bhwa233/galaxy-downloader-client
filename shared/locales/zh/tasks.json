@@ -78,6 +78,8 @@
     "platformKind": "平台 / 类型",
     "method": "解析方式",
     "author": "作者",
+    "authorId": "作者 ID",
+    "outputName": "保存名称",
     "publishedAt": "发布时间",
     "duration": "时长",
     "stats": "播放 / 弹幕 / 评论 / 点赞",

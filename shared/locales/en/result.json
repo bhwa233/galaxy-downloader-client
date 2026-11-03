@@ -142,5 +142,61 @@
     "allInQueue_other": "All {{count}} tasks are already downloading; nothing was added twice.",
     "oneInQueue": "“{{title}}” ({{kind}}) is already downloading."
   },
-  "attachSubtitles": "Attach platform captions"
+  "attachSubtitles": "Attach platform captions",
+  "query": {
+    "keyword": "Search titles across the entire list…",
+    "sortLabel": "List order",
+    "sorts": {
+      "original": "Collection order",
+      "reverse": "Reverse collection order",
+      "newest": "Newest published",
+      "oldest": "Oldest published"
+    },
+    "unlimited": "Any",
+    "more": "More filters",
+    "find": "Find",
+    "clearDates": "Clear dates",
+    "clearKind": "Clear type",
+    "clearDuration": "Clear duration",
+    "minutes": "min",
+    "pending": "Filters changed. Choose Find to apply them to the entire list.",
+    "scope": "Search the entire list, including items not loaded yet.",
+    "partialOrder": "Partial results. The complete order is confirmed after reading finishes.",
+    "status": {
+      "ready": "Read {{scanned}} items · Showing {{matched}}",
+      "running": "Searching the entire list · Checked {{scanned}} · Found {{matched}}",
+      "stopped": "Search stopped · Checked {{scanned}} · Found {{matched}} (partial results)",
+      "completed": "Search complete · Checked {{scanned}} · Found {{matched}}",
+      "interrupted": "Search interrupted · Checked {{scanned}} · Kept {{matched}} results",
+      "limited": "Partial results only · Checked {{scanned}} · Found {{matched}}"
+    },
+    "limitHint": "The platform did not provide a complete list or a usable continuation. Generated Mix lists have no fixed end. These results do not represent the entire list.",
+    "missingDates_other": "{{count}} items have no publication date: date searches exclude them and date sorting puts them last.",
+    "stop": "Stop",
+    "continue": "Continue search",
+    "scanProgress": "Entire list search progress",
+    "dateTitle": "Find by publication date",
+    "dateHint": "Uses your local time zone and includes both dates. Leave either end blank for no limit.",
+    "presets": {
+      "week": "Past week",
+      "month": "Past month",
+      "quarter": "Past three months",
+      "thisYear": "This year",
+      "lastYear": "Last year"
+    },
+    "from": "Start date",
+    "to": "End date",
+    "invalidDates": "The end date must not precede the start date.",
+    "applyFind": "Apply and find",
+    "kind": "Media type",
+    "searchingEmpty": "No matches yet. Still searching…",
+    "selectFound": "Select all {{count}} found items",
+    "hiddenSelected": "{{count}} outside the current results",
+    "reviewSelected": "Review selection",
+    "reviewHint": "{{count}} items selected, including hidden items and other groups. Deselect them here.",
+    "clearSelection": "Clear selection",
+    "downloadFirst": "Download first {{count}} items",
+    "nativeOrder": "Loaded in the platform’s reverse collection order. Load more to continue.",
+    "missingDates_one": "1 item has no publication date: date searches exclude it and date sorting puts it last."
+  }
 }

@@ -99,7 +99,7 @@ export function entryOf(tweet: Tweet, author?: string): ListingEntry | undefined
     kind: video ? 'video' : 'image',
     duration: video?.video_info?.duration_millis ? Math.round(video.video_info.duration_millis / 1000) : undefined,
     likes: count(legacy.favorite_count), comments: count(legacy.reply_count),
-    author, publishedAt: Number.isNaN(posted) ? undefined : Math.floor(posted / 1000),
+    author, authorId: author, publishedAt: Number.isNaN(posted) ? undefined : Math.floor(posted / 1000),
   }
 }
 
@@ -234,7 +234,7 @@ export const xPost: ProfileAdapter = {
       if (!file) return undefined
       return {
         id: `${id}-${index + 1}`, url: url.href, title: media.length > 1 ? `${text} · ${index + 1}` : text,
-        thumbnail: item.media_url_https, kind: photo ? 'image' : 'video', media: file, author,
+        thumbnail: item.media_url_https, kind: photo ? 'image' : 'video', media: file, author, authorId: author,
         duration: item.video_info?.duration_millis ? Math.round(item.video_info.duration_millis / 1000) : undefined,
       }
     }).filter((entry): entry is ListingEntry => Boolean(entry))

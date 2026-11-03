@@ -216,7 +216,7 @@ export const youtube: ProfileAdapter = {
     // A channel listing leaves the owner off every row, because the whole page is one owner.
     // 短片 arrive in larger batches than 影片, so the page reports what it actually held.
     return onePage('videos', channel ? i18n.t('errors:youtube.videos', { channel }) : undefined,
-      [...entries.values()].map(entry => ({ ...entry, author: entry.author || channel })),
+      [...entries.values()].map(entry => ({ ...entry, author: entry.author || channel, authorId: handleOf(url)?.replace(/^channel\//, '') })),
       { index: page, size: entries.size || PAGE_SIZE, hasMore: Boolean(token) }, 'uploads')
   },
 }

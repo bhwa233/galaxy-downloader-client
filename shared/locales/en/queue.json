@@ -55,6 +55,7 @@
     "engineExited": "Local engine exited ({{code}})",
     "ffmpegMissing": "FFmpeg is missing; reinstall the client or run pnpm install",
     "engineMissing": "The local parsing engine is missing. In development run pnpm engine:dev; otherwise reinstall.",
-    "engineProtocol": "Invalid local engine communication. Retry or update the client."
+    "engineProtocol": "Invalid local engine communication. Retry or update the client.",
+    "filePublish": "Cannot publish the file safely: the destination may exist or be unwritable"
   }
 }

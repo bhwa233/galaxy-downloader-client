@@ -270,6 +270,8 @@ export function TaskInspector({ job, send, close, error, process }: { job?: Job;
                 <dt>{t('fields.method')}</dt><dd>{job.method === 'browser' ? t('methods.browser') : t('methods.local')}</dd>
                 {/* What the platform said about the media when it was parsed; older jobs carry none of it. */}
                 {job.author && <><dt>{t('fields.author')}</dt><dd>{job.author}</dd></>}
+                {job.authorId && <><dt>{t('fields.authorId')}</dt><dd className="break-all">{job.authorId}</dd></>}
+                {job.outputName && <><dt>{t('fields.outputName')}</dt><dd className="break-all">{job.outputName}</dd></>}
                 {job.publishedAt !== undefined && <><dt>{t('fields.publishedAt')}</dt><dd>{formatDate(job.publishedAt)}</dd></>}
                 {job.duration !== undefined && <><dt>{t('fields.duration')}</dt><dd className="tabular-nums">{formatDuration(job.duration)}</dd></>}
                 {(job.views ?? job.danmaku ?? job.comments ?? job.likes) !== undefined && <><dt>{t('fields.stats')}</dt><dd><MediaStatsRow views={job.views} danmaku={job.danmaku} comments={job.comments} likes={job.likes} className="text-sm" /></dd></>}

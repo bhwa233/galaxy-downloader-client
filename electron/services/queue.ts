@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, rmdir, stat } from 'node:fs/promises'
+import { copyFile, link, readdir, rm, rmdir, stat } from 'node:fs/promises'
+import { constants, mkdirSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import type { Job, MediaItem, Settings } from '../../shared/contracts'
 import { Store } from './store'
@@ -11,6 +12,7 @@ import { checkCover } from './cover'
 import { logger } from './log'
 import type { ParsePlan } from './parser'
 import { i18n } from '../../shared/i18n'
+import { filenameSegment as filename, mediaFilename } from '../../shared/filenames'
 
 const log = logger('queue')
 type ProcessingOptions = Partial<Pick<Settings, 'subtitles' | 'subtitleLanguage' | 'outputFormat' | 'outputResolution' | 'audioFormat'>> & { audioLanguage?: string; includeSubtitles?: boolean }
@@ -20,27 +22,28 @@ type ProcessingOptions = Partial<Pick<Settings, 'subtitles' | 'subtitleLanguage'
 // of them, so 100 characters of a 抖音 caption was already 300 (measured 2026-09-23: "File name too
 // long" on every episode of a 短剧 whose caption is its synopsis). 150 leaves room for the id, the date
 // and whatever the engine appends - '.part', '.f137', a subtitle language, the extension.
-const NAME_BYTES = 150
-function filename(title: string): string {
-  let name = ''
-  // eslint-disable-next-line no-control-regex -- Windows filenames must exclude ASCII control characters.
-  for (const char of Array.from(title.replace(/[<>:"/\\|?*\x00-\x1f%]/g, '_').trim()).slice(0, 100)) {
-    if (Buffer.byteLength(name + char) > NAME_BYTES) break
-    name += char
-  }
-  return name.trim() || 'media'
-}
-
 // The name every file of a job is built from, which is the stem the engine is given. Shared with the
 // removal path, because a job that never finished has files on disk that its own record never learnt
 // about: the part file it was still writing, and the separate video and audio it had got as far as.
 function stemOf(job: Job): string {
+  if (job.namingVersion === 2) return path.join(job.directory, '.galaxy', job.id, 'media')
+  // Saved tasks must reproduce the old byte/character limits and cleaning exactly, even for an
+  // ASCII title longer than 100 characters. The new policy applies only to new tasks.
+  const legacyFilename = (title: string) => {
+    let name = ''
+    // eslint-disable-next-line no-control-regex -- Preserve the historical Windows filename policy.
+    for (const char of Array.from(title.replace(/[<>:"/\\|?*\x00-\x1f%]/g, '_').trim()).slice(0, 100)) {
+      if (Buffer.byteLength(name + char) > 150) break
+      name += char
+    }
+    return name.trim() || 'media'
+  }
   const id = job.id.slice(0, 8)
-  const name = job.filenameTemplate === 'id-title' ? `${id}-${filename(job.title)}`
-    : job.filenameTemplate === 'date-title-id' ? `${job.createdAt.slice(0, 10)}-${filename(job.title)}-${id}`
-    : `${filename(job.title)}-${id}`
+  const name = job.filenameTemplate === 'id-title' ? `${id}-${legacyFilename(job.title)}`
+    : job.filenameTemplate === 'date-title-id' ? `${job.createdAt.slice(0, 10)}-${legacyFilename(job.title)}-${id}`
+    : `${legacyFilename(job.title)}-${id}`
   const custom = job.customFilenameTemplate?.replace(/\{(title|id|channel|artist|date)\}/g, (_, key: string) => ({ title: job.title, id, channel: job.channel || job.author || 'Unknown', artist: job.artist || job.author || 'Unknown', date: job.createdAt.slice(0, 10) })[key] || '')
-  const customName = custom ? filename(custom) : undefined
+  const customName = custom ? legacyFilename(custom) : undefined
   return path.join(job.directory, customName ? customName.includes(id) ? customName : `${customName}-${id}` : name)
 }
 
@@ -51,7 +54,7 @@ function stemOf(job: Job): string {
 // directory it always used.
 export function directoryFor(settings: Settings, plan: ParsePlan, item: MediaItem): string {
   const collection = settings.organizeByCollection
-    ? plan.result.groups?.find(group => group.itemIds.includes(item.id))?.directory
+    ? plan.result.groups?.find(group => (group.allItemIds || group.itemIds).includes(item.id))?.directory
     : undefined
   return path.join(settings.downloadDirectory,
     ...(settings.organizeByPlatform ? [filename(plan.result.platform)] : []),
@@ -85,6 +88,7 @@ const RESUME_AFTER = [20_000, 60_000]
 
 export class Queue {
   private running = new Map<string, AbortController>()
+  private draining = new Map<string, Promise<void>>()
   // Breaks waiting to be picked up again, so that stopping or touching a job can call them off.
   private resuming = new Map<string, NodeJS.Timeout>()
   private stopping = false
@@ -92,6 +96,47 @@ export class Queue {
   // electron out of here, which is also what lets the queue be tested without one.
   constructor(private store: Store, private engine: Engine, private fetcher: Fetcher, private resolve: (job: Job, signal: AbortSignal) => Promise<ParsePlan>, private changed: () => void, private completed: (job: Job) => void = () => {}, private trash: (file: string) => Promise<void> = async () => {}) {}
   get jobs(): Job[] { return this.store.data.jobs }
+  private reserveName(job: Job, mediaId?: string): void {
+    const desired = mediaFilename({ filenameTemplate: job.filenameTemplate || 'author-title', customFilenameTemplate: job.customFilenameTemplate || '' }, { ...job, id: mediaId || job.itemId })
+    const fold = (name: string) => name.normalize('NFC').toLowerCase()
+    let existing: string[] = []
+    try { existing = readdirSync(job.directory).map(fold) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    const reserved = this.jobs.filter(other => other !== job && fold(path.resolve(other.directory)) === fold(path.resolve(job.directory))).map(other => fold(other.outputName || path.basename(stemOf(other))))
+    for (let suffix = 1; ; suffix += 1) {
+      const candidate = `${desired}${suffix === 1 ? '' : ` (${suffix})`}`
+      const key = fold(candidate)
+      const belongs = (name: string, stem: string) => name === stem || name.startsWith(`${stem}.`) || name.startsWith(`${stem}-`)
+      if (!reserved.some(name => belongs(name, key) || belongs(key, name)) && !existing.some(name => belongs(name, key))) { job.outputName = candidate; return }
+    }
+  }
+  // Downloads and unfinished sidecars stay in the UUID's private directory. Exclusive publication
+  // cannot overwrite a user file; exact recorded paths replace the old title-prefix cleanup.
+  private async publish(job: Job, work = path.dirname(stemOf(job))): Promise<void> {
+    if (job.namingVersion !== 2) return
+    for (const file of [...job.files]) {
+      if (path.dirname(path.resolve(file)) !== path.resolve(work)) continue
+      const basename = path.basename(file)
+      if (!/^media[.-]/.test(basename) || !job.outputName) throw new EngineProtocolError(i18n.t('queue:errors.pathMismatch'))
+      const target = path.join(job.directory, `${job.outputName}${basename.slice('media'.length)}`)
+      if (!job.files.includes(target)) {
+        try { await link(file, target) }
+        catch (error) {
+          if (['EPERM', 'EXDEV', 'ENOTSUP'].includes((error as NodeJS.ErrnoException).code || '')) {
+            try { await copyFile(file, target, constants.COPYFILE_EXCL) }
+            catch { throw new EngineProtocolError(`${i18n.t('queue:errors.filePublish')}: ${path.basename(target)}`) }
+          }
+          else throw new EngineProtocolError(`${i18n.t('queue:errors.filePublish')}: ${path.basename(target)}`)
+        }
+      }
+      job.files = [...new Set(job.files.map(saved => saved === file ? target : saved))]
+      job.originalFiles = job.originalFiles?.map(saved => saved === file ? target : saved)
+      job.processedFiles = job.processedFiles?.map(saved => saved === file ? target : saved)
+      this.persist()
+    }
+    await rm(work, { recursive: true, force: true })
+    await rmdir(path.dirname(work)).catch(() => {})
+  }
   private log(job: Job, message: string): void {
     // The job's own log is what the window shows; the file keeps it beyond the last 150 lines and beside
     // everything else that happened at the time.
@@ -135,18 +180,18 @@ export class Queue {
       const wantsAudio = !coverOnly && item.kind !== 'image' && audioOnly
       const editing = settings.workMode === 'edit' && !coverOnly && item.kind !== 'image'
       const processing = { workMode: settings.workMode, outputFormat: 'original', outputResolution: 'original', audioFormat: 'best' } as const
-      const includeSubtitles = !wantsAudio && !coverOnly && item.kind !== 'image' && (subtitleOptions.includeSubtitles ?? settings.downloadSubtitles)
+      const includeSubtitles = editing && (subtitleOptions.includeSubtitles ?? settings.downloadSubtitles)
       const subtitles = includeSubtitles ? 'file' : 'off'
       const subtitleLanguage = subtitleOptions.subtitleLanguage ?? settings.subtitleLanguage
       const audioLanguage = wantsAudio ? subtitleOptions.audioLanguage : undefined
       if (this.pending(url, itemId, wantsAudio, coverOnly, wantsAudio || coverOnly || item.kind === 'image' ? undefined : { subtitles, subtitleLanguage }, audioLanguage, processing)) continue
       const id = randomUUID()
       added += 1; created.push(id)
-      this.jobs.unshift({
+      const job: Job = {
         id, url, itemId, single: Boolean(plan.result.listing || source?.kind === 'engine' && source.request.info) || undefined, coverOnly: coverOnly || undefined,
         title: item.title, platform: plan.result.platform, method: plan.result.method,
         kind: coverOnly || item.kind === 'image' ? 'image' : audioOnly ? 'audio' : item.kind, thumbnail: item.thumbnail, duration: coverOnly ? undefined : item.duration,
-        views: item.views, danmaku: item.danmaku, comments: item.comments, likes: item.likes, author: item.author, artist: item.artist, channel: item.channel, publishedAt: item.publishedAt,
+        views: item.views, danmaku: item.danmaku, comments: item.comments, likes: item.likes, author: item.author, authorId: item.authorId, artist: item.artist, channel: item.channel, publishedAt: item.publishedAt,
         format: coverOnly || item.kind === 'image' ? 'best' : format, audioOnly: wantsAudio,
         speedLimit: settings.taskSpeedLimit, filenameTemplate: settings.filenameTemplate, videoQuality: settings.workMode === 'edit' ? settings.editVideoQuality : settings.videoQuality, ...processing,
         subtitles, subtitleLanguage, includeSubtitles, deferProcessing: true,
@@ -158,8 +203,10 @@ export class Queue {
         status: 'queued', progress: 0, files: [],
         directory: directoryFor(settings, plan, item),
         batchId, batchTitle: batchId ? batchTitle : undefined,
-        createdAt: new Date().toISOString(), logs: [],
-      })
+        createdAt: new Date().toISOString(), logs: [], namingVersion: 2,
+      }
+      this.reserveName(job, item.mediaId || item.id)
+      this.jobs.unshift(job)
     }
     this.persist(); this.pump()
     return added
@@ -194,12 +241,15 @@ export class Queue {
     if (!job) throw new Error(i18n.t('queue:errors.jobNotFound'))
     if (!job.thumbnail || !/^https?:\/\//i.test(job.thumbnail)) throw new Error(i18n.t('queue:errors.noRecordedCover'))
     const extension = /\.(jpe?g|png|webp|gif|bmp)(\?|$)/i.exec(job.thumbnail)?.[1]?.toLowerCase() || 'jpg'
-    await mkdir(job.directory, { recursive: true })
+    const thumbnailStem = job.namingVersion === 2 ? path.join(job.directory, '.galaxy', `${job.id}-cover`, 'media') : stemOf(job)
+    mkdirSync(path.dirname(thumbnailStem), { recursive: true })
+    job.namingStarted = true; this.persist()
     // Beside the job's own files and sharing their stem, so it is cleaned up with them and reads as
     // belonging to this task rather than as a loose picture in the download folder.
-    const file = `${stemOf(job)}-cover.${extension === 'jpeg' ? 'jpg' : extension}`
+    const file = `${thumbnailStem}-cover.${extension === 'jpeg' ? 'jpg' : extension}`
     const saved = await checkCover(await downloadHttp(this.fetcher, job.thumbnail, file, [], {}, AbortSignal.timeout(60_000), () => {}))
     if (!job.files.includes(saved)) job.files.push(saved)
+    await this.publish(job, path.dirname(thumbnailStem))
     this.log(job, i18n.t('queue:log.coverSavedByHand'))
     this.persist()
   }
@@ -218,6 +268,7 @@ export class Queue {
     if (this.pending(source.url, source.itemId, true, false, undefined, undefined, processing)) throw new Error(i18n.t('queue:errors.audioPending'))
     this.jobs.unshift({
       ...source,
+      namingVersion: 2, namingStarted: undefined, outputName: undefined,
       id: randomUUID(), status: 'queued', progress: 0, files: [], logs: [], error: undefined, attempts: undefined,
       speed: undefined, eta: undefined, downloaded: undefined, total: undefined, completedAt: undefined,
       kind: 'audio', audioOnly: true, format: 'best', ...processing,
@@ -229,6 +280,7 @@ export class Queue {
       ...thumbnailsFor(settings, source.kind || 'video', true),
       createdAt: new Date().toISOString(),
     })
+    this.reserveName(this.jobs[0])
     this.log(this.jobs[0], i18n.t('queue:log.audioAdded'))
     this.persist(); this.pump()
   }
@@ -246,6 +298,7 @@ export class Queue {
       if (this.pending(source.url, item.id, source.audioOnly, false, !source.audioOnly && source.subtitles && source.subtitleLanguage ? { subtitles: source.subtitles, subtitleLanguage: source.subtitleLanguage } : undefined, source.audioLanguage, source)) continue
       this.jobs.unshift({
         ...source,
+        outputName: undefined, namingStarted: undefined,
         id: randomUUID(), itemId: item.id, single: true, title: item.title,
         kind: item.kind === 'image' ? 'image' : source.audioOnly ? 'audio' : item.kind,
         thumbnail: item.thumbnail || source.thumbnail, duration: item.duration,
@@ -256,6 +309,7 @@ export class Queue {
         speed: undefined, eta: undefined, downloaded: undefined, total: undefined, completedAt: undefined,
         createdAt: new Date().toISOString(),
       })
+      if (this.jobs[0].namingVersion === 2) this.reserveName(this.jobs[0], item.id)
       this.log(this.jobs[0], i18n.t('queue:log.splitItem'))
     }
   }
@@ -332,6 +386,15 @@ export class Queue {
   // its stem produced. The stem carries eight characters of the job's id, so nothing that did not come
   // from this job can match it, and nothing outside its directory is ever looked at.
   private async discard(job: Job): Promise<void> {
+    await this.draining.get(job.id)
+    if (job.namingVersion === 2) {
+      for (const file of new Set(job.files.filter(file => path.dirname(path.resolve(file)) === path.resolve(job.directory)))) await this.trash(file).catch(() => {})
+      await rm(path.dirname(stemOf(job)), { recursive: true, force: true }).catch(() => {})
+      await rm(path.join(job.directory, '.galaxy', `${job.id}-cover`), { recursive: true, force: true }).catch(() => {})
+      await rmdir(path.join(job.directory, '.galaxy')).catch(() => {})
+      if (path.resolve(job.directory) !== path.resolve(this.store.data.settings.downloadDirectory)) await rmdir(job.directory).catch(() => {})
+      return
+    }
     const stem = path.basename(stemOf(job))
     const found = await readdir(job.directory).catch(() => [] as string[])
     const targets = new Set([...job.files, ...found.filter(entry => entry.startsWith(stem)).map(entry => path.join(job.directory, entry))])
@@ -343,8 +406,8 @@ export class Queue {
     // itself, which is the user's and was not made by this client.
     if (path.resolve(job.directory) !== path.resolve(this.store.data.settings.downloadDirectory)) await rmdir(job.directory).catch(() => {})
   }
-  private persist(): void { this.store.save(); this.changed() }
-  stop(): void {
+  private persist(): void { if (!this.stopping) this.store.save(); this.changed() }
+  async stop(): Promise<void> {
     this.stopping = true
     for (const id of [...this.resuming.keys()]) this.forget(id)
     for (const [id, controller] of this.running) {
@@ -356,6 +419,7 @@ export class Queue {
       controller.abort()
     }
     this.store.save()
+    await Promise.allSettled(this.draining.values())
   }
   // A download that broke is picked up again on its own. It is safe to do so because it resumes: the
   // engine keeps the part file and the output path is the same every time, so an attempt costs the
@@ -391,7 +455,7 @@ export class Queue {
       this.running.set(job.id, controller)
       job.status = 'running'; job.speed = undefined; job.eta = undefined; job.processingEta = undefined; job.stage = 'download'; job.processingProgress = undefined; job.warnings = []
       this.log(job, i18n.t('queue:log.preparing')); this.persist()
-      void this.execute(job, controller.signal).catch(error => {
+      const task = this.execute(job, controller.signal).catch(error => {
         if (controller.signal.aborted) return
         // A permission wall is not a broken transfer. Saying which wall it is beats the engine's own
         // wording, and waiting twenty seconds to run into the same wall again helps nobody - the
@@ -403,7 +467,8 @@ export class Queue {
         // A protocol or local path failure cannot be repaired by downloading again.
         const localFailure = error instanceof EngineProtocolError || isFileFailure(error)
         if (!denied && !localFailure) this.resumeLater(job)
-      }).finally(() => { this.running.delete(job.id); job.speed = undefined; job.eta = undefined; job.processingEta = undefined; this.persist(); this.pump() })
+      }).finally(() => { this.running.delete(job.id); this.draining.delete(job.id); job.speed = undefined; job.eta = undefined; job.processingEta = undefined; this.persist(); this.pump() })
+      this.draining.set(job.id, task)
     }
   }
   private async execute(job: Job, signal: AbortSignal): Promise<void> {
@@ -415,8 +480,11 @@ export class Queue {
     if (job.coverOnly) {
       if (!job.thumbnail || !/^https?:\/\//i.test(job.thumbnail)) throw new Error(i18n.t('queue:errors.noCover'))
       const extension = /\.(jpe?g|png|webp|gif|avif)(\?|$|@)/i.exec(new URL(job.thumbnail).pathname)?.[1]?.toLowerCase().replace('jpeg', 'jpg') || 'jpg'
-      await mkdir(job.directory, { recursive: true })
+      mkdirSync(path.dirname(stemOf(job)), { recursive: true })
+      job.namingStarted = true; this.persist()
       job.files = [await checkCover(await downloadHttp(this.fetcher, job.thumbnail, `${stemOf(job)}.${extension}`, [], {}, signal, value => { job.progress = value; this.changed() }, { speedLimit, retries: settings.retries, timeout: settings.timeout }))]
+      signal.throwIfAborted()
+      await this.publish(job)
       signal.throwIfAborted()
       const bytes = (await stat(job.files[0])).size
       job.status = 'completed'; job.progress = 1; job.attempts = undefined
@@ -441,11 +509,19 @@ export class Queue {
       job.kind = items[0].kind === 'image' ? 'image' : job.audioOnly ? 'audio' : items[0].kind
       job.thumbnail = items[0].thumbnail || job.thumbnail
     }
-    await mkdir(job.directory, { recursive: true })
+    const first = items[0]
+    job.authorId ||= first.authorId; job.author ||= first.author; job.publishedAt ??= first.publishedAt
+    if (job.namingVersion === 2 && !job.namingStarted) this.reserveName(job, first.mediaId || first.id)
+    mkdirSync(path.dirname(stemOf(job)), { recursive: true })
+    job.namingStarted = true; this.persist()
     const base = stemOf(job)
     let lastProgress = 0
     let completedBytes = 0
-    job.files = []; job.originalFiles = []; job.processedFiles = []
+    if (job.namingVersion !== 2) { job.files = []; job.originalFiles = []; job.processedFiles = [] }
+    else {
+      const final = (file: string) => path.dirname(path.resolve(file)) === path.resolve(job.directory)
+      job.files = job.files.filter(final); job.originalFiles = job.originalFiles?.filter(final); job.processedFiles = job.processedFiles?.filter(final)
+    }
     for (const [index, item] of items.entries()) {
       signal.throwIfAborted()
       const source = plan.sources.get(item.id)
@@ -458,7 +534,7 @@ export class Queue {
         if (Date.now() - lastProgress > 250 || value === 1) { lastProgress = Date.now(); this.changed() }
       }
       this.log(job, i18n.t('queue:log.fileStart', { index: index + 1, total: items.length }))
-      const owns = (file: string) => path.dirname(path.resolve(file)) === path.resolve(job.directory) && path.basename(file).startsWith(path.basename(stem))
+      const owns = (file: string) => path.dirname(path.resolve(file)) === path.resolve(path.dirname(stem)) && path.basename(file).startsWith(path.basename(stem))
       const onEvent = (event: EngineEvent) => {
         if (signal.aborted) return
         if (event.kind === 'original') {
@@ -525,6 +601,9 @@ export class Queue {
       progress(1)
     }
     signal.throwIfAborted()
+    await this.publish(job)
+    signal.throwIfAborted()
+    completedBytes = (await Promise.all(job.files.map(file => stat(file)))).reduce((sum, file) => sum + file.size, 0)
     job.method = plan.result.method; job.status = 'completed'; job.progress = 1; job.attempts = undefined; job.stage = undefined; job.processingProgress = undefined
     job.processingEta = undefined; job.burnRestartRequired = undefined
     job.downloaded = completedBytes; job.total = completedBytes; job.completedAt = new Date().toISOString()

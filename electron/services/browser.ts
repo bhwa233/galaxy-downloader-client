@@ -394,19 +394,19 @@ export class EmbeddedBrowser {
     void reading.then(() => { if (this.reading === reading) this.release() })
   }
 
-  async inspectProfile(url: string, index: number, group: string | undefined, signal: AbortSignal): Promise<Listing | undefined> {
-    const turn = this.reading.then(() => this.inspectNow(url, index, group, signal))
+  async inspectProfile(url: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse'): Promise<Listing | undefined> {
+    const turn = this.reading.then(() => this.inspectNow(url, index, group, signal, order))
     this.reading = turn.catch(() => {})
     return await turn
   }
 
-  private async inspectNow(url: string, index: number, group: string | undefined, signal: AbortSignal): Promise<Listing | undefined> {
+  private async inspectNow(url: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse'): Promise<Listing | undefined> {
     signal.throwIfAborted()
     const adapter = findAdapter(url)
     if (!adapter?.fetchPage) throw new Error(i18n.t('errors:browser.profileUnsupported'))
     const address = adapter.entryUrl(new URL(url))
     const reused = this.open?.address === address && !this.open.window.isDestroyed()
-    try { return await this.readListing(adapter, url, address, index, group, signal) }
+    try { return await this.readListing(adapter, url, address, index, group, signal, order) }
     catch (error) {
       if (signal.aborted) { this.release(); signal.throwIfAborted() }
       // A page held open since the last turn can have been discarded, navigated by the site, or simply
@@ -415,7 +415,7 @@ export class EmbeddedBrowser {
       if (!reused || error instanceof LoginRequired) throw error
       log.warn(`[listing ${adapter.id}] 复用的窗口不可用，重开一次`, error)
       this.release()
-      return await this.readListing(adapter, url, address, index, group, signal)
+      return await this.readListing(adapter, url, address, index, group, signal, order)
     }
   }
 
@@ -428,7 +428,7 @@ export class EmbeddedBrowser {
     void page.settle().catch(() => {}).finally(() => { if (!window.isDestroyed()) window.destroy() })
   }
 
-  private async readListing(adapter: ProfileAdapter, url: string, address: string, index: number, group: string | undefined, signal: AbortSignal): Promise<Listing | undefined> {
+  private async readListing(adapter: ProfileAdapter, url: string, address: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse'): Promise<Listing | undefined> {
     const opened = Date.now()
     let warmed = opened
     let loaded = opened
@@ -459,7 +459,7 @@ export class EmbeddedBrowser {
     const listing = await adapter.fetchPage!({
       // Paced by the browser's own Pace, which counts every request this client makes to the host
       // rather than only the ones belonging to this walk.
-      url: new URL(url), page: index, group, fetch: this.pace.wrap(pageFetch(held.page.evaluate)), evaluate: held.page.evaluate, userAgent: this.userAgent,
+      url: new URL(url), page: index, group, order, fetch: this.pace.wrap(pageFetch(held.page.evaluate)), evaluate: held.page.evaluate, userAgent: this.userAgent,
       locale: this.locale(), fingerprint: await this.fingerprint(signal),
       // Read off the page that is open rather than from the warm-up's record of an earlier visit.
       storage: await held.page.evaluate<Record<string, string>>(STORAGE).catch(() => undefined), signal,

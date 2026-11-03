@@ -1,5 +1,49 @@
 # 测试链接清单
 
+## 2026-11-03：平台字幕限剪辑模式与订阅入口核对
+
+“附带平台字幕”结果页入口仅在剪辑模式显示，设置中的平台字幕开关、默认语言和平台自动字幕选项移至“剪辑与输出”。新任务入队由主进程再次检查模式：下载模式即使旧设置和请求都带 `includeSubtitles=true`，仍保存 `includeSubtitles=false`、`subtitles=off`；剪辑模式可保存 `includeSubtitles=true`、`subtitles=file`。已入队任务的历史参数不改写。
+
+原生 Windows 真实客户端使用 <https://www.bilibili.com/video/BV1Ps421u7ju> 解析结果，实际切换两种模式并核对结果页、设置页和新任务入队字段，四组检查通过，renderer pageerror 为 0。入队探针任务随后取消，未声称本轮完成了平台字幕文件下载。`pnpm build`（含 typecheck）、`pnpm lint`、下载与封面相关 12 项既有检查、现有 Electron E2E 均通过；没有新增或修改测试规格，一次性探针已删除。截图：`test-results/subtitle-mode/editing-caption-settings.png`；结果：`test-results/subtitle-mode/results.json`。
+
+同时重新 fetch 核对：`origin/main` 仍为 `5c8d65e`（0.6.0）；作者订阅在 `origin/codex/creator-subscriptions` 的 `542fb06`（0.7.0），该分支的 `App.tsx` 已接入侧栏“订阅”、更新列表与管理订阅。当前预览基于主线，因此不包含该独立分支；本轮仅核对位置，没有自动整合订阅分支。
+
+
+## 2026-11-03：日期快捷项先选择、后应用
+
+快捷日期改为弹窗草稿：选择近一周、今年等仅高亮并填写起止日期，不发起查询、不关闭弹窗；手动修改日期后取消快捷项高亮。清除日期仅清空草稿。取消、关闭或 Escape 放弃草稿，重新打开恢复已应用的范围；点击“应用并查找”才提交日期条件。
+
+原生 Windows 构建后，以隔离客户端对真实 B 站合集 <https://www.bilibili.com/video/BV1Ps421u7ju>（3 条）实际点击验证：快捷项填充与高亮、切换快捷项、手工修改、清除、取消和右上角关闭后重新打开、应用日期和清除已应用日期均符合上述规则；确认点击应用前主进程查询条件没有改变。再次打开已经应用的“今年”仍正确高亮，结束边界为下一年 1 月 1 日零点。renderer pageerror 为 0。
+
+`pnpm build`（含 typecheck）与 `pnpm lint` 通过。一次性真实客户端探针已删除，没有新增或修改测试规格。截图：`test-results/date-draft/preset-awaits-apply.png`；详细结果：`test-results/date-draft/results.json`。正在运行的开发服务已返回包含新日期草稿逻辑的模块，HTTP 200。
+
+
+## 2026-11-03：干净文件名、作者 ID、整合集排序与日期查找
+
+基于 `origin/main` 的 `5c8d65e`（0.6.0）在隔离工作区实现。原目录的未提交改动未移动、未覆盖；未提交、未发布。依照 AGENTS.md，没有新增、修改或删除任何测试规格。
+
+验证环境：原生 Windows，Node 26.13.0、pnpm 11.8.0、Electron 44.4.5、本地 yt-dlp 2026.08.19。真实站点验证使用隔离临时客户端目录，复用本机已有应用内登录状态，没有修改真实用户的任务或设置；凭据不进入记录。
+
+| 场景 | 结果 |
+| --- | --- |
+| B 站完整合集：<https://www.bilibili.com/video/BV1daxy6JENt/> | 本次为 507 条，全部返回且全部有发布时间；超过原先 500 条限制仍完整显示，合集倒序的首尾与原顺序相反 |
+| B 站分页合集：<https://space.bilibili.com/495045064/lists/8798877?type=season> | 初始 30/507 条；`sort_reverse=true` 第一条为 `BV1st4P69EZb`，与原顺序最后一条一致；客户端直接取得倒序第一页，继续读取第二页后为 60 条且首条不变 |
+| 整合集日期查找 | 选择 2026-10-01 至 2026-10-31，完整 507 条得到 179 条匹配；每条都满足起止边界，最新发布排序逐条检查为单调不增 |
+| 跨页停止与继续 | 由仅加载第一页开始查找，在已检查 360 条 / 匹配 45 条时停止，状态为 stopped；继续后读完 507 条，匹配 179 条，与全量查询一致 |
+| 抖音合集：<https://www.douyin.com/collection/7331672245112965129> | 成功读取 6 条，作者公开账号为 `XPIN_hardware`；公开账号 ID 进入统一媒体字段 |
+| 抖音分页合集：<https://www.douyin.com/collection/7676329928593246262> | 首屏 14 条，通过平台游标读取 6 页后共 84 条；hasMore 为 false，条目不重复，完整倒序与原始 84 条的反转逐项一致 |
+| 真实 B 站视频：<https://www.bilibili.com/video/BV13SxN6vEyx/> | 成功保存 `495045064_2026-10-27_小松绿打喷嚏.mp4` 与同基础名称的 JPG 封面；视频 639003 字节，完整 FFmpeg 解码退出 0 |
+| 暂停与重启恢复 | 第三个同名任务保存名称为 `495045064_2026-10-27_小松绿打喷嚏 (3)`；在进度约 0.255% 时暂停，关闭并重新启动真实客户端后仍为 paused、名称不变；继续后视频及封面均完成，视频仍为 639003 字节 |
+| 同名保护 | 再次下载得到 `495045064_2026-10-27_小松绿打喷嚏 (2).mp4` 及对应封面；原文件保留，两份视频字节数与 SHA-256 相同 |
+| 检查与构建 | `pnpm typecheck`、`pnpm lint`、`pnpm build` 通过；实际构建产生 renderer / main / preload / CLI / processing worker |
+| 现有 Electron E2E | `pnpm test:e2e` 通过；后续构建的同一测试入口 `pnpm exec playwright test --output=test-results/e2e-final` 也通过，覆盖真实引擎下载、重启后历史保留与 renderer 隔离 |
+| 现有单测 | 63/66 通过。剩余 3 条是 B 站 / YouTube / 微博条目精确对象断言不接受新增的 `authorId` 字段。未修改测试来迁就新行为；此前 Windows 退出清理竞争已修复，下载与封面相关 12 项检查通过 |
+
+已验证的视频首次尝试限制到 480p 时，平台没有提供该档位，任务如实失败；改用最佳可用画质后完成下载。没有以这个站点/画质失败来声称文件保存失败，也没有修改既有画质选择策略。
+
+边界：本次真实日期范围样本是 2026 年 8–11 月，没有把它描述成已实测 2024–2026 跨年样本。抖音更大规模合集、其他平台原生排序参数和缺少日期时补抓每条详情不在上述实测结论中；只有平台实际给出的时间参与日期查询。自动 Mix 无固定终点，界面明确提示部分结果。原有长列表的分批挂载策略继续保留，本轮没有宣称完成全部条目虚拟化。
+
+
 本文汇总全部平台的测试链接，供实现与验收时使用。**状态列只有两种**：已验证 = 在真实浏览器里打开并确认过可用；待补 = 还没有拿到可用的样本。拿不到的都写了原因，不要凭空编链接。
 
 ## 2026-11-01：0.6.0 Release 排版修正
@@ -778,3 +822,5 @@ Windows 旧二进制在本机版本探测中原本就能成功，未把它伪装
 门禁：pnpm check（typecheck、lint、66 项既有单测及构建）通过；Linux、Windows PyInstaller 引擎均实际构建。现有 Electron E2E 再次执行，完成解析和下载后仍在 `test/e2e/e2e.spec.ts:50` 等待已删除的“卡片视图”按钮失败；未改测试，也未宣称 E2E 全绿。Windows 验证覆盖原生 Node／Python／打包引擎／FFmpeg，不等同于完整 NSIS 安装器与 Windows Electron GUI 回归。
 
 证据在忽略目录 `test-results/issues-20261026/`：browser-result.json、client-result.json、windows-result.json，以及 Windows 临时目录内的原生引擎与媒体。一次性驱动、基线源文件和隔离用户目录在验证后删除。
+
+本轮界面截图：`test-results/driver/filename-settings-final.png`、`publication-date-dialog.png`、`collection-more-filters.png`、`collection-complete.png`。页面错误收集为 0。一次性命令探针未写入测试规格，临时客户端已关闭。清理复制登录状态所在的临时目录时，自动审批策略两次返回 `blocked by policy`（包含已核实的精确路径删除），未执行删除；副本仍位于本机 `C:\Users\40417\AppData\Local\Temp\galaxy-filenames-collections-20261103`，未纳入 Git。原用户目录未改动。

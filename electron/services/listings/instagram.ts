@@ -66,6 +66,7 @@ export function entryOf(node: Node, fallbackAuthor?: string): ListingEntry | und
     likes: count(node.edge_liked_by?.count ?? node.like_count),
     comments: count(node.edge_media_to_comment?.count ?? node.comment_count),
     author: node.owner?.username || node.user?.username || fallbackAuthor,
+    authorId: node.owner?.username || node.user?.username || fallbackAuthor,
     publishedAt: node.taken_at_timestamp || node.taken_at || undefined,
   }
 }
@@ -215,7 +216,7 @@ export const instagramPost: ProfileAdapter = {
       if (!media) return undefined
       return {
         id: `${code}-${index + 1}`, url: url.href, title: files.length > 1 ? `${text} · ${index + 1}` : text,
-        thumbnail: picture, kind: file.media_type === 2 ? 'video' : 'image', media, author,
+        thumbnail: picture, kind: file.media_type === 2 ? 'video' : 'image', media, author, authorId: author,
         duration: file.video_duration ? Math.round(file.video_duration) : undefined,
       }
     }).filter((entry): entry is ListingEntry => Boolean(entry))

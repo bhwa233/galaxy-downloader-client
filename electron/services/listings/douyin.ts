@@ -32,7 +32,7 @@ type Post = {
   aweme_id?: string; desc?: string; create_time?: number; media_type?: number
   video?: { cover?: { url_list?: string[] }; duration?: number }
   images?: Image[] | null
-  author?: { nickname?: string }
+  author?: { nickname?: string; unique_id?: string; short_id?: string; uid?: string }
   mix_info?: { mix_id?: string; mix_name?: string }
   // 'play_count' is always zero on the web listing, so it is never read: a card saying 0 plays for a
   // post with four hundred thousand likes would be worse than a card saying nothing.
@@ -101,6 +101,7 @@ export function entryOf(post: Post): ListingEntry | undefined {
     likes: count(post.statistics?.digg_count),
     comments: count(post.statistics?.comment_count),
     author: post.author?.nickname?.trim() || undefined,
+    authorId: post.author?.unique_id?.trim() || (post.author?.short_id && post.author.short_id !== '0' ? post.author.short_id : undefined) || post.author?.uid,
     wall: post.entertainment_video_paid_way?.paid_type === 1 && !post.series_paid_info?.series_paid_status ? 'purchase' : undefined,
     publishedAt: post.create_time || undefined,
   }

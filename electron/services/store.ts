@@ -18,6 +18,7 @@ export class Store {
       const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StoredState
       if (saved.version !== 1 || !Array.isArray(saved.jobs)) throw new Error('Unsupported saved state')
       this.data.settings = { ...settingsSchema.parse(saved.settings), downloadDirectory: typeof saved.settings.downloadDirectory === 'string' ? saved.settings.downloadDirectory : downloadDirectory }
+      if (['title-id', 'id-title', 'date-title-id'].includes(this.data.settings.filenameTemplate)) this.data.settings.filenameTemplate = this.data.settings.customFilenameTemplate ? 'custom' : 'author-title'
       this.data.history = Array.isArray(saved.history) ? saved.history.filter(entry => typeof entry?.url === 'string' && typeof entry.title === 'string') : []
       this.data.jobs = saved.jobs.filter(job => typeof job.id === 'string' && typeof job.url === 'string').map(job => {
         // Older profile jobs stored a position in the listing; retain the original post instead.

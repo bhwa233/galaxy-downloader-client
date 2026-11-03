@@ -128,5 +128,60 @@
     "allInQueue_other": "这 {{count}} 个任务都已经在下载，没有重复添加。",
     "oneInQueue": "「{{title}}」的{{kind}}已经在下载。"
   },
-  "attachSubtitles": "附带平台字幕"
+  "attachSubtitles": "附带平台字幕",
+  "query": {
+    "keyword": "搜索整个列表的标题…",
+    "sortLabel": "列表排序",
+    "sorts": {
+      "original": "合集原顺序",
+      "reverse": "合集倒序",
+      "newest": "最新发布",
+      "oldest": "最早发布"
+    },
+    "unlimited": "不限",
+    "more": "更多筛选",
+    "find": "查找",
+    "clearDates": "清除日期",
+    "clearKind": "清除类型",
+    "clearDuration": "清除时长",
+    "minutes": "分钟",
+    "pending": "条件已更改，点击「查找」应用到整个列表。",
+    "scope": "查找整个列表，包含尚未加载的内容。",
+    "partialOrder": "当前为部分结果，读取完成后才能确认完整顺序。",
+    "status": {
+      "ready": "已读取 {{scanned}} 项，当前显示 {{matched}} 项",
+      "running": "正在查找整个列表 · 已检查 {{scanned}} 项 · 找到 {{matched}} 项",
+      "stopped": "查找已停止 · 已检查 {{scanned}} 项 · 找到 {{matched}} 项（部分结果）",
+      "completed": "查找完成 · 共检查 {{scanned}} 项 · 找到 {{matched}} 项",
+      "interrupted": "查找中断 · 已检查 {{scanned}} 项 · 已保留 {{matched}} 项",
+      "limited": "仅取得部分结果 · 已检查 {{scanned}} 项 · 找到 {{matched}} 项"
+    },
+    "limitHint": "平台未提供完整或可继续读取的列表；自动生成的 Mix 也没有固定终点。当前结果不代表整个列表。",
+    "missingDates_other": "有 {{count}} 项缺少发布时间：日期查找不包含这些条目，时间排序将它们放在末尾。",
+    "stop": "停止",
+    "continue": "继续查找",
+    "scanProgress": "整个列表查找进度",
+    "dateTitle": "按发布时间查找",
+    "dateHint": "使用本机时区，包含开始和结束日期当天。任意一端留空表示不限。",
+    "presets": {
+      "week": "近一周",
+      "month": "近一月",
+      "quarter": "近三月",
+      "thisYear": "今年",
+      "lastYear": "去年"
+    },
+    "from": "开始日期",
+    "to": "结束日期",
+    "invalidDates": "结束日期不能早于开始日期。",
+    "applyFind": "应用并查找",
+    "kind": "媒体类型",
+    "searchingEmpty": "还没有找到匹配项，正在继续查找…",
+    "selectFound": "全选已找到的 {{count}} 项",
+    "hiddenSelected": "{{count}} 项不在当前结果",
+    "reviewSelected": "查看已选",
+    "reviewHint": "已选 {{count}} 项，包含其他分组和被筛选隐藏的内容，可在这里取消选择。",
+    "clearSelection": "清空选择",
+    "downloadFirst": "下载前 {{count}} 项",
+    "nativeOrder": "按平台提供的合集倒序加载，可继续加载更多。"
+  }
 }

@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { commandSchemas, settingsSchema, type ClientState, type Command, type HistoryEntry, type JobFile, type Reply } from '../../shared/contracts'
+import { commandSchemas, settingsSchema, type ClientState, type Command, type HistoryEntry, type Job, type JobFile, type Reply } from '../../shared/contracts'
 import { Store } from '../services/store'
 import { Engine, redact } from '../services/engine'
 import { EmbeddedBrowser } from '../services/browser'
@@ -15,6 +15,7 @@ import { i18n, localeFor, setLocale } from '../../shared/i18n'
 import { asAccessDenied } from '../services/access'
 import { LoginRequired, VerificationRequired } from '../services/login'
 import { Queue } from '../services/queue'
+import { ListingSearch } from '../services/listing-search'
 import { downloadHttp } from '../services/http-download'
 import { checkCover } from '../services/cover'
 import { Updates } from './update'
@@ -32,6 +33,7 @@ const log = logger('controller')
 const CONTROLLABLE = new Set(['state:get', 'cli:hello', 'cli:parse', 'media:download', 'jobs:action', 'jobs:batch', 'jobs:remove', 'browser:login', 'tools:check'])
 // How many command-line results are kept to download from.
 const DETACHED = 20
+const filesFor = (job: Job) => job.namingVersion === 2 ? job.files.filter(file => path.dirname(path.resolve(file)) === path.resolve(job.directory)) : job.files
 
 // What a failed parse is reported as. Four refusals are told apart from one another and from an
 // ordinary failure: a sign-in fixes the first, an entitled account the next two, and nothing the last.
@@ -65,6 +67,9 @@ export class Controller {
   private plan?: ParsePlan
   private previewing?: ClientState['preview']
   private parsing?: AbortController
+  private querying?: { controller: AbortController; groupId: string; done: Promise<void> }
+  private queryRevision = 0
+  private listings = new ListingSearch((plan, page, groupId, signal, order) => this.parser.parse(plan.result.url, this.profile(), signal, { page, group: groupId, order }))
   private parseState: ClientState['parse'] = { status: 'idle' }
   // The page a sign-in was offered for, kept until the login window closes so the turn the user asked
   // for can be made again without them asking twice. Only ever set by a refusal a login could lift.
@@ -95,7 +100,7 @@ export class Controller {
   // What the main process says to the user - errors, a task's log, notifications - is in the window's language.
   constructor(private window: () => BrowserWindow | null) { setLocale(this.store.data.settings.locale) }
   private profile() { const profile = this.profiles.find(item => item.id === this.store.data.settings.browserProfileId); return profile ? { browser: profile.browser, path: profile.path } : undefined }
-  state(): ClientState { return { kernel: this.kernel.state, processing: this.processing.state(this.queue.jobs), settings: this.store.data.settings, profiles: publicProfiles(this.profiles), jobs: this.queue.jobs.map(job => ({ ...job, url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: this.commandLine.state() } }
+  state(): ClientState { return { kernel: this.kernel.state, processing: this.processing.state(this.queue.jobs), settings: this.store.data.settings, profiles: publicProfiles(this.profiles), jobs: this.queue.jobs.map(job => ({ ...job, files: filesFor(job), originalFiles: job.originalFiles?.filter(file => filesFor(job).includes(file)), processedFiles: job.processedFiles?.filter(file => filesFor(job).includes(file)), url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: this.commandLine.state() } }
   // A successful parse goes to the top of 解析历史: one entry per address, the newest 50 kept. Only
   // successes - a list of failures would bury the entries worth parsing again.
   private remember(plan: ParsePlan): void {
@@ -168,6 +173,11 @@ export class Controller {
     this.browserSites = await this.browser.sites()
     const pending = this.pendingPage
     this.pendingPage = undefined
+    const search = this.plan?.result.groups?.find(group => group.search?.status === 'interrupted')
+    if (search?.search) {
+      await this.command('media:query', { resultId: this.plan!.result.id, groupId: search.id, query: search.search.query })
+      return
+    }
     if (!pending) { this.emit(); return }
     await this.command('media:page', pending)
   }
@@ -258,13 +268,16 @@ export class Controller {
           break
         }
         case 'browser:clear':
+          this.queryRevision += 1; this.querying?.controller.abort()
           this.parsing?.abort(); this.plan = undefined; this.parseState = { status: 'idle' }
           for (const job of this.queue.jobs) if (['running', 'queued'].includes(job.status)) this.queue.action(job.id, 'pause')
           this.store.data.settings.browserProfileId = null; this.store.save()
           await this.browser.clear(); this.browserSites = 0; break
-        case 'media:cancel': this.parsing?.abort(); this.parsing = undefined; this.parseState = { status: 'idle' }; break
+        case 'media:cancel': this.queryRevision += 1; this.parsing?.abort(); this.querying?.controller.abort(); this.parsing = undefined; this.plan = undefined; this.parseState = { status: 'idle' }; break
         case 'media:parse': {
+          this.queryRevision += 1
           const { url } = commandSchemas['media:parse'].parse(input)
+          this.querying?.controller.abort()
           this.parsing?.abort(); const controller = new AbortController(); this.parsing = controller
           this.plan = undefined; this.parseState = { status: 'parsing' }; this.emit()
           try {
@@ -286,26 +299,19 @@ export class Controller {
           break
         }
         case 'media:page': {
+          const revision = ++this.queryRevision
           const { resultId, page, groupId } = commandSchemas['media:page'].parse(input)
           const current = this.plan
           if (!current || current.result.id !== resultId) throw new Error(i18n.t('desktop:errors.parseExpired'))
+          this.querying?.controller.abort(); await this.querying?.done
+          if (this.plan !== current || revision !== this.queryRevision) break
           this.parsing?.abort(); const controller = new AbortController(); this.parsing = controller
           try {
-            const next = await this.parser.parse(current.result.url, this.profile(), controller.signal, { page, group: groupId })
+            await this.listings.page(current, page, groupId || current.result.groups?.[0]?.id || '', controller.signal)
             controller.signal.throwIfAborted()
             // 加载更多: the next page is added to what is on screen rather than replacing it, so every
             // post read so far stays listed, stays ticked and still downloads. Each tab grows on its own;
             // a post a later page repeats is kept once, where it first appeared.
-            for (const [id, source] of next.sources) current.sources.set(id, source)
-            for (const [id, item] of next.catalog) current.catalog.set(id, item)
-            const known = new Set(current.result.items.map(item => item.id))
-            const items = [...current.result.items, ...next.result.items.filter(item => !known.has(item.id))]
-            const groups = next.result.groups?.map(found => {
-              const before = current.result.groups?.find(existing => existing.id === found.id)
-              if (!before || found.id !== (groupId || current.result.groups?.[0]?.id)) return before || found
-              return { ...found, itemIds: [...before.itemIds, ...found.itemIds.filter(id => !before.itemIds.includes(id))] }
-            })
-            current.result = { ...next.result, id: current.result.id, title: current.result.title, items, groups, formats: current.result.formats, audioFormats: current.result.audioFormats }
             this.parseState = { status: 'idle', result: current.result }
             this.pendingPage = undefined
           }
@@ -320,6 +326,35 @@ export class Controller {
             }
           }
           finally { if (this.parsing === controller) this.parsing = undefined }
+          break
+        }
+        case 'media:query-stop': {
+          const { resultId, groupId } = commandSchemas[command].parse(input)
+          if (this.plan?.result.id === resultId && this.querying?.groupId === groupId) { this.queryRevision += 1; this.querying.controller.abort() }
+          break
+        }
+        case 'media:query': {
+          const revision = ++this.queryRevision
+          const { resultId, groupId, query, scan } = commandSchemas[command].parse(input)
+          const current = this.planFor(resultId)
+          if (current !== this.plan) throw new Error(i18n.t('desktop:errors.parseExpired'))
+          this.parsing?.abort()
+          const previous = this.querying
+          previous?.controller.abort(); await previous?.done
+          if (this.plan !== current || revision !== this.queryRevision) break
+          const controller = new AbortController()
+          const publish = () => {
+            if (this.plan !== current) return
+            this.parseState = { status: 'idle', result: current.result }
+            this.emit()
+          }
+          const task = this.listings.run(current, groupId, query, controller.signal, publish, scan)
+          const held = { controller, groupId, done: task.catch(() => {}) }
+          this.querying = held
+          try { await task }
+          catch (error) {
+            if (!controller.signal.aborted && this.plan === current) this.parseState = { ...refusal(error, current.result.url), result: current.result }
+          } finally { if (this.querying === held) this.querying = undefined }
           break
         }
         case 'media:download': {
@@ -457,7 +492,7 @@ export class Controller {
         case 'jobs:file': {
           const { id, index, action } = commandSchemas['jobs:file'].parse(input)
           const job = this.queue.jobs.find(item => item.id === id)
-          const file = job?.files[index]
+          const file = job ? filesFor(job)[index] : undefined
           if (!job || !file || path.dirname(path.resolve(file)) !== path.resolve(job.directory) || !(await stat(file)).isFile()) throw new Error(i18n.t('desktop:errors.noCompletedFile'))
           if (action === 'reveal') shell.showItemInFolder(file)
           else {
@@ -469,7 +504,7 @@ export class Controller {
         case 'jobs:files': {
           const job = this.queue.jobs.find(item => item.id === commandSchemas['jobs:files'].parse(input).id)
           if (!job) throw new Error(i18n.t('queue:errors.jobNotFound'))
-          files = await Promise.all(job.files.map(async file => {
+          files = await Promise.all(filesFor(job).map(async file => {
             const found = await stat(file).catch(() => undefined)
             return { path: file, exists: Boolean(found?.isFile()), size: found?.isFile() ? found.size : undefined }
           }))
@@ -507,5 +542,5 @@ export class Controller {
     }
   }
   processingMedia(id: string): string { return this.processing.media(id) }
-  stop(): void { this.parsing?.abort(); this.queue.stop(); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
+  stop(): void { this.parsing?.abort(); this.querying?.controller.abort(); void this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
 }

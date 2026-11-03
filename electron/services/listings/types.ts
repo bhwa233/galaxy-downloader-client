@@ -44,7 +44,7 @@ export type Evaluate = <T>(expression: string) => Promise<T>
 // opposite answers: one stands down, the other is reported.
 export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 // 'group' names which tab the page number belongs to; the others keep whatever page they were on.
-export type PageRequest = { url: URL; page: number; group?: string; fetch: Fetcher; evaluate?: Evaluate; userAgent: string; locale: Settings['locale']; fingerprint?: Fingerprint; storage?: Record<string, string>; signal: AbortSignal }
+export type PageRequest = { url: URL; page: number; group?: string; order?: 'reverse'; fetch: Fetcher; evaluate?: Evaluate; userAgent: string; locale: Settings['locale']; fingerprint?: Fingerprint; storage?: Record<string, string>; signal: AbortSignal }
 
 export interface ProfileAdapter {
   readonly id: string

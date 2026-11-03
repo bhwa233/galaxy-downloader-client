@@ -57,7 +57,7 @@
   "automatic": "Transcribe after downloading",
   "automaticHint": "New downloads created in editing mode only. Existing captions are reused without recognition.",
   "attach": "Attach platform captions",
-  "attachHint": "The download page saves available platform captions as files; it does not download models or start recognition.",
+  "attachHint": "In editing mode, downloads save available platform captions as files; this does not download models or start recognition.",
   "metadata": "Embed title, artist and available metadata",
   "chapters": "Keep chapter markers",
   "channel": "Create channel / uploader folders",

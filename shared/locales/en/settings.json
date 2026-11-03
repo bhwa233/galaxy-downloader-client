@@ -32,7 +32,7 @@
     },
     "workMode": {
       "label": "Work mode",
-      "hint": "Download mode saves original media with optional platform caption files. Editing mode reveals Video processing for models, local recognition, subtitle editing and new video exports. Automatic transcription is optional. Originals are preserved; existing download tasks keep their saved options."
+      "hint": "Download mode saves original media without captions or processing. Editing mode can attach platform caption files and reveals Video processing for models, local recognition, subtitle editing and new video exports. Automatic transcription is optional. Originals are preserved; existing download tasks keep their saved options."
     }
   },
   "download": {
@@ -133,6 +133,27 @@
         "hint": "Join YouTube rolling caption fragments so one language does not render twice at once."
       },
       "hint": "Uses captions provided by the platform, including platform-generated captions when enabled. No client-side translation. Embedded or burned captions affect only the output, leaving the source intact."
+    },
+    "cleanNaming": {
+      "mode": "Naming style",
+      "presets": {
+        "title": "Title only",
+        "author-title": "Author ID + title",
+        "author-date-title": "Author ID + publication date + title",
+        "custom": "Custom"
+      },
+      "template": "Custom filename",
+      "templateHint": "Click a field to insert it. authorId uses the public account, then UID or name; date is the publication date; id identifies the item.",
+      "invalidTemplate": "Enter a template using the listed fields, without path separators or ..",
+      "preview": "Filename preview",
+      "example": "Example",
+      "sampleTitle": "How to photograph a city at night",
+      "sampleAuthor": "Example author",
+      "collision": "If the name exists: {{filename}}",
+      "nicknameFallback": "The platform did not provide an author ID; the author name will be used.",
+      "noAuthor": "Author information is unavailable; the author prefix will be omitted.",
+      "noDate": "The publication date is unavailable; the date will be omitted.",
+      "hint": "New tasks have no random suffix. Duplicate names receive (2), (3), etc. Queued tasks keep their names. The extension depends on the media."
     }
   },
   "browser": {

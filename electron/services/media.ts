@@ -5,7 +5,7 @@ import { i18n } from '../../shared/i18n'
 export type RawInfo = {
   id?: string; title?: string; webpage_url?: string; original_url?: string; url?: string; ext?: string; duration?: number; thumbnail?: string;
   thumbnails?: { url?: string; width?: number }[]; _type?: string;
-  view_count?: number; comment_count?: number; uploader?: string; artist?: string; channel?: string; timestamp?: number; upload_date?: string;
+  view_count?: number; comment_count?: number; uploader?: string; uploader_id?: string; channel_id?: string; artist?: string; channel?: string; timestamp?: number; upload_date?: string;
   extractor_key?: string; extractor?: string; vcodec?: string; entries?: RawInfo[]; playlist_index?: number; playlist_count?: number;
   formats?: RawFormat[]
 }
@@ -181,30 +181,32 @@ export function flattenEntries(raw: RawInfo, limit = ENTRY_LIMIT): RawInfo[] {
 function publishedAt(entry: RawInfo): number | undefined {
   if (entry.timestamp) return entry.timestamp
   const date = /^(\d{4})(\d{2})(\d{2})$/.exec(entry.upload_date || '')
-  return date ? Date.UTC(Number(date[1]), Number(date[2]) - 1, Number(date[3])) / 1000 : undefined
+  return date ? new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3])).getTime() / 1000 : undefined
 }
 
 export function mediaResult(raw: RawInfo, url: string, method: MediaResult['method'], start = 1): MediaResult {
   const entries = flattenEntries(raw)
   const items: MediaItem[] = entries.map((entry, index) => ({
-    id: String(start + index), title: entry.title || i18n.t('errors:media.item', { index: start + index }), duration: entry.duration,
+    id: String(start + index), mediaId: entry.id, url: raw.entries ? entry.webpage_url || entry.original_url || (entry._type === 'url' ? entry.url : undefined) : undefined, title: entry.title || i18n.t('errors:media.item', { index: start + index }), duration: entry.duration,
     views: entry.view_count, comments: entry.comment_count,
-    artist: entry.artist || raw.artist, channel: entry.channel || raw.channel,
-    author: entry.uploader || entry.channel || raw.uploader || raw.channel, publishedAt: publishedAt(entry) ?? publishedAt(raw),
+    artist: entry.artist || raw.artist, channel: entry.channel || (!raw.entries ? raw.channel : undefined),
+    author: entry.uploader || entry.channel || (!raw.entries ? raw.uploader || raw.channel : undefined), publishedAt: publishedAt(entry) ?? (!raw.entries ? publishedAt(raw) : undefined),
+    authorId: entry.uploader_id || entry.channel_id || (!raw.entries ? raw.uploader_id || raw.channel_id : undefined),
     // Channel and playlist entries carry a thumbnails list instead of a single thumbnail.
     thumbnail: bestThumbnail(entry) || bestThumbnail(raw),
     kind: entry.vcodec === 'none' ? 'audio' : 'video',
     formats: tiersOf(entry.formats || [], platformOf(url), entry.duration),
     audioFormats: audioTiersOf(entry.formats || [], entry.duration),
   }))
-  if (!items.length) throw new Error(i18n.t('errors:media.nothingFound'))
+  if (!items.length && start === 1) throw new Error(i18n.t('errors:media.nothingFound'))
   // A list that filled the limit exactly is one the engine stopped at rather than reached the end of:
   // 'playlistend' cuts it off there, and a YouTube Mix has no end to reach at all. Saying so is the
   // difference between a listing that is short and one the user is being shown only the front of.
   // The full length is reported where the platform gave one, and left off where it did not.
-  const paginated = Boolean(raw.entries && (raw.playlist_count !== undefined || entries.length >= ENTRY_LIMIT))
-  const group = paginated ? { id: 'playlist', title: raw.title || items[0].title, itemIds: items.map(item => item.id), pagination: { index: Math.floor((start - 1) / ENTRY_LIMIT) + 1, size: ENTRY_LIMIT, total: raw.playlist_count, hasMore: raw.playlist_count === undefined ? items.length === ENTRY_LIMIT : start - 1 + items.length < raw.playlist_count } } : undefined
-  return { id: randomUUID(), url, title: raw.title || items[0].title, platform: platformOf(url), method, listing: paginated ? 'collection' : undefined, groups: group ? [group] : undefined, items }
+  const paginated = Boolean(raw.entries)
+  const title = raw.title || items[0]?.title || i18n.t('errors:parse.group')
+  const group = paginated ? { id: 'playlist', title, directory: title, itemIds: items.map(item => item.id), pagination: { index: Math.floor((start - 1) / ENTRY_LIMIT) + 1, size: ENTRY_LIMIT, total: raw.playlist_count, hasMore: raw.playlist_count === undefined ? items.length === ENTRY_LIMIT : items.length > 0 && start - 1 + items.length < raw.playlist_count } } : undefined
+  return { id: randomUUID(), url, title, platform: platformOf(url), method, listing: paginated ? 'collection' : undefined, groups: group ? [group] : undefined, items }
 }
 
 // Reading another browser's cookie database fails for reasons that say nothing about the media:
