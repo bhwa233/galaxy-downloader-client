@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { i18n } from './i18n'
 import { modelId, speakerCount, captionLanguages, captionPatch, type ProcessingState, type ProcessingDocument } from './processing'
+import { subscriptionType, type SubscriptionCandidate, type SubscriptionState } from './subscriptions'
 
 export const settingsSchema = z.object({
   kernelAutoUpdate: z.boolean().default(true),
@@ -23,6 +24,9 @@ export const settingsSchema = z.object({
   concurrency: z.number().int().min(1).max(4).default(2),
   resumeOnStart: z.boolean().default(false),
   notifications: z.boolean().default(true),
+  subscriptionAutomatic: z.boolean().default(true),
+  subscriptionIntervalHours: z.number().int().min(1).max(720).default(24),
+  subscriptionNotifications: z.boolean().default(true),
   minimizeToTray: z.boolean().default(false),
   speedLimit: z.number().int().min(0).max(1048576).default(0),
   taskSpeedLimit: z.number().int().min(0).max(1048576).default(0),
@@ -182,6 +186,8 @@ export type HistoryEntry = {
   thumbnail?: string; parsedAt: string
 }
 export type ClientState = {
+  nativeNotifications?: { supported: boolean; error?: string; lastShownAt?: number };
+  subscriptions?: SubscriptionState;
   kernel?: import('./processing').KernelState;
   processing?: ProcessingState;
   settings: Settings; profiles: BrowserProfile[]; jobs: Job[]; history: HistoryEntry[];
@@ -216,6 +222,15 @@ export const downloadInput = z.object({ resultId: z.string().uuid(), itemIds: z.
 // audio only. Both add to what is on disk and never touch the job they were asked on.
 export const jobActionInput = z.object({ id: z.string().uuid(), action: z.enum(['pause', 'resume', 'retry', 'cancel', 'open', 'reveal', 'copy-link', 'open-page', 'copy-path', 'thumbnail', 'audio', 'login']) })
 export const commandSchemas = {
+  'notifications:test': z.null(),
+  'subscriptions:resolve': parseInput,
+  'subscriptions:add': z.object({ token: z.string().uuid(), types: z.array(subscriptionType).min(1).max(3), notify: z.boolean().default(true) }),
+  'subscriptions:update': z.object({ id: z.string().uuid(), enabled: z.boolean().optional(), notify: z.boolean().optional() }),
+  'subscriptions:remove': z.object({ id: z.string().uuid() }),
+  'subscriptions:check': z.object({ id: z.string().uuid().optional() }),
+  'subscriptions:read': z.object({ ids: z.array(z.string().uuid()).max(10000), read: z.boolean().default(true) }),
+  'subscriptions:open': z.object({ id: z.string().uuid(), action: z.enum(['work', 'author', 'login']) }),
+  'subscriptions:parse': z.object({ id: z.string().uuid() }),
   'processing:import': z.null(),
   'processing:from-job': z.object({ id: z.string().uuid() }),
   'processing:get': z.object({ id: z.string().uuid() }),
@@ -281,7 +296,7 @@ export type CommandInput<C extends Command> = z.input<(typeof commandSchemas)[C]
 export type JobFile = { path: string; exists: boolean; size?: number }
 // 'result', 'jobIds' and 'version' answer the command line; a refusal says which wall it hit, or that a
 // verification is wanted, so the command line can tell a sign-in apart from a failure.
-export type Reply = { ok: true; state: ClientState; document?: ProcessingDocument; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
+export type Reply = { ok: true; state: ClientState; subscriptionCandidate?: SubscriptionCandidate; document?: ProcessingDocument; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
   | { ok: false; message: string; wall?: AccessWall; verify?: boolean; loginUrl?: string }
 export interface DesktopApi {
   command<C extends Command>(command: C, input: CommandInput<C>): Promise<Reply>

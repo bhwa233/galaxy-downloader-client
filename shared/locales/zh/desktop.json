@@ -1,5 +1,11 @@
 {
   "notificationCompleted": "下载完成",
+  "notifications": {
+    "title": "系统通知", "ready": "原生通知已就绪", "unavailable": "无法连接系统通知服务，请检查系统通知设置后重试。",
+    "test": "发送测试通知", "testing": "正在发送…", "sent": "系统已接收测试通知。请查看系统通知中心；勿扰模式可能隐藏弹窗。",
+    "testTitle": "Galaxy Downloader · 通知测试", "testBody": "原生通知已接通。作者发布新作品时会通过系统通知提醒你，点击通知可返回客户端。",
+    "failed": "系统未能显示通知，请检查通知权限。", "timeout": "系统未确认通知显示，请检查通知权限后重试。", "closed": "通知已关闭。"
+  },
   "coverFilename": "封面",
   "tray": {
     "open": "打开 Galaxy",

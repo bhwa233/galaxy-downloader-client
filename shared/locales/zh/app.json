@@ -2,6 +2,7 @@
   "starting": "正在启动本地客户端…",
   "appSubtitle": "媒体下载管理器",
   "nav": {
+    "subscriptions": "订阅",
     "new": "新建任务",
     "all": "全部任务",
     "running": "进行中",

@@ -32,7 +32,7 @@ type Post = {
   aweme_id?: string; desc?: string; create_time?: number; media_type?: number
   video?: { cover?: { url_list?: string[] }; duration?: number }
   images?: Image[] | null
-  author?: { nickname?: string; unique_id?: string; short_id?: string; uid?: string }
+  author?: { nickname?: string; unique_id?: string; short_id?: string; uid?: string; avatar_thumb?: Image; avatar_medium?: Image; avatar_larger?: Image }
   mix_info?: { mix_id?: string; mix_name?: string }
   // 'play_count' is always zero on the web listing, so it is never read: a card saying 0 plays for a
   // post with four hundred thousand likes would be worse than a card saying nothing.
@@ -174,10 +174,13 @@ export const douyin: ProfileAdapter = {
       cursor = body.max_cursor
     }
     const entries = (body.aweme_list || []).map(entryOf).filter((entry): entry is ListingEntry => Boolean(entry))
-    const author = (body.aweme_list || []).find(post => post.author?.nickname)?.author?.nickname
+    const account = (body.aweme_list || []).find(post => post.author?.nickname)?.author
+    const author = account?.nickname
+    const avatar = (account?.avatar_medium?.url_list?.[0] || account?.avatar_larger?.url_list?.[0] || account?.avatar_thumb?.url_list?.[0] || '').replace(/^http:\/\//, 'https://').replace(/^\/\//, 'https://')
     // The reply holds a few more than were asked for, so the page reports what it actually carried.
     const named = ({ post: 'errors:douyin.posts', like: 'errors:douyin.likes', recommend: 'errors:douyin.recommended' } as const)[tab]
-    return onePage('posts', author ? i18n.t(named, { author }) : undefined, entries, { index: page, size: entries.length, hasMore: Boolean(body.has_more && body.max_cursor) }, 'uploads')
+    return { ...onePage('posts', author ? i18n.t(named, { author }) : undefined, entries, { index: page, size: entries.length, hasMore: Boolean(body.has_more && body.max_cursor) }, 'uploads'),
+      owner: author ? { id: sec, name: author, avatar: avatar.startsWith('https://') ? avatar : undefined } : undefined }
   },
 }
 

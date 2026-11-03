@@ -240,6 +240,13 @@ export class Parser {
       const groups: MediaGroup[] = []
       const items: MediaItem[] = []
       const sources = new Map<string, DownloadSource>()
+      // Owner identity is listing metadata, shared with subscriptions. Add it when normalizing
+      // media rather than changing the raw adapter entry contract. Heterogeneous lists keep each
+      // entry's own account; never borrow the owner of a collection or a liked-posts list.
+      const path = new URL(url).pathname
+      const ownerId = listing.kind !== 'profile' ? undefined : adapter?.id === 'bilibili'
+        ? listing.owner?.id || /(?:^\/|\/space\/)(\d+)/.exec(path)?.[1]
+        : adapter?.id === 'youtube' ? /^\/(@[^/]+)/.exec(path)?.[1] || listing.owner?.id || /^\/channel\/([^/]+)/.exec(path)?.[1] : undefined
       for (const found of listing.groups) {
         // Entry ids are the platform's own post ids, so the same post keeps its id across pages.
         const entries = found.entries
@@ -248,7 +255,8 @@ export class Parser {
           // The post's own address is kept on the item: the window offers it as a link, and it is the
           // same public page the listing was read from.
           const { whole, ...shown } = entry
-          items.push({ ...shown, formats: [] })
+          const authorId = entry.authorId || (adapter?.id === 'weibo' ? /^https:\/\/weibo\.com\/(\d+)\//.exec(entry.url)?.[1] : ownerId)
+          items.push({ ...shown, ...(authorId ? { authorId } : {}), formats: [] })
           sources.set(entry.id, whole ? { kind: 'collection', url: entry.url } : { kind: 'engine', request: { operation: 'download', url: entry.url, cookies: listing.cookies, headers: { Referer: url, 'User-Agent': listing.userAgent } } })
         }
       }

@@ -1,5 +1,25 @@
 # 测试链接清单
 
+## 2026-11-03：主线整合作者订阅与列表、命名改进
+
+将订阅提交 `542fb06`（0.7.0）与本轮列表／命名／剪辑字幕提交 `2c68fc2` 整合。冲突保留了作者头像与账号标识、原生通知状态、订阅页、私有下载工作区和整合集查询状态；订阅自动检查将正在运行的整列表查询视为繁忙，并在前台解析／查询开始时中断后台读取。
+
+作者账号归一统一放在 Parser 的媒体转换处：B 站／YouTube 使用已有的列表 owner 元信息和账号 URL，微博使用条目自己的作者永久链接；已有的每条作品作者标识优先。原始适配器条目的返回约定保持兼容，合集／喜欢列表不借用列表创建者作为作品作者。前轮三个精确对象断言失败随此兼容调整解决，没有修改测试规格。
+
+整合后的 `pnpm check` 通过（类型检查、Lint、66 项既有单测、renderer/main/preload/CLI/processing worker 构建）；现有 Electron E2E 通过，输出目录 `test-results/e2e-main-final`。
+
+真实 Windows Electron 整合验证：
+
+- 侧栏“订阅”可进入更新／管理页。识别抖音作者“天爱Talk”，读取 20 条真实作品及头像并建立已读基线；公开状态不包含内部 seen／分页断点。
+- “设置 → 订阅”保存两小时间隔。暂停该来源后重启客户端，来源 ID、暂停状态、间隔及下载任务名称均保留。
+- 同一构建解析真实 B 站视频 `BV13SxN6vEyx`，完整合集仍超过 500 条；整合集倒序完成，日期快捷项保持草稿、取消不提交。
+- 下载该真实视频成功，新文件名为 `495045064_2026-10-27_小松绿打喷嚏 (2)`；下载模式即使请求附带字幕仍保存 `includeSubtitles=false`。输出文件位于公开目录，不暴露私有暂存路径。renderer pageerror 为 0。
+
+报告：`test-results/main-integration/results.json`；截图：`subscriptions.png`、`date-draft-with-subscriptions.png`（同目录）。一次性探针未保留为测试规格。没有在本轮等待真实新作品发布或物理点击系统通知。
+
+原主目录基于 0.4.5 的未提交修改已保存为可恢复的本地分支 `codex/backup-main-local-20261103-a5cb5b98`，以免把旧实现覆盖到新主线。该快照与原主目录的工作文件已逐字比较一致。
+
+
 ## 2026-11-03：平台字幕限剪辑模式与订阅入口核对
 
 “附带平台字幕”结果页入口仅在剪辑模式显示，设置中的平台字幕开关、默认语言和平台自动字幕选项移至“剪辑与输出”。新任务入队由主进程再次检查模式：下载模式即使旧设置和请求都带 `includeSubtitles=true`，仍保存 `includeSubtitles=false`、`subtitles=off`；剪辑模式可保存 `includeSubtitles=true`、`subtitles=file`。已入队任务的历史参数不改写。
@@ -824,3 +844,99 @@ Windows 旧二进制在本机版本探测中原本就能成功，未把它伪装
 证据在忽略目录 `test-results/issues-20261026/`：browser-result.json、client-result.json、windows-result.json，以及 Windows 临时目录内的原生引擎与媒体。一次性驱动、基线源文件和隔离用户目录在验证后删除。
 
 本轮界面截图：`test-results/driver/filename-settings-final.png`、`publication-date-dialog.png`、`collection-more-filters.png`、`collection-complete.png`。页面错误收集为 0。一次性命令探针未写入测试规格，临时客户端已关闭。清理复制登录状态所在的临时目录时，自动审批策略两次返回 `blocked by policy`（包含已核实的精确路径删除），未执行删除；副本仍位于本机 `C:\Users\40417\AppData\Local\Temp\galaxy-filenames-collections-20261103`，未纳入 Git。原用户目录未改动。
+
+## 2026-11-01：作者订阅、视频主筛选与共用任务列表
+
+原生 Windows x64 / Electron 44.4.5，使用隔离用户目录与客户端自己的浏览器分区。未读取或改写用户真实订阅、任务和登录数据；未新增／修改持久化测试规格。
+
+| 真实站点 | 输入 | 实际结果 |
+| --- | --- | --- |
+| B 站 | `https://space.bilibili.com/242020511` | 前轮读取「我是影Sir」40 条，全部作为已读基线；后续新隔离会话遇到验证 HTML 或 JSON `-352`，添加弹窗显示「打开验证页面」，没有把拒绝当成零更新。确认风险码归类及验证入口后停止重复请求。 |
+| 抖音 | `https://www.douyin.com/user/MS4wLjABAAAALBQu0odP0MyyGWgDpnvBTsSLhorbHcYxES8uubAVDEitEw3liy-Ytsk6tr_JKgN9` | 读取「天爱Talk」20 条，支持选择视频／图文，初次添加不提醒历史作品。 |
+| YouTube | `https://www.youtube.com/@Fatcat996` | 读取「胖貓堂主」32 条（30 视频、2 Shorts），归一频道 ID `UCHrgWMrjOVCo5VSYcVV8eMg`，再次检查成功。 |
+
+界面与持久化验证：
+
+- 「更新」「管理订阅」实际复用 `TaskListRow`；选择「视频主」后管理列表仅显示该作者。将两条真实基线记录在隔离目录标记为未读，未读页仅显示这两条；这是 UI 状态重放，不是观察到作者新发两条作品。实际窗口无水平溢出，renderer pageerror=0。
+- 「设置 → 订阅」默认间隔为 24 小时，修改为 2 小时并点击保存，主进程确认；重启后间隔与两条未读状态保留。
+- 重复添加按规范账号／已知别名在网络请求前拦截；renderer 订阅状态不含私有 `seen`、分页断点或 cookies。
+- 临时服务探针 4 项通过：安静基线、新作品仅提醒一次及已读／重启恢复；超过 5 页后断点续查；登录失败保留上次成功、读取中删除不恢复记录；非法／伪造主机／带用户名密码链接在请求前拒绝。使用临时注入的页面读取端口验证状态机，不把它当作在线平台验证。
+- 通知重放曾暴露第一页末尾少一个已知条目时继续扫描旧作品的边界问题。修复后临时脚本验证：尾部两个已知条目即可确认重合，边界后无发布时间的历史后缀不提醒；单个置顶旧作品不能提前结束扫描；暂停读取后的迟到结果不产生记录或通知。三项通过，见 `test-results/subscriptions-boundary-report.json`。
+
+系统通知验证单独记录：当前 Windows 开发实例实测 `Notification.isSupported() === false`，原生通知等待探针因此超时；即使设置已安装应用的 AppUserModelID，当前开发进程仍返回 false。已按 Electron 44 文档补上 Windows 应用标识，安装版与 NSIS 的 `com.bhwa233.galaxy-downloader` 一致。该接入不等同于已在安装版看到系统弹窗。
+
+通知路由另用真实 YouTube 作品做受控重放：从隔离存储中移除一条已知作品及其 seen ID，让下一次真实检查重新发现；仅在系统通知可用性／show 边界替换不可用的 OS 通道，检查应用创建的通知内容、点击回调和作者筛选。详细结果保留在 `test-results/subscriptions-notification-report.json`；该验证不能证明 Windows 弹窗实际显示，也没有观察一次新的在线发布。
+
+修复后重放通过：1 条新增对应 1 次通知调用，标题包含作者和数量，点击打开该视频主的未读更新；再做一次真实站点检查，不增加记录或通知调用。暂停／恢复状态及删除订阅后清空该作者更新记录也通过，renderer pageerror=0。
+
+门禁：最终分页边界／通知保护／Windows 标识改动后 `pnpm check` 通过（typecheck、lint、66 项既有单测、完整构建）。现有 `pnpm test:e2e` 原生 Windows 通过，1 项约 1.2 分钟，覆盖本地真实媒体的解析、下载、字节校验、历史恢复、设置与主题、renderer 隔离。中英文文案 key 结构（按各语言复数规则归一）与 `git -c core.whitespace=cr-at-eol diff --check` 通过。
+
+本轮未等待完整的 24 小时周期、未实机休眠／唤醒、未验证 NSIS 安装后的通知显示、未在 macOS／Linux 回归本功能。在线封面受网络影响，截图中存在仍在加载的图片，不声称所有封面均已载入。
+
+证据：`test-results/subscriptions-live-report.json` 保留真实站点／筛选／设置结果及原生通知等待失败；`test-results/subscriptions-notification-report.json` 保留受控通知重放结果；截图在 `test-results/driver/subscriptions-*.png`。一次性探针及隔离目录在验证后清理，公开报告与截图保留在忽略目录。
+
+### 2026-11-01 补充：原生通知通道与真实测试入口
+
+实现增加 Windows 稳定 AppUserModelID／ToastActivatorCLSID，开发版与安装版身份分开；订阅和下载共用 `NativeNotifications`。设置页可发送固定内容的真实系统通知，等待原生 show／failed 结果；主进程保留通知实例及点击事件，失败写入日志与公开状态，不再静默忽略。窗口恢复入口支持重新创建已关闭窗口。
+
+本轮没有替换 `Notification.isSupported`、`show` 或 `click`。真实客户端中「设置 → 订阅 → 发送测试通知」调用实际 API，当前执行环境仍报告 supported=false；界面显示不可用原因，不出现成功提示，lastShownAt 保持为空，renderer pageerror=0。报告 `test-results/native-notifications-ui-report.json`，截图 `test-results/driver/native-notification-settings.png`。
+
+进一步诊断：Windows 11 专业版 build 26300，WpnService／WpnUserService 运行；最小 Electron 44.4.5 程序也返回不支持。默认临时目录曾出现 EPERM，换为可写的工作区临时目录后 API 仍为 false，不能将原因仅归为临时目录。直接 WinRT 查询能创建 ToastNotifier，但不能证明 Electron 的通知 presenter 初始化成功。尝试通过桌面工具启动隔离程序未取得可操作窗口；本轮未确认真实弹窗显示或物理点击。没有修改系统通知开关，也没有将模拟 API 结果记为原生通知成功。
+
+用户桌面实测补充：用户按常用方式启动当前开发版，在「设置 → 订阅」点击「发送测试通知」，于 2026-11-01 明确反馈「能看到系统通知」。因此 Windows 原生弹窗显示已确认通过；前述自动化实例不可用的结果保留为环境差异，不能用来推断日常桌面实例不支持通知。该反馈没有额外确认物理点击回调、NSIS 安装或 macOS／Linux；应用内点击定位逻辑此前已有受控重放记录。
+
+类型检查、Lint、66 项既有单测和完整构建通过；现有 Electron E2E 再次通过（1 项，14.9 秒），覆盖真实本地媒体下载、持久化和 renderer 隔离，输出使用 `test-results/native-notifications-e2e/`，保留先前探针证据。没有新增／修改持久化测试规格。临时程序、复制的 Electron 运行时及隔离用户目录已清理；保留公开诊断报告和用户桌面实测结论。
+
+### 2026-11-01 补充：单实例启动
+
+沿用 Electron `requestSingleInstanceLock`，将加锁提前到数据迁移之前。仅主实例初始化服务；重复启动唤醒已有窗口，启动期间的唤醒请求延迟处理，主窗口创建增加防重复保护。该修改的 typecheck、lint 和 renderer/main/preload 构建通过；未新增／修改测试规格。按用户要求，功能验证交由用户手动完成，本轮不自动执行重复启动、最小化和托盘操作。
+
+启动尝试：当前执行环境启动日常数据目录时，Chromium 报 `Lock file can not be created: 拒绝访问。 (0x5)`，随后退出；桌面启动尝试也未确认目标窗口出现。数据目录 ACL 保持原状。需从用户正常桌面终端在项目根目录运行 `pnpm dev` 后手动确认。启动诊断日志保留在 `test-results/manual-singleton.*.log`。
+
+### 2026-11-01 补充：订阅作者头像修复
+
+原生 Windows / Electron 44.4.5，使用原有 `C:\Users\bhwa233\AppData\Roaming\galaxy-downloader` 数据目录及客户端自己的浏览器分区。此时本机 Electron 完整性标签已修复，真实主窗口和引擎正常启动。未新增／修改测试规格，复用现有客户端驱动验证真实站点。
+
+- B 站 `https://space.bilibili.com/390898500`（一目十影）：原有订阅没有头像字段。点击该作者的「检查更新」后，公开账号卡片返回的头像保存到订阅，管理列表图片 `complete=true`，`naturalWidth=1200`、`naturalHeight=1200`。没有删除或重新添加该订阅。
+- B 站 `https://space.bilibili.com/242020511`（我是影Sir）：添加弹窗通过真实识别显示昵称、最近作品与头像；图片 `complete=true`，原始尺寸 300×300。仅识别，没有添加新的用户订阅。
+- 抖音 `https://www.douyin.com/user/MS4wLjABAAAALBQu0odP0MyyGWgDpnvBTsSLhorbHcYxES8uubAVDEitEw3liy-Ytsk6tr_JKgN9`（天爱Talk）：添加弹窗通过真实识别显示昵称、视频／图文选项、最近作品与头像；图片从 `p3-pc.douyinpic.com` 实际载入，`complete=true`，原始尺寸 100×100。仅识别，未添加订阅。两平台的验证均未捕获 renderer pageerror。
+
+`pnpm check` 通过：类型检查、Lint、66 项既有单测和完整构建。现有 Electron E2E 首次在生成本地媒体夹具时因 FFmpeg 写系统临时目录报 `Permission denied`，尚未执行应用验证；将本次测试进程的 TEMP／TMP 指向工作区内临时目录后，原有 E2E 通过（1 项，13.7 秒），未修改测试用例或系统临时目录设置。输出在 `test-results/avatar-e2e/artifacts/`。上述验证不等同于安装包回归。
+
+截图：`test-results/driver/subscription-avatar-manage.png`、`test-results/driver/subscription-avatar-add-bilibili.png`、`test-results/driver/subscription-avatar-add-douyin.png`。
+
+### 2026-11-01 补充：头像比例与应用内解析导航
+
+原生 Windows / Electron 44.4.5，真实客户端使用原用户目录，复用已有「一目十影」订阅。一次性 Playwright 驱动读取实际窗口和真实站点，没有新增／修改测试规格。密度验证通过真实设置命令切换，结束后恢复原设置。
+
+- 作者列表头像的实际布局尺寸：普通密度 56×56，紧凑密度 48×48。测量作者行的图片容器，确认宽高相等。
+- 作者详情点击「解析作者主页」：详情关闭，应用内「新建任务」页自动填入 `https://space.bilibili.com/390898500`，真实解析返回 40 条投稿。
+- 最近作品标题、更新列表作品标题、封面和「解析」按钮均进入应用内解析页，地址为 `https://www.bilibili.com/video/BV1STAhzfE8y`。真实解析返回单作品／合集结果，本次首页共 90 个条目；没有把解析成功等同于下载完成。
+- 作者详情与最近作品的独立外链按钮，以及更新列表的独立外链按钮，分别向主进程 `shell.openExternal` 传入正确的作者／作品地址，点击后留在订阅界面。本次在真实 Electron 主进程拦截该 OS 调用并记录地址，避免自动拉起外部浏览器；这是外链调用验证，不是外部浏览器窗口的实测。所有内部解析入口均未增加外链调用。
+- 导航与解析前后下载任务 ID 保持一致，未自动入队；renderer pageerror=0。源订阅保留，未新增或移除用户订阅。
+
+门禁：`pnpm check` 通过（类型检查、Lint、66 项既有单测、完整构建）。既有 Electron E2E 通过（1 项，12.9 秒），本次测试进程沿用工作区内 TEMP／TMP，输出在 `test-results/subscription-navigation-e2e/artifacts/`。没有修改系统临时目录或测试用例。
+
+证据：`test-results/subscription-navigation-report.json`；截图 `test-results/driver/subscription-navigation-avatar-comfortable.png`、`subscription-navigation-avatar-compact.png`、`subscription-navigation-details.png`、`subscription-navigation-profile-result.png`、`subscription-navigation-work-result.png`、`subscription-navigation-updates.png`。一次性驱动在验证完成后删除，公开报告和截图保留在忽略目录。
+
+### 2026-11-01 补充：订阅作者的最近作品摘要
+
+管理订阅的作者摘要改为「平台 · 最近作品：作品标题」，复用既有中英文「最近作品」文案。摘要按单行省略显示，悬停提供完整作品标题；暂无作品时保留既有占位文案。
+
+类型检查、Lint 与 Vite 界面／主进程／preload 构建通过，未新增／修改测试用例。通过既有客户端驱动打开原数据目录中的「一目十影」管理行，确认显示「哔哩哔哩 · 最近作品：…」，`title` 属性包含完整作品标题，计算样式为 `white-space: nowrap`、`text-overflow: ellipsis`，renderer pageerror=0。本次窗口足以显示完整摘要，未出现实际截断。截图：`test-results/driver/subscription-recent-work-label.png`。
+
+### 2026-11-01 补充：全局订阅轮询与顶部时间
+
+原生 Windows / Electron 44.4.5，复用原用户目录和真实「一目十影」订阅；界面通过既有客户端驱动直接截图，没有使用 computer-use。旧订阅存储增加全局调度元数据后，原有 1 个作者、40 个作品均保留，缺失作品数与已读标记变化数均为 0。
+
+点击顶部「检查更新」执行一轮真实 B 站读取，返回 40 条投稿，整轮汇总为成功 1 位、失败 0 位。顶部显示上次整轮完成时间、下次全局时间与汇总；作者行仅保留头像、作者、平台／最近作品、状态和操作。随后单独检查「一目十影」，再次成功；核对全局时间和整轮汇总完整对象保持不变，作者自身检查／成功时间正常更新。renderer pageerror=0。截图：`test-results/driver/subscription-global-schedule.png`。
+
+一次性调度探针使用真实 Subscriptions 服务、受控页面读取端口和模拟时钟，7 组场景通过：旧数据迁移与最近到期时间；全局串行检查和单作者刷新隔离；部分失败与下一轮全部作者检查；自动关闭／手动检查和新增订阅安静基线；5 页后补查与重启续查，已完成作者不重复；前台打断后恢复且不计为失败；暂停／删除跳过成员，迟到响应不恢复已删除记录。探针不请求平台、不调用系统通知，不将模拟跨时结果当作等待 24 小时的实测。报告：`test-results/subscription-cycle-report.json`。一次性脚本、构建副本及隔离数据在验证后清理。
+
+门禁：`pnpm check` 通过（类型检查、Lint、66 项既有单测、完整构建）；现有 Electron E2E 通过（1 项，15.2 秒），本次测试进程使用工作区内 TEMP／TMP，输出 `test-results/subscription-cycle-e2e/artifacts/`。中英文订阅文案 key 一致，Git 空白检查通过；未新增／修改持久化测试规格。
+
+### 2026-11-01 补充：0.7.0 发布准备
+
+版本从 0.6.0 升至 0.7.0，新增 `docs/releases/0.7.0.md`，整理作者订阅、统一轮询、原生通知、应用内解析入口及单实例改进。按现有发布工作流核对：一级标题只用于 Release 标题，正文从「新增」开始，不含重复标题或「使用提示」，完整变更链接为 0.6.0 至 0.7.0。
+
+针对最终 0.7.0 代码重新执行 `pnpm check`，类型检查、Lint、66 项既有单测及完整构建通过；现有 Electron E2E 通过（1 项，14.1 秒）。测试进程使用工作区内 TEMP／TMP，输出 `test-results/release-0.7.0-e2e/artifacts/`；未新增／修改测试规格。临时文件、用户订阅数据与截图位于忽略目录，未加入提交。安装包与线上 Release 由现有 main 分支发布流程构建和发布。

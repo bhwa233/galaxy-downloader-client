@@ -2,6 +2,7 @@
   "title": "设置",
   "description": "设置保存在本机。模式与加工参数只影响新建任务。",
   "sections": {
+    "subscriptions": "订阅",
     "general": "常规",
     "download": "下载",
     "files": "文件与媒体",

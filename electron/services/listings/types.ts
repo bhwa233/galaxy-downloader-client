@@ -17,7 +17,8 @@ export type Pagination = { index: number; size: number; total?: number; hasMore:
 // the hover hint, so every platform's tabs read the same way without losing what they point at.
 export type ListingGroup = { id: string; title?: string; kind?: GroupKind; directory?: string; entries: ListingEntry[]; pagination: Pagination; position?: { index: number; total: number } }
 // 'post' is one work's files rather than a list of works - see ProfileAdapter.post.
-export type ListingPage = { title?: string; kind?: ListingKind | 'post'; groups: ListingGroup[] }
+export type ListingOwner = { id: string; name: string; avatar?: string }
+export type ListingPage = { title?: string; kind?: ListingKind | 'post'; groups: ListingGroup[]; owner?: ListingOwner }
 // Most adapters serve one group; this is the shape they all had before a second one was possible.
 export function onePage(id: string, title: string | undefined, entries: ListingEntry[], pagination: Pagination, kind?: GroupKind): ListingPage {
   return { title, groups: [{ id, title, kind, entries, pagination }] }

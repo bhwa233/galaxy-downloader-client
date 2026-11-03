@@ -2,6 +2,7 @@
   "starting": "Starting the local client…",
   "appSubtitle": "Media download manager",
   "nav": {
+    "subscriptions": "Subscriptions",
     "new": "New task",
     "all": "All tasks",
     "running": "In progress",

@@ -58,7 +58,6 @@ export function entryOf(status: Status): ListingEntry | undefined {
     duration: count(status.page_info?.media_info?.duration),
     likes: count(status.attitudes_count), comments: count(status.comments_count),
     author: status.user?.screen_name?.trim() || undefined, publishedAt: postedAt(status.created_at),
-    authorId: status.user?.id === undefined ? undefined : String(status.user.id),
   }
 }
 
