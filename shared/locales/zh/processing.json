@@ -86,7 +86,7 @@
   },
   "kernel": "yt-dlp 内核",
   "kernelAuto": "后台自动更新 yt-dlp",
-  "kernelHint": "每天检查官方稳定版；校验后用于新任务，失败保留当前版本，可回退。",
+  "kernelHint": "每周检查官方稳定版，校验后用于新任务；失败保留当前版本，支持手动检查与回退。",
   "kernelCheck": "立即检查内核更新",
   "kernelRollback": "回退内核",
   "kernelStatuses": {

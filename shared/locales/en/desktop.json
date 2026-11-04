@@ -19,7 +19,6 @@
     "selectionMissing": "The selected content doesn't exist",
     "needsPurchase": "The selection includes items that must be purchased separately and can't be downloaded",
     "qualityExpired": "The quality option is no longer valid",
-    "profileChanged": "Browser profiles have changed; refresh",
     "noPageLink": "This task has no web page to open",
     "noCompletedFile": "Completed file not found",
     "openFailed": "Can't open the file: {{reason}}",

@@ -8,7 +8,7 @@
 - Live probe: `pnpm test:live:profiles` drives the real client through Playwright `_electron`, parses the four creator pages in `test/fixtures/profiles.ts` and asserts each listing returns loadable covers. Not part of `pnpm test` or `pnpm test:e2e` — it needs `pnpm engine:dev` and the accounts already signed in through 设置 → 浏览器 → 打开登录窗口, so it runs against the real user data directory.
 - UI primitives are copied from Galaxy into `src/components/ui`; runtime dependencies are in package.json.
 - All parser, browser, tool and download logic stays in the main process or local Python engine. Never call the remote Worker/DLP services.
-- Authentication is two hops: yt-dlp first (best-effort `--cookies-from-browser`, silently dropped when the cookie database is unreadable), then the client's own browser session in the `persist:media` partition. No external Chrome CDP and no cookie file import.
+- Authentication uses only the client's own browser session in the `persist:media` partition. Do not discover system-browser profiles or read/decrypt their cookie databases. No external Chrome CDP and no cookie file import.
 - The embedded browser loads third-party pages: keep its partition off the main window, `nodeIntegration` off, window-open denied, and never hand its session to the renderer.
 - Never return cookies, authorization headers or arbitrary file/IPC capabilities to renderer code.
 - Scaffold provenance: electron-vite/electron-vite-react revision 18d31d5dcfe6637aa1dd6699babcab1849c83f98.

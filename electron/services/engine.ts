@@ -10,10 +10,9 @@ const log = logger('engine')
 
 export type Cookie = { name: string; value: string; domain: string; path: string; secure: boolean; expires: number }
 export type EngineEvent = { kind: string; code?: string; message?: string; status?: string; downloaded?: number; total?: number; speed?: number; eta?: number; progress?: number; result?: unknown }
-export type EngineProfile = { browser: string; path: string }
 export type EngineRequest = {
   kernelWheel?: string;
-  operation: 'kernel-check' | 'version' | 'extract' | 'download' | 'process' | 'unpack' | 'inspect' | 'audio' | 'embedded-captions' | 'render' | 'captions'; profile?: EngineProfile; cookies?: Cookie[];
+  operation: 'kernel-check' | 'version' | 'extract' | 'download' | 'process' | 'unpack' | 'inspect' | 'audio' | 'embedded-captions' | 'render' | 'captions'; cookies?: Cookie[];
   archiveFiles?: string[]; captionFile?: string; captionFiles?: { file: string; language: string }[]; renderMode?: 'soft' | 'burn' | 'video';
   deferProcessing?: boolean; includeSubtitles?: boolean; captionLanguages?: string[]; embedMetadata?: boolean; embedChapters?: boolean;
   workMode?: 'download' | 'edit'; outputFormat?: 'original' | 'mp4' | 'mkv'; outputResolution?: string;

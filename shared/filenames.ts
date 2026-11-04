@@ -2,12 +2,12 @@ import type { MediaStats, Settings } from './contracts'
 
 // Reuses the queue's filename policy in the settings preview as well as on disk. Native Unicode
 // iteration and TextEncoder suffice here; installed UI/formatting libraries have no filesystem policy.
-export function filenameSegment(value: string): string {
+export function filenameSegment(value: string, maxBytes = 150): string {
   let name = ''
   const encoder = new TextEncoder()
   // eslint-disable-next-line no-control-regex -- Windows forbids control characters in filenames.
   for (const char of value.replace(/[<>:"/\\|?*\x00-\x1f%]/g, '_').trim()) {
-    if (encoder.encode(name + char).length > 150) break
+    if (encoder.encode(name + char).length > maxBytes) break
     name += char
   }
   name = name.replace(/[. ]+$/, '')
@@ -30,5 +30,13 @@ export function mediaFilename(settings: Pick<Settings, 'filenameTemplate' | 'cus
     return filenameSegment(settings.customFilenameTemplate.replace(/\{(title|id|authorId|author|channel|artist|date)\}/g, (_, key: string) => fields[key]))
   }
   if (settings.filenameTemplate === 'title') return filenameSegment(item.title)
+  if (settings.filenameTemplate === 'title-author' || settings.filenameTemplate === 'title-author-date') {
+    // Reserve suffix space so a long title cannot consume the author name or publication date.
+    const name = (item.author || item.channel || '').trim()
+    const suffix = [name ? filenameSegment(name, 60) : '', ...(settings.filenameTemplate === 'title-author-date' ? [date] : [])].filter(Boolean).join('_')
+    const title = filenameSegment(item.title, 150 - (suffix ? new TextEncoder().encode(suffix).length + 1 : 0))
+    return filenameSegment([title, suffix].filter(Boolean).join('_'))
+  }
+  // Saved jobs keep the earlier account-first presets when resumed or retried.
   return filenameSegment([author, ...(settings.filenameTemplate === 'author-date-title' ? [date] : []), item.title].filter(Boolean).join('_'))
 }

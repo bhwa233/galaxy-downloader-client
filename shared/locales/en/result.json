@@ -148,9 +148,7 @@
     "sortLabel": "List order",
     "sorts": {
       "original": "Collection order",
-      "reverse": "Reverse collection order",
-      "newest": "Newest published",
-      "oldest": "Oldest published"
+      "reverse": "Reverse collection order"
     },
     "unlimited": "Any",
     "more": "More filters",

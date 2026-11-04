@@ -10,7 +10,7 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupTextarea } from '@/components/ui/input-group'
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item'
 import { Separator } from '@/components/ui/separator'
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarSeparator, SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { Toaster } from '@/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -38,7 +38,6 @@ const navigation = [
   { id: 'all', icon: List },
   { id: 'running', icon: ArrowDown },
   { id: 'completed', icon: CheckCheck },
-  { id: 'subscriptions', icon: Bell },
 ] as const
 export default function App() {
   const { t } = useTranslation(['app', 'common'], { i18n })
@@ -48,7 +47,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [url, setUrl] = useState('')
   const [page, setPage] = useState<'all' | 'running' | 'completed' | 'settings' | 'new' | 'processing' | 'subscriptions'>('all')
-  const [settingsSection, setSettingsSection] = useState<'general' | 'subscriptions'>('general')
+  const [settingsSection, setSettingsSection] = useState<'general' | 'subscriptions' | 'tools'>('general')
   const [processingId, setProcessingId] = useState<string>()
   const [selectedJob, setSelectedJob] = useState<string>()
   const [search, setSearch] = useState('')
@@ -101,13 +100,18 @@ export default function App() {
         <SidebarGroup><SidebarGroupContent><SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton tooltip={t('nav.new')} isActive={page === 'new'} onClick={() => setPage('new')}><Plus /><span>{t('nav.new')}</span></SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu></SidebarGroupContent></SidebarGroup>
-        <SidebarGroup>
+        <SidebarGroup role="group" aria-label={t('workspace')}>
           <SidebarGroupLabel>{t('workspace')}</SidebarGroupLabel>
           <SidebarGroupContent><SidebarMenu>{navigation.map(({ id, icon: Icon }) => <SidebarMenuItem key={id}>
             <SidebarMenuButton tooltip={t(`nav.${id}`)} isActive={page === id} onClick={() => setPage(id)}><Icon /><span>{t(`nav.${id}`)}</span></SidebarMenuButton>
-            <SidebarMenuBadge>{id === 'subscriptions' ? state.subscriptions?.items.filter(item => !item.read).length || 0 : id === 'all' ? state.jobs.length : state.jobs.filter(job => job.status === id).length}</SidebarMenuBadge>
+            <SidebarMenuBadge>{id === 'all' ? state.jobs.length : state.jobs.filter(job => job.status === id).length}</SidebarMenuBadge>
           </SidebarMenuItem>)}</SidebarMenu></SidebarGroupContent>
         </SidebarGroup>
+        <SidebarSeparator />
+        <SidebarGroup role="group" aria-label={t('nav.subscriptions')}><SidebarGroupContent><SidebarMenu><SidebarMenuItem>
+          <SidebarMenuButton tooltip={t('nav.subscriptions')} isActive={page === 'subscriptions'} onClick={() => setPage('subscriptions')}><Bell /><span>{t('nav.subscriptions')}</span></SidebarMenuButton>
+          <SidebarMenuBadge>{state.subscriptions?.items.filter(item => !item.read).length || 0}</SidebarMenuBadge>
+        </SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>
         {state.settings.workMode === 'edit' && <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem><SidebarMenuButton tooltip={t('nav.processing')} isActive={page === 'processing'} onClick={() => setPage('processing')}><Captions /><span>{t('nav.processing')}</span></SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>}
       </SidebarContent>
       <SidebarFooter>
@@ -121,7 +125,7 @@ export default function App() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
-    <SidebarInset className="h-svh">
+    <SidebarInset className="h-svh min-w-0">
       <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
         <SidebarTrigger />
         <Separator orientation="vertical" className="mr-1 h-5" />
@@ -144,14 +148,11 @@ export default function App() {
           parse={item => { setUrl(item.url); setPage('new'); void send('subscriptions:parse', { id: item.id }) }} /></Suspense>
           : page === 'processing' && state.settings.workMode === 'edit' ? <Suspense fallback={<p role="status">{t('starting')}</p>}><VideoProcessing state={state} send={send} initialId={processingId} /></Suspense> : page === 'settings' ? <Suspense fallback={<p role="status">{t('openingSettings')}</p>}><Preferences key={settingsSection} initialSection={settingsSection} state={state} send={send} /></Suspense> : page === 'new' ? <div className="flex flex-col gap-4">
             {errorBanner}
-            {/* One link at a time, so the box is two lines and never grows: what gets pasted is often a
-                whole share message - 抖音 and 小红书 put the link inside a sentence - and the link is taken
-                out of it before parsing. Enter parses; there is no new line to type. Pasting and parsing
-                sit under it, half the width each; while a parse runs, the second offers to stop it rather
-                than a third button appearing. */}
+            {/* Share messages and long links expand the input to fit their contents.
+                Enter parses rather than inserting a new line. */}
             <form className="flex flex-col gap-2" onSubmit={event => { event.preventDefault(); if (url.trim()) void send('media:parse', { url }) }}>
               <InputGroup>
-                <InputGroupTextarea id="media-url" aria-label={t('mediaUrl')} rows={2} className="min-h-0 field-sizing-fixed" placeholder={t('mediaUrlPlaceholder')} value={url}
+                <InputGroupTextarea id="media-url" aria-label={t('mediaUrl')} rows={2} className="min-h-14 min-w-0" placeholder={t('mediaUrlPlaceholder')} value={url}
                   onChange={event => setUrl(event.target.value)}
                   onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} />
               </InputGroup>
@@ -169,7 +170,13 @@ export default function App() {
                 the one that gets no button. */}
             {state.parse.message && !state.parse.result && <Alert variant="destructive">
               <AlertTitle>{state.parse.verify ? t('common:verifyTitle') : (state.parse.wall && wallTitle(state.parse.wall)) || t('parseFailed')}</AlertTitle>
-              <AlertDescription>{state.parse.message}</AlertDescription>
+              <AlertDescription>
+                <div>{state.parse.message}</div>
+                {!state.parse.verify && !state.parse.wall && <div className="mt-2 flex flex-col items-start gap-2">
+                  <span>{t('parseKernelHint')}</span>
+                  <Button variant="outline" size="sm" onClick={() => { setSettingsSection('tools'); setPage('settings') }}>{t('kernelUpdateSettings')}</Button>
+                </div>}
+              </AlertDescription>
               {(state.parse.verify || fixableBySignIn(state.parse.wall)) && <AlertAction><Button variant="outline" size="sm" disabled={connecting} onClick={() => login(state.parse.loginUrl || '')}>{state.parse.verify ? t('common:openVerify') : t('common:openLogin')}</Button></AlertAction>}
             </Alert>}
             {/* Closing a result clears it, which is what the ✕ beside it means; it no longer leaves the page. */}

@@ -134,9 +134,7 @@
     "sortLabel": "列表排序",
     "sorts": {
       "original": "合集原顺序",
-      "reverse": "合集倒序",
-      "newest": "最新发布",
-      "oldest": "最早发布"
+      "reverse": "合集倒序"
     },
     "unlimited": "不限",
     "more": "更多筛选",

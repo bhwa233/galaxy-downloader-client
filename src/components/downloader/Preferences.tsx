@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderOpen, RefreshCw, Save } from 'lucide-react'
+import { FolderOpen, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSet, FieldLegend, FieldTitle } from '@/components/ui/field'
@@ -142,13 +142,6 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
             {toggle('embedChapters', processText('chapters'), processText('chapters'))}
           </FieldGroup></TabsContent>}
           <TabsContent value="browser"><FieldGroup>
-            <Item variant="muted">
-              <ItemContent>
-                <ItemTitle>{t('browser.systemTitle')}</ItemTitle>
-                <ItemDescription className="whitespace-normal">{t('browser.systemDescription', { browser: state.profiles.find(profile => profile.id === state.settings.browserProfileId)?.label || t('browser.noBrowser') })}</ItemDescription>
-              </ItemContent>
-            </Item>
-            <Button type="button" variant="outline" className="w-fit" onClick={() => void send('browser:refresh', null)}><RefreshCw />{t('browser.redetect')}</Button>
             <Item variant="muted">
               <ItemContent>
                 <ItemTitle>{state.browser.sites ? t('browser.sessions', { count: state.browser.sites }) : t('browser.noSessions')}</ItemTitle>

@@ -86,7 +86,7 @@
   },
   "kernel": "yt-dlp kernel",
   "kernelAuto": "Update yt-dlp in the background",
-  "kernelHint": "Check official stable releases daily. Verified updates apply to new tasks; failures keep the current kernel. Rollback is available.",
+  "kernelHint": "Check official stable releases weekly. Verified updates apply to new tasks; failures keep the current kernel. Manual checks and rollback are available.",
   "kernelCheck": "Check kernel updates",
   "kernelRollback": "Roll back kernel",
   "kernelStatuses": {

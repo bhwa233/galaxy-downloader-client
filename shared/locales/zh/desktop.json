@@ -19,7 +19,6 @@
     "selectionMissing": "所选内容不存在",
     "needsPurchase": "所选内容里有需要单独购买的，无法下载",
     "qualityExpired": "画质选项已失效",
-    "profileChanged": "浏览器配置已变化，请刷新",
     "noPageLink": "这个任务没有可打开的网页链接",
     "noCompletedFile": "找不到已完成的文件",
     "openFailed": "无法打开文件：{{reason}}",

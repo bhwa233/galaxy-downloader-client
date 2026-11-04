@@ -27,6 +27,8 @@
   "cancelParse": "Cancel parsing",
   "parse": "Parse",
   "parseFailed": "Parsing failed",
+  "parseKernelHint": "If parsing keeps failing, check for yt-dlp kernel updates and try again.",
+  "kernelUpdateSettings": "Open kernel updates",
   "showingResult": "Showing parse results…",
   "startAll": "Start all",
   "pauseAll": "Pause all",

@@ -13,7 +13,5 @@ export function matchesListing(item: MediaItem, query: ListingQuery): boolean {
 }
 
 export function sortListing(items: MediaItem[], sort: ListingQuery['sort']): MediaItem[] {
-  if (sort === 'original') return items
-  if (sort === 'reverse') return [...items].reverse()
-  return [...items].sort((a, b) => a.publishedAt === undefined ? b.publishedAt === undefined ? 0 : 1 : b.publishedAt === undefined ? -1 : sort === 'newest' ? b.publishedAt - a.publishedAt : a.publishedAt - b.publishedAt)
+  return sort === 'reverse' ? [...items].reverse() : items
 }

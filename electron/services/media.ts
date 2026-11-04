@@ -209,13 +209,6 @@ export function mediaResult(raw: RawInfo, url: string, method: MediaResult['meth
   return { id: randomUUID(), url, title, platform: platformOf(url), method, listing: paginated ? 'collection' : undefined, groups: group ? [group] : undefined, items }
 }
 
-// Reading another browser's cookie database fails for reasons that say nothing about the media:
-// Chrome 127+ seals its cookies with App-Bound Encryption, and a running browser holds a lock on the
-// database. Neither means the page needs a real browser, so these are retried without the cookies.
-export function isCookieFailure(message: string): boolean {
-  return /decrypt|dpapi|keyring|kwallet|could not copy|cookie database|cookies from browser/i.test(message)
-}
-
 export function needsBrowser(message: string): boolean {
   return /cookie|sign.?in|log.?in|登录|验证|captcha|403|412|bot|unsupported url|unable to extract|no video|not available|signature/i.test(message)
 }

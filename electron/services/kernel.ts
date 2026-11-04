@@ -7,12 +7,14 @@ import { downloadHttp, type Fetcher } from './http-download'
 import type { KernelState } from '../../shared/processing'
 type Release = { version: string; file: string; sha256: string }
 type Installed = { active?: Release; previous?: Release; checkedAt?: string }
+const CHECK_INTERVAL_MS = 7 * 24 * 3600_000
 /** An official pure-Python wheel is loaded per engine process; running jobs keep their kernel. */
 export class KernelUpdates {
   state: KernelState = { status: 'idle' }
   private installed: Installed = {}
   private active?: AbortController
   private timer?: ReturnType<typeof setTimeout>
+  private automatic = false
   private get manifest(): string { return path.join(this.directory, 'installed.json') }
   constructor(private directory: string, private engine: Engine, private fetcher: Fetcher, private changed: () => void) {
     mkdirSync(directory, { recursive: true })
@@ -39,10 +41,11 @@ export class KernelUpdates {
     this.state = { ...this.state, version: info.version, previous: this.installed.active ? this.installed.previous?.version || 'bundled' : undefined, checkedAt: this.installed.checkedAt }; this.changed()
   }
   schedule(enabled: boolean): void {
+    this.automatic = enabled
     clearTimeout(this.timer)
     if (!enabled || process.env.CLIENT_TEST_DATA) return
     const elapsed = Date.now() - Date.parse(this.installed.checkedAt || '1970-01-01')
-    this.timer = setTimeout(() => { void this.check().finally(() => this.schedule(enabled)) }, Math.max(30_000, 24 * 3600_000 - elapsed)); this.timer.unref()
+    this.timer = setTimeout(() => { void this.check() }, Math.max(30_000, CHECK_INTERVAL_MS - elapsed)); this.timer.unref()
   }
   async check(): Promise<void> {
     if (this.active) return
@@ -71,7 +74,7 @@ export class KernelUpdates {
       }
       this.installed.checkedAt = new Date().toISOString(); this.save(); this.state.status = 'idle'; await this.refreshVersion()
     } catch (error) { this.state.status = 'error'; this.state.error = redact(error instanceof Error ? error.message : String(error)); this.installed.checkedAt = new Date().toISOString(); this.save(); this.changed() }
-    finally { this.active = undefined }
+    finally { this.active = undefined; this.schedule(this.automatic) }
   }
   async rollback(): Promise<void> {
     if (this.active) throw new Error('Wait for the kernel update to finish')
@@ -80,5 +83,5 @@ export class KernelUpdates {
     this.installed.active = previous; this.installed.previous = undefined; this.engine.kernelWheel = previous ? this.file(previous) : undefined
     this.save(); this.state.status = 'idle'; this.state.error = undefined; await this.refreshVersion()
   }
-  stop(): void { clearTimeout(this.timer); this.active?.abort() }
+  stop(): void { this.automatic = false; clearTimeout(this.timer); this.active?.abort() }
 }

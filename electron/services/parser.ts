@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type { MediaGroup, MediaItem, MediaResult } from '../../shared/contracts'
-import { Engine, type Cookie, type EngineProfile, type EngineRequest } from './engine'
+import { Engine, type Cookie, type EngineRequest } from './engine'
 import type { EmbeddedBrowser } from './browser'
 import { findAdapter } from './listings'
 import { LoginRequired, VerificationRequired } from './login'
 import { logger } from './log'
 import { i18n } from '../../shared/i18n'
-import { SHORTENERS, flattenEntries, isCookieFailure, mediaResult, needsBrowser, normalizeUrl, platformOf, type RawInfo } from './media'
+import { SHORTENERS, flattenEntries, mediaResult, needsBrowser, normalizeUrl, platformOf, type RawInfo } from './media'
 
 const log = logger('parser')
 
@@ -85,9 +85,6 @@ export function refusalFor(url: string): string | undefined {
 const REUSE_PARSE_FOR = 2 * 60 * 1_000
 
 export class Parser {
-  // Set once a browser's cookie database turns out to be unreadable on this machine, so later parses
-  // skip the attempt instead of paying the same seconds-long failure again.
-  private cookiesUnavailable = false
   // The last few single-work parses, by address. Only ever consulted for 'single': a listing has
   // pages and a selection behind it, and serving one of those from a cache would show the user a
   // page they did not ask for.
@@ -170,10 +167,10 @@ export class Parser {
   // catalogue becomes when it is downloaded. Each item keeps its own address, so the queue treats it
   // like any listing entry - one task per item, re-resolving itself - and the collection's name is the
   // batch and the directory. Pages are walked one after another, at the listing's own pace.
-  async expand(url: string, profile: EngineProfile | undefined, signal: AbortSignal): Promise<ParsePlan> {
+  async expand(url: string, signal: AbortSignal): Promise<ParsePlan> {
     let plan: ParsePlan | undefined
     for (let page = 1; ; page += 1) {
-      const next = await this.read(url, profile, signal, { page, group: 'collection' })
+      const next = await this.read(url, signal, { page, group: 'collection' })
       const group = next.result.groups?.find(found => found.id === 'collection')
       const countBefore = plan?.result.items.length || 0
       if (!plan) {
@@ -200,21 +197,22 @@ export class Parser {
     return plan
   }
 
-  async parse(input: string, profile: EngineProfile | undefined, signal: AbortSignal, options: ParseOptions = {}): Promise<ParsePlan> {
+  // Preserve the positional call contract; the reserved slot accepts no browser profile.
+  async parse(input: string, _reserved: undefined, signal: AbortSignal, options: ParseOptions = {}): Promise<ParsePlan> {
     const address = await this.resolve(normalizeUrl(input), signal)
     // A post an adapter reads file by file is re-resolved once per file by the tasks it splits into,
     // so it is kept like a single work: an eight-picture carousel is one read, not eight.
-    if (!options.single && !findAdapter(address)?.post) return await this.read(address, profile, signal, options)
+    if (!options.single && !findAdapter(address)?.post) return await this.read(address, signal, options)
     const held = this.recent.get(address)
     if (held && Date.now() - held.at < REUSE_PARSE_FOR) return held.plan
-    const plan = await this.read(address, profile, signal, options)
+    const plan = await this.read(address, signal, options)
     // Only the last handful: this is for the tasks of one post finishing together, not a history.
     if (this.recent.size > 8) this.recent.clear()
     this.recent.set(address, { plan, at: Date.now() })
     return plan
   }
 
-  private async read(url: string, profile: EngineProfile | undefined, signal: AbortSignal, { browserOnly = false, page = 1, group, order, single = false }: ParseOptions): Promise<ParsePlan> {
+  private async read(url: string, signal: AbortSignal, { browserOnly = false, page = 1, group, order, single = false }: ParseOptions): Promise<ParsePlan> {
     const refusal = refusalFor(url)
     if (refusal) throw new Error(refusal)
     // An adapter can claim an address and then stand down once it has read it - a 哔哩哔哩 video with no
@@ -273,20 +271,12 @@ export class Parser {
       if (platformOf(url) !== new URL(url).hostname.replace(/^www\./, '')) await this.browser.warm(url, signal)
       const { cookies, userAgent } = await this.browser.identity(url)
       const request: EngineRequest = {
-        operation: 'extract', url, manifest: /\.m3u8(?:[?#]|$)/i.test(url) || undefined, profile: this.cookiesUnavailable ? undefined : profile,
+        operation: 'extract', url, manifest: /\.m3u8(?:[?#]|$)/i.test(url) || undefined,
         cookies, headers: { 'User-Agent': userAgent },
       }
       let failure: unknown
       try { return this.fromEngine(await this.extract({ ...request, ...(request.url && page > 1 ? { playliststart: (page - 1) * 100 + 1, playlistend: page * 100 } : {}) }, signal), request, 'direct', page) }
       catch (error) { signal.throwIfAborted(); failure = error; log.info('引擎直连失败', error) }
-      // Public media needs no login at all, so an unreadable cookie database must not decide its fate.
-      if (request.profile && isCookieFailure(String(failure))) {
-        this.cookiesUnavailable = true
-        const retry: EngineRequest = { ...request, profile: undefined, ...(page > 1 ? { playliststart: (page - 1) * 100 + 1, playlistend: page * 100 } : {}) }
-        log.info('读不了浏览器 cookie，改为不带配置重试')
-        try { return this.fromEngine(await this.extract(retry, signal), retry, 'direct', page) }
-        catch (error) { signal.throwIfAborted(); failure = error; log.info('不带配置重试也失败', error) }
-      }
       if (!needsBrowser(String(failure))) {
         // A stable direct media URL is useful even when yt-dlp's generic extractor rejects its extension.
         const response = await this.fetcher(url, { method: 'HEAD', signal })

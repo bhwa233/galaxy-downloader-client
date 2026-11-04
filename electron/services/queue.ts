@@ -97,7 +97,7 @@ export class Queue {
   constructor(private store: Store, private engine: Engine, private fetcher: Fetcher, private resolve: (job: Job, signal: AbortSignal) => Promise<ParsePlan>, private changed: () => void, private completed: (job: Job) => void = () => {}, private trash: (file: string) => Promise<void> = async () => {}) {}
   get jobs(): Job[] { return this.store.data.jobs }
   private reserveName(job: Job, mediaId?: string): void {
-    const desired = mediaFilename({ filenameTemplate: job.filenameTemplate || 'author-title', customFilenameTemplate: job.customFilenameTemplate || '' }, { ...job, id: mediaId || job.itemId })
+    const desired = mediaFilename({ filenameTemplate: job.filenameTemplate || 'title', customFilenameTemplate: job.customFilenameTemplate || '' }, { ...job, id: mediaId || job.itemId })
     const fold = (name: string) => name.normalize('NFC').toLowerCase()
     let existing: string[] = []
     try { existing = readdirSync(job.directory).map(fold) }

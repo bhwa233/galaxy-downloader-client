@@ -81,7 +81,7 @@ export function ListingToolbar({ resultId, group, send }: { resultId: string; gr
         <InputGroupAddon><Search /></InputGroupAddon>
       </InputGroup>
       <Button type="button" variant="outline" aria-label={t('published')} onClick={openDates}><CalendarDays data-icon="inline-start" />{dateLabel}</Button>
-      <Choice className="w-40" label={t('query.sortLabel')} hideLabel value={draft.sort} options={(['original', 'reverse', 'newest', 'oldest'] as const).map(value => ({ value, label: t(`query.sorts.${value}`) }))} onChange={sort => { const next = { ...draft, sort: sort as ListingQuery['sort'] }; apply(next, sort !== 'original' || filters(next)) }} />
+      <Choice className="w-40" label={t('query.sortLabel')} hideLabel value={draft.sort} options={(['original', 'reverse'] as const).map(value => ({ value, label: t(`query.sorts.${value}`) }))} onChange={sort => { const next = { ...draft, sort: sort as ListingQuery['sort'] }; apply(next, sort !== 'original' || filters(next)) }} />
       <Button type="button" variant="outline" onClick={() => setFiltersOpen(true)}><SlidersHorizontal data-icon="inline-start" />{t('query.more')}</Button>
       <Button type="submit"><Search data-icon="inline-start" />{t('query.find')}</Button>
     </form>
@@ -99,7 +99,7 @@ export function ListingToolbar({ resultId, group, send }: { resultId: string; gr
         {progress.status === 'running' && draft.sort !== 'original' && !progress.nativeOrder && <ItemDescription>{t('query.partialOrder')}</ItemDescription>}
         {progress.nativeOrder && <ItemDescription>{t('query.nativeOrder')}</ItemDescription>}
         {progress.status === 'limited' && <ItemDescription>{t('query.limitHint')}</ItemDescription>}
-        {progress.missingDates > 0 && (applied.since !== undefined || applied.before !== undefined || applied.sort === 'newest' || applied.sort === 'oldest') && <ItemDescription>{t('query.missingDates', { count: progress.missingDates })}</ItemDescription>}
+        {progress.missingDates > 0 && (applied.since !== undefined || applied.before !== undefined) && <ItemDescription>{t('query.missingDates', { count: progress.missingDates })}</ItemDescription>}
       </ItemContent>
       <ItemActions>{running ? <Button type="button" size="sm" variant="outline" onClick={() => void send('media:query-stop', { resultId, groupId: group.id })}>{t('query.stop')}</Button> : ['stopped', 'interrupted'].includes(progress.status) ? <Button type="button" size="sm" variant="outline" onClick={() => apply(applied)}>{t('query.continue')}</Button> : null}</ItemActions>
     </Item>}

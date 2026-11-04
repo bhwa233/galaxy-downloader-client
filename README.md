@@ -11,7 +11,7 @@ A local-first desktop media downloader. Paste a link — a video, a post, a whol
 ## Features
 
 - **Parse locally.** yt-dlp and FFmpeg ship with the app; parsing, downloading, merging and conversion all run on your machine.
-- **Your own sign-ins.** Sign in to platforms in the app's built-in browser (Settings → Browser), or let it read an installed Chrome, Edge or Firefox profile. Members-only and signed-in content downloads as it does for you in the browser.
+- **Your own sign-ins.** Sign in to platforms in the app's built-in browser (Settings → Browser). Parsing and downloads reuse that session, which is stored locally and survives restarts.
 - **Whole profiles and collections.** A creator's uploads, a Bilibili collection or multi-part video, a Douyin collection or short-drama series, a YouTube channel or playlist, a WeChat article album — listed page by page, with select all, Shift-click ranges, keyword and publish-time filters, and a per-batch cap.
 - **Creator subscriptions.** Follow Bilibili, Douyin and YouTube creators, filter updates by platform or creator, and receive local notifications. Checks default to every 24 hours and can be configured under Settings → Subscriptions. Existing works establish a quiet baseline. Click a work or Parse creator profile to parse it in the app, then choose quality and confirm the download. Separate external-link buttons open the original platform pages. Monitoring runs while the app is open, including in the tray.
 - **Choose what to save.** Video at a chosen quality, audio only (kept as-is or converted to MP3/M4A/FLAC), cover images, subtitles (embedded or as files). Showing only images turns every video into its cover.

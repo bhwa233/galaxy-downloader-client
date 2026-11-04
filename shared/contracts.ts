@@ -20,7 +20,6 @@ export const settingsSchema = z.object({
   embedMetadata: z.boolean().default(false),
   embedChapters: z.boolean().default(false),
   customFilenameTemplate: z.string().trim().max(300).refine(value => !/[\\/]/.test(value) && ![...value].some(char => char.charCodeAt(0) < 32) && !value.includes('..') && !value.replace(/\{(?:title|id|authorId|author|channel|artist|date)\}/g, '').match(/[{}]/)).default(''),
-  browserProfileId: z.string().max(200).nullable().default(null),
   concurrency: z.number().int().min(1).max(4).default(2),
   resumeOnStart: z.boolean().default(false),
   notifications: z.boolean().default(true),
@@ -37,7 +36,7 @@ export const settingsSchema = z.object({
   batchLimit: z.number().int().min(0).max(500).default(20),
   timeout: z.number().int().min(5).max(300).default(30),
   // Old values still describe saved jobs; new jobs use the clean naming presets.
-  filenameTemplate: z.enum(['title', 'author-title', 'author-date-title', 'custom', 'title-id', 'id-title', 'date-title-id']).default('author-title'),
+  filenameTemplate: z.enum(['title', 'title-author', 'title-author-date', 'custom', 'author-title', 'author-date-title', 'title-id', 'id-title', 'date-title-id']).default('title'),
   organizeByPlatform: z.boolean().default(false),
   // A collection or a multi-part video is one thing split into files, so its parts are kept together
   // under a directory named after it. On by default: a 87-part 合集 dropped into the download folder
@@ -80,7 +79,6 @@ export const settingsSchema = z.object({
 // There is no proxy setting: every request follows whatever proxy the system itself is configured with,
 // which is where a user who runs one has already set it.
 export type Settings = z.infer<typeof settingsSchema> & { downloadDirectory: string }
-export type BrowserProfile = { id: string; browser: 'chrome' | 'edge' | 'firefox'; label: string; available: boolean }
 // 'size' is the whole download at this tier in bytes - the video stream plus the best audio it is
 // merged with - as the platform states it, or bitrate times duration where it only states a bitrate.
 // 'bitrate' is that same total in kbit/s, which is what lets a listing's sampled tier be estimated for
@@ -116,7 +114,7 @@ export type GroupKind = 'work' | 'parts' | 'collection' | 'files' | 'uploads' | 
 // so the tab can say 5/72 instead of only how many there are. Only the group that holds the work has it.
 export const listingQuerySchema = z.object({
   keyword: z.string().trim().max(200).default(''),
-  sort: z.enum(['original', 'reverse', 'newest', 'oldest']).default('original'),
+  sort: z.enum(['original', 'reverse']).default('original'),
   since: z.number().finite().nonnegative().optional(), before: z.number().finite().positive().optional(),
   kind: z.enum(['all', 'video', 'image']).default('all'),
   durationMin: z.number().finite().nonnegative().optional(), durationMax: z.number().finite().nonnegative().optional(),
@@ -190,7 +188,7 @@ export type ClientState = {
   subscriptions?: SubscriptionState;
   kernel?: import('./processing').KernelState;
   processing?: ProcessingState;
-  settings: Settings; profiles: BrowserProfile[]; jobs: Job[]; history: HistoryEntry[];
+  settings: Settings; jobs: Job[]; history: HistoryEntry[];
   tools: { engine: ToolInfo; ffmpeg: ToolInfo };
   // 'wall' says which permission wall a failure ran into, where it named one. Signing in fixes the
   // first; the other three are the account's own entitlement, and the client works around none of them.
@@ -246,7 +244,7 @@ export const commandSchemas = {
   'models:download': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
   'models:cancel': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
   'models:remove': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
-  'state:get': z.null(), 'clipboard:read': z.null(), 'browser:refresh': z.null(), 'browser:clear': z.null(),
+  'state:get': z.null(), 'clipboard:read': z.null(), 'browser:clear': z.null(),
   'clipboard:write': z.object({ text: z.string().max(8192) }),
   // Hands an address to whatever the system opens links with. Only ever http(s): a renderer that could
   // name any scheme could ask the host to open a file or run a handler, which is not what a link is.

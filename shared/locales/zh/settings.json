@@ -139,12 +139,12 @@
       "mode": "命名方式",
       "presets": {
         "title": "仅标题",
-        "author-title": "作者 ID + 标题",
-        "author-date-title": "作者 ID + 发布日期 + 标题",
+        "title-author": "标题 + 作者名",
+        "title-author-date": "标题 + 作者名 + 发布日期",
         "custom": "自定义"
       },
       "template": "自定义文件名",
-      "templateHint": "点击字段插入。authorId 优先使用公开账号，其次 UID、昵称；date 是发布日期，id 是作品标识。",
+      "templateHint": "点击字段插入。title 为标题，author 为作者名，date 为发布日期；authorId 为作者账号，id 为作品标识。",
       "invalidTemplate": "请输入模板，只使用下面的字段，且不包含路径分隔符或 ..。",
       "preview": "文件名预览",
       "example": "示例",
@@ -152,16 +152,12 @@
       "sampleAuthor": "示例作者",
       "collision": "同名时：{{filename}}",
       "nicknameFallback": "平台未提供作者 ID，将使用作者昵称。",
-      "noAuthor": "平台未提供作者信息，将省略作者前缀。",
+      "noAuthor": "平台未提供作者名称，将省略作者名。",
       "noDate": "平台未提供发布日期，将省略日期。",
       "hint": "新任务不再追加随机编号。同名自动加 (2)、(3)；已入队任务保留原文件名。扩展名由实际媒体决定。"
     }
   },
   "browser": {
-    "systemTitle": "尝试读取的系统浏览器",
-    "noBrowser": "尚未检测到可用浏览器",
-    "systemDescription": "{{browser}}。解析时先尝试直接读取它的登录态。系统加密或浏览器占用导致读取失败时会自动跳过，不影响公开内容。",
-    "redetect": "重新检测",
     "sessions_other": "应用内浏览器 · {{count}} 个站点有会话",
     "noSessions": "应用内浏览器暂无会话",
     "sessionsHint": "需要登录的内容在应用内登录一次即可，登录态保存在本机，重启后继续有效。",

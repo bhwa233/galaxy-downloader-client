@@ -139,12 +139,12 @@
       "mode": "Naming style",
       "presets": {
         "title": "Title only",
-        "author-title": "Author ID + title",
-        "author-date-title": "Author ID + publication date + title",
+        "title-author": "Title + author name",
+        "title-author-date": "Title + author name + publication date",
         "custom": "Custom"
       },
       "template": "Custom filename",
-      "templateHint": "Click a field to insert it. authorId uses the public account, then UID or name; date is the publication date; id identifies the item.",
+      "templateHint": "Click a field to insert it. title is the title, author is the author name, and date is the publication date; authorId is the author account and id identifies the item.",
       "invalidTemplate": "Enter a template using the listed fields, without path separators or ..",
       "preview": "Filename preview",
       "example": "Example",
@@ -152,16 +152,12 @@
       "sampleAuthor": "Example author",
       "collision": "If the name exists: {{filename}}",
       "nicknameFallback": "The platform did not provide an author ID; the author name will be used.",
-      "noAuthor": "Author information is unavailable; the author prefix will be omitted.",
+      "noAuthor": "The author name is unavailable; it will be omitted.",
       "noDate": "The publication date is unavailable; the date will be omitted.",
       "hint": "New tasks have no random suffix. Duplicate names receive (2), (3), etc. Queued tasks keep their names. The extension depends on the media."
     }
   },
   "browser": {
-    "systemTitle": "System browser to read from",
-    "noBrowser": "No usable browser detected yet",
-    "systemDescription": "{{browser}}. Parsing first tries to read its sign-in session directly. If reading fails because of system encryption or the browser being in use, it is skipped automatically; public content is not affected.",
-    "redetect": "Detect again",
     "sessions_one": "In-app browser · {{count}} site signed in",
     "sessions_other": "In-app browser · {{count}} sites signed in",
     "noSessions": "In-app browser has no sessions",

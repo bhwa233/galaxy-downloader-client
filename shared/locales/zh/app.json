@@ -25,6 +25,8 @@
   "cancelParse": "取消解析",
   "parse": "解析",
   "parseFailed": "解析未完成",
+  "parseKernelHint": "若持续解析失败，可检查 yt-dlp 内核更新后重试。",
+  "kernelUpdateSettings": "前往内核更新",
   "showingResult": "正在显示解析结果…",
   "startAll": "开始全部",
   "pauseAll": "暂停全部",
