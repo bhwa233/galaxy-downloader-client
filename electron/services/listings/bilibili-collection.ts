@@ -31,12 +31,13 @@ type Season = {
   id?: number; title?: string; mid?: number
   sections?: { id?: number; title?: string; episodes?: Episode[] }[]
 }
-type ViewResponse = {
+export type ViewResponse = {
   code?: number; message?: string
   data?: {
-    bvid?: string; title?: string; pic?: string; owner?: { name?: string; mid?: number }
+    bvid?: string; cid?: number; title?: string; pic?: string; owner?: { name?: string; mid?: number }
+    rights?: { is_stein_gate?: number }; is_upower_exclusive?: boolean; redirect_url?: string
     duration?: number; pubdate?: number; stat?: { view?: number }
-    pages?: { page?: number; part?: string; duration?: number }[]
+    pages?: { cid?: number; page?: number; part?: string; duration?: number }[]
     // The whole 合集 rides along in this reply - every section, every episode of it - so the collection
     // tab of a video page costs no second request.
     ugc_season?: Season
@@ -120,7 +121,7 @@ export function sourceOf(url: URL): Source | undefined {
   return undefined
 }
 
-async function read<T>(fetch: PageRequest['fetch'], address: string, referrer: string, signal: AbortSignal): Promise<T> {
+export async function read<T>(fetch: PageRequest['fetch'], address: string, referrer: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(address, { referrer, signal })
   // Risk control answers with an HTML challenge page rather than JSON; that is a closed route, not a reply.
   const body = await response.json().catch(() => { throw new VerificationRequired(i18n.t('errors:bilibili.verification')) }) as T & { code?: number; message?: string }

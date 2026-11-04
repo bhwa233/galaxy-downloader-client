@@ -104,6 +104,12 @@ const READ_PAGE = `(async () => {
 })()`
 
 type PageFacts = { docs: Record<string, string>; csrf: string; profile: string }
+// Query ids and public account ids survive pagination; CSRF is read from the current session.
+const profiles = new Map<string, { facts: PageFacts; at: number }>()
+function cachedFacts(user: string): PageFacts | undefined {
+  const held = profiles.get(user)
+  return held && Date.now() - held.at < 5 * 60_000 ? held.facts : undefined
+}
 type Connection = { edges?: { node?: Node & { media?: Node } }[]; page_info?: { end_cursor?: string | null; has_next_page?: boolean } }
 type Reply = { data?: { xdt_api__v1__feed__user_timeline_graphql_connection?: Connection; fetch__XDTUserDict?: { clips_connection?: Connection } }; errors?: { message?: string }[]; require_login?: boolean }
 
@@ -120,22 +126,35 @@ function resume(key: string, page: number): { from: string; at: number } {
 
 export const instagram: ProfileAdapter = {
   id: 'instagram',
+  sessionReady: ({ url, cookies }) => {
+    const found = handleOf(url), facts = cachedFacts(found?.user || '')
+    return Boolean(cookies?.sessionid && cookies.csrftoken && facts?.docs[found?.reels ? REELS : POSTS] && (!found?.reels || facts.profile))
+  },
+  reset() { profiles.clear(); walked = undefined },
   matches(url) { return Boolean(handleOf(url)) },
   entryUrl(url) {
     const found = handleOf(url)!
     return `${HOST}/${found.user}/${found.reels ? 'reels/' : ''}`
   },
-  async fetchPage({ url, page, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
+  async fetchPage({ url, page, fetch, evaluate, cookies, signal }: PageRequest): Promise<ListingPage | undefined> {
     const found = handleOf(url)
     if (!found) throw new Error(i18n.t('errors:listing.noUsername'))
     // Without a way to read the page there is nothing to take the doc ids from.
-    if (!evaluate) return undefined
-    const facts = await (evaluate as Evaluate)<PageFacts>(READ_PAGE).catch(() => undefined)
+    let facts = cachedFacts(found.user)
+    if (!facts?.docs[found.reels ? REELS : POSTS] || found.reels && !facts.profile) facts = undefined
+    if (!facts && evaluate) {
+      facts = await (evaluate as Evaluate)<PageFacts>(READ_PAGE).catch(() => undefined)
+      if (facts?.docs[POSTS] || facts?.docs[REELS]) {
+        if (profiles.size >= 8) profiles.clear()
+        profiles.set(found.user, { facts: { ...facts, csrf: '' }, at: Date.now() })
+      }
+    }
     const doc = facts?.docs[found.reels ? REELS : POSTS]
     // The query is not where this expects it: the adapter is out of date with the site's scripts.
     if (!facts || !doc) return undefined
     if (found.reels && !facts.profile) return undefined
-    const headers = { 'content-type': 'application/x-www-form-urlencoded', 'x-csrftoken': facts.csrf, 'x-ig-app-id': APP_ID }
+    const csrf = cookies?.csrftoken || facts.csrf || await evaluate?.<string>(`(document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1] || ''`).catch(() => '') || ''
+    const headers = { 'content-type': 'application/x-www-form-urlencoded', 'x-csrftoken': csrf, 'x-ig-app-id': APP_ID }
     const referrer = `${HOST}/${found.user}/`
     const { from, at } = resume(`${found.user}|${found.reels}`, page)
     let cursor = from
@@ -147,6 +166,7 @@ export const instagram: ProfileAdapter = {
         ? { data: { include_feed_video: true, page_size: COUNT, target_user_id: facts.profile }, user_id: facts.profile, ...RELAY, ...(cursor ? { after: cursor } : {}) }
         : { data: { count: COUNT, include_reel_media_seen_timestamp: true, include_relationship_info: true, latest_besties_reel_media: true, latest_reel_media: true }, username: found.user, ...RELAY, ...(cursor ? { after: cursor, before: null, first: COUNT, last: null } : {}) }
       const response = await fetch(`${HOST}/graphql/query`, { method: 'POST', headers, referrer, signal, body: new URLSearchParams({ doc_id: doc, variables: JSON.stringify(variables) }).toString() })
+      if ([400, 404].includes(response.status)) { profiles.delete(found.user); throw new Error(`Instagram query expired (${response.status})`) }
       const body = await response.json().catch(() => undefined) as Reply | undefined
       if (isRecord(body) && body.require_login) throw new LoginRequired(i18n.t('errors:instagram.profileSignIn'))
       if (response.status >= 400 || !isRecord(body) || !isRecord(body.data)) return undefined
@@ -192,13 +212,15 @@ type Info = { items?: (Node & { carousel_media?: Node[] })[]; require_login?: bo
 // video and stands down to the engine.
 export const instagramPost: ProfileAdapter = {
   id: 'instagram-post',
+  sessionReady: ({ cookies }) => Boolean(cookies?.sessionid && cookies.csrftoken),
+  reusePage: 'origin',
   post: true,
   matches(url) { return Boolean(postCodeOf(url)) },
   entryUrl(url) { return url.href },
-  async fetchPage({ url, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
+  async fetchPage({ url, fetch, evaluate, cookies, signal }: PageRequest): Promise<ListingPage | undefined> {
     const code = postCodeOf(url)
     if (!code) throw new Error(i18n.t('errors:listing.noPostId'))
-    const csrf = await evaluate?.<string>(`(document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1] || ''`).catch(() => '') || ''
+    const csrf = cookies?.csrftoken || await evaluate?.<string>(`(document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1] || ''`).catch(() => '') || ''
     const response = await fetch(`${HOST}/api/v1/media/${mediaIdOf(code)}/info/`, { headers: { 'x-ig-app-id': APP_ID, ...(csrf ? { 'x-csrftoken': csrf } : {}) }, referrer: url.href, signal })
     const body = await response.json().catch(() => undefined) as Info | undefined
     if (isRecord(body) && body.require_login) throw new LoginRequired(i18n.t('errors:instagram.postSignIn'))

@@ -2,12 +2,13 @@ import { BrowserWindow, WebContentsView, net, session, type Rectangle, type Sess
 import type { ListingKind, Settings } from '../../shared/contracts'
 import type { Cookie } from './engine'
 import { acceptLanguageFor, chromeUserAgent, clientHints, fetchMetadata, relatedTo } from './identity'
-import { findAdapter } from './listings'
+import { adapters, findAdapter } from './listings'
 import { PACE, Pace, pause } from './listings/pace'
 import { LoginRequired, VerificationRequired } from './login'
 import { head, logger } from './log'
 import { i18n } from '../../shared/i18n'
-import type { Fetcher, Fingerprint, ListingGroup, ProfileAdapter } from './listings/types'
+import { ARTICLE_HOSTS } from './media'
+import type { Fetcher, Fingerprint, ListingGroup, ListingPage, PageRequest, ProfileAdapter } from './listings/types'
 
 // 'article' says the page is prose with media in it rather than a player page, which decides whether
 // pictures and video are two kinds of the same result or two candidates for one.
@@ -18,7 +19,7 @@ export type BrowserMedia = { player?: { width: number; height: number; duration?
 // 'area' is where the window's preview dialog wants the page; 'host' is the window it is shown in,
 // left off while the preview is closed.
 type PreviewView = { view: WebContentsView; host?: BrowserWindow; area: Rectangle; fullscreen: boolean; onClosed?: () => void }
-export type Listing = { title: string; kind: ListingKind | 'post'; groups: ListingGroup[]; cookies: Cookie[]; userAgent: string; owner?: import('./listings/types').ListingOwner }
+export type Listing = { title: string; kind: ListingKind | 'post' | 'work'; groups: ListingGroup[]; cookies: Cookie[]; userAgent: string; owner?: import('./listings/types').ListingOwner; sample?: ListingPage['sample'] }
 export type { ListingEntry, ListingGroup, Pagination } from './listings/types'
 
 const log = logger('browser')
@@ -140,9 +141,12 @@ export class EmbeddedBrowser {
   }
 
   get userAgent(): string { return this.session.getUserAgent() }
+  get language(): Settings['locale'] { return this.locale() }
   // Every request the client makes outside a page goes through here, so that it leaves from the same
   // session - the same cookies, agent and headers - as the pages the user signed in on.
   async fetch(address: string, init?: RequestInit): Promise<Response> { return await this.session.fetch(address, init) }
+  // Explicit API pagination shares the same per-host pacing as reads made inside a page.
+  readonly listingFetch: Fetcher = this.pace.wrap((address, init) => this.fetch(address, { ...init, credentials: 'include' }))
   // session.fetch loses the final URL and rejects manual redirects. ClientRequest exposes the
   // Location in its redirect event, using the same partition without loading the destination page.
   async redirect(address: string, method: 'HEAD' | 'GET', signal: AbortSignal): Promise<string | undefined> {
@@ -179,7 +183,7 @@ export class EmbeddedBrowser {
     if (this.loginWindow && !this.loginWindow.isDestroyed()) this.loginWindow.destroy()
     this.loginWindow = null
   }
-  async clear(): Promise<void> { this.close(); await this.session.clearStorageData() }
+  async clear(): Promise<void> { this.close(); for (const adapter of adapters) adapter.reset?.(); this.warmed.clear(); this.stored.clear(); await this.session.clearStorageData() }
 
   // The visible counterpart of the hidden parsing window: the same partition, so a login completed
   // here is the login the next parse uses.
@@ -199,7 +203,7 @@ export class EmbeddedBrowser {
       return { action: 'deny' }
     })
     // The login only becomes visible to the client once the user is done with the window.
-    window.on('closed', () => { this.loginWindow = null; onClosed() })
+    window.on('closed', () => { this.loginWindow = null; this.release(); for (const adapter of adapters) adapter.reset?.(); this.warmed.clear(); onClosed() })
     this.loginWindow = window
     void window.loadURL(url || 'about:blank')
   }
@@ -359,7 +363,7 @@ export class EmbeddedBrowser {
   // has run. A blank document is enough - they describe the machine, not the site - so this costs one
   // window per run rather than a visit to anyone. A machine with no WebGL answers with empty names
   // rather than with nothing, because that is what it has to say and the API accepts it.
-  private async fingerprint(signal: AbortSignal): Promise<Fingerprint | undefined> {
+  async fingerprint(signal: AbortSignal): Promise<Fingerprint | undefined> {
     if (this.asked) return this.print
     this.asked = true
     const window = this.hidden()
@@ -367,7 +371,7 @@ export class EmbeddedBrowser {
       await this.load(window, 'about:blank', signal)
       this.print = await window.webContents.executeJavaScript(`(${fingerprintScript})()`) as Fingerprint
       log.debug(`指纹 ${this.print.glRenderer || '无 WebGL'} · ${this.print.width}x${this.print.height}`)
-    } catch (error) { signal.throwIfAborted(); log.warn('读取浏览器指纹失败', error) }
+    } catch (error) { if (signal.aborted) this.asked = false; signal.throwIfAborted(); log.warn('读取浏览器指纹失败', error) }
     finally { if (!window.isDestroyed()) window.destroy() }
     return this.print
   }
@@ -394,19 +398,29 @@ export class EmbeddedBrowser {
     void reading.then(() => { if (this.reading === reading) this.release() })
   }
 
-  async inspectProfile(url: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse'): Promise<Listing | undefined> {
-    const turn = this.reading.then(() => this.inspectNow(url, index, group, signal, order))
+  async inspectProfile(url: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse', single?: boolean): Promise<Listing | undefined> {
+    const turn = this.reading.then(() => this.inspectNow(url, index, group, signal, order, single))
     this.reading = turn.catch(() => {})
     return await turn
   }
 
-  private async inspectNow(url: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse'): Promise<Listing | undefined> {
+  private async inspectNow(url: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse', single?: boolean): Promise<Listing | undefined> {
     signal.throwIfAborted()
     const adapter = findAdapter(url)
     if (!adapter?.fetchPage) throw new Error(i18n.t('errors:browser.profileUnsupported'))
     const address = adapter.entryUrl(new URL(url))
-    const reused = this.open?.address === address && !this.open.window.isDestroyed()
-    try { return await this.readListing(adapter, url, address, index, group, signal, order) }
+    const cookies = Object.fromEntries((await this.session.cookies.get({ url })).map(cookie => [cookie.name, cookie.value]))
+    const direct: PageRequest = { url: new URL(url), page: index, group, order, single, signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]), fetch: this.listingFetch, userAgent: this.userAgent, locale: this.locale(), cookies }
+    if (adapter.sessionReady?.(direct)) {
+      try {
+        const started = Date.now()
+        const listing = await adapter.fetchPage(direct)
+        signal.throwIfAborted()
+        if (listing) { log.info(`[listing ${adapter.id} API 第 ${index} 页] ${Date.now() - started}ms`); return await this.listingResult(listing, url) }
+      } catch (error) { signal.throwIfAborted(); log.debug(`[listing ${adapter.id}] 会话接口不可用，使用页面`, error) }
+    }
+    const reused = this.reuses(adapter, address)
+    try { return await this.readListing(adapter, url, address, index, group, signal, order, single) }
     catch (error) {
       if (signal.aborted) { this.release(); signal.throwIfAborted() }
       // A page held open since the last turn can have been discarded, navigated by the site, or simply
@@ -415,8 +429,18 @@ export class EmbeddedBrowser {
       if (!reused || error instanceof LoginRequired || error instanceof VerificationRequired) throw error
       log.warn(`[listing ${adapter.id}] 复用的窗口不可用，重开一次`, error)
       this.release()
-      return await this.readListing(adapter, url, address, index, group, signal, order)
+      return await this.readListing(adapter, url, address, index, group, signal, order, single)
     }
+  }
+
+  private reuses(adapter: ProfileAdapter, address: string): boolean {
+    return Boolean(this.open && !this.open.window.isDestroyed() && this.open.window.webContents.getURL().startsWith(`${new URL(address).origin}/`) && (this.open.address === address || adapter.reusePage === 'origin' && new URL(this.open.address).origin === new URL(address).origin))
+  }
+
+  private async listingResult(listing: ListingPage, address: string): Promise<Listing> {
+    const entries = listing.groups.flatMap(group => group.entries)
+    return { title: listing.title || i18n.t('errors:browser.profileTitle'), kind: listing.kind || 'profile', groups: listing.groups, owner: listing.owner, sample: listing.sample, userAgent: this.userAgent,
+      cookies: await this.cookiesFor([address, ...relatedTo(address), ...entries.map(entry => entry.url)]) }
   }
 
   // Closes the listing window, whether it is being replaced or simply has not been used for a while.
@@ -428,16 +452,18 @@ export class EmbeddedBrowser {
     void page.settle().catch(() => {}).finally(() => { if (!window.isDestroyed()) window.destroy() })
   }
 
-  private async readListing(adapter: ProfileAdapter, url: string, address: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse'): Promise<Listing | undefined> {
+  private async readListing(adapter: ProfileAdapter, url: string, address: string, index: number, group: string | undefined, signal: AbortSignal, order?: 'reverse', single?: boolean): Promise<Listing | undefined> {
     const opened = Date.now()
     let warmed = opened
     let loaded = opened
     // A window still standing on this very listing has already paid for the load and the pause after
     // it; asking it for the next page is the whole of the work.
-    if (this.open?.address !== address || this.open.window.isDestroyed()) {
+    if (!this.reuses(adapter, address)) {
       this.release()
-      // The page is opened as someone who has been to the site, never as this client's first request.
-      await this.warm(url, signal)
+      // The requested page itself initializes the site's session and SDK. Bilibili's legacy
+      // listing route still needs its multi-visit visitor bootstrap; other sites do not need a
+      // separate front-page visit before opening the page they were asked for.
+      if (adapter.id === 'bilibili') await this.warm(url, signal)
       warmed = Date.now()
       const window = this.hidden()
       // Nothing to listen for, but the protocol is what evaluates out of the page's own CSP.
@@ -446,6 +472,7 @@ export class EmbeddedBrowser {
       try {
         await this.load(window, address, signal)
         loaded = Date.now()
+        this.warmed.set(new URL(url).hostname, loaded)
         // A page is looked at before it is asked anything.
         await pause(signal, PACE.settle)
       } catch (error) { this.release(); throw error }
@@ -456,14 +483,18 @@ export class EmbeddedBrowser {
     clearTimeout(held.timer)
     held.timer = setTimeout(() => this.release(), REUSE_FOR)
     const settled = Date.now()
-    const listing = await adapter.fetchPage!({
+    signal.throwIfAborted()
+    const abort = () => { if (this.open === held) this.release() }
+    signal.addEventListener('abort', abort, { once: true })
+    let listing: ListingPage | undefined
+    try { listing = await adapter.fetchPage!({
       // Paced by the browser's own Pace, which counts every request this client makes to the host
       // rather than only the ones belonging to this walk.
-      url: new URL(url), page: index, group, order, fetch: this.pace.wrap(pageFetch(held.page.evaluate)), evaluate: held.page.evaluate, userAgent: this.userAgent,
-      locale: this.locale(), fingerprint: await this.fingerprint(signal),
+      url: new URL(url), page: index, group, order, single, fetch: this.pace.wrap(pageFetch(held.page.evaluate)), evaluate: held.page.evaluate, userAgent: this.userAgent,
+      locale: this.locale(), fingerprint: adapter.id === 'bilibili' ? await this.fingerprint(signal) : undefined,
       // Read off the page that is open rather than from the warm-up's record of an earlier visit.
-      storage: await held.page.evaluate<Record<string, string>>(STORAGE).catch(() => undefined), signal,
-    })
+      storage: adapter.id === 'bilibili' ? await held.page.evaluate<Record<string, string>>(STORAGE).catch(() => undefined) : undefined, signal,
+    }) } finally { signal.removeEventListener('abort', abort) }
     signal.throwIfAborted()
     const asked = Date.now()
     if (!listing) {
@@ -472,17 +503,13 @@ export class EmbeddedBrowser {
     }
     const entries = listing.groups.flatMap(group => group.entries)
     log.info(`[listing ${adapter.id} 第 ${index} 页] 预热 ${warmed - opened}ms · 加载 ${loaded - warmed}ms · 停顿 ${settled - loaded}ms · 取数 ${asked - settled}ms · 合计 ${asked - opened}ms · ${entries.length} 条`)
-    return {
-      title: listing.title || i18n.t('errors:browser.profileTitle'), kind: listing.kind || 'profile', groups: listing.groups, owner: listing.owner, userAgent: this.userAgent,
-      cookies: await this.cookiesFor([held.window.webContents.getURL(), ...relatedTo(url), ...entries.map(entry => entry.url)]),
-    }
+    return await this.listingResult(listing, held.window.webContents.getURL())
   }
 
   // Pages whose media is prose rather than a player: the pictures are laid out in the article body and
   // there is no data model to read them from. Named rather than guessed at, because sweeping every
   // page for <img> would answer with thumbnails and page furniture, and a page that answers with
   // pictures is never given the engine attempt that would have found its video.
-  private static readonly ARTICLES = /(^|\.)mp\.weixin\.qq\.com$/
 
   // Media that lives inside a frame rather than in the document: 微信公众号 embeds its music card that
   // way, and the article itself holds no audio address at all. Every subframe is asked, and none of
@@ -520,7 +547,7 @@ export class EmbeddedBrowser {
       // Long enough for a player to ask for its manifest, and never the same length twice.
       await pause(signal, PACE.media)
       signal.throwIfAborted()
-      const article = EmbeddedBrowser.ARTICLES.test(new URL(url).hostname)
+      const article = ARTICLE_HOSTS.test(new URL(url).hostname)
       const data = await page.evaluate<{ player?: BrowserMedia['player']; verification?: boolean; title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string }>(`(${mediaScript})(${article})`)
       // A 微信公众号 music card is an iframe: the article names the song and the player, and the audio
       // address is only inside that frame. Asked of every frame rather than of that one - a page's
@@ -553,7 +580,7 @@ const EMPTY = new Set([101, 103, 204, 205, 304])
 function pageFetch(evaluate: <T>(expression: string) => Promise<T>): Fetcher {
   return async (address, init) => {
     const method = init?.method || 'GET'
-    const sent = JSON.stringify({ method, headers: init?.headers || {}, body: init?.body })
+    const sent = JSON.stringify({ method, headers: init?.headers || {}, body: init?.body, referrer: init?.referrer })
     const started = Date.now()
     // Runs in the page, so it names nothing from here; the address and the init travel as literals.
     const reply = await evaluate<{ status: number; body: string } | { failed: string }>(`(async () => {

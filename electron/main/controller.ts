@@ -7,7 +7,7 @@ import { commandSchemas, settingsSchema, type ClientState, type Command, type Hi
 import { Store } from '../services/store'
 import { Engine, redact } from '../services/engine'
 import { EmbeddedBrowser } from '../services/browser'
-import { normalizeUrl } from '../services/media'
+import { mediaResult, normalizeUrl } from '../services/media'
 import { Parser, type ParsePlan } from '../services/parser'
 import { previewPage } from '../services/preview'
 import { i18n, localeFor, setLocale } from '../../shared/i18n'
@@ -81,7 +81,11 @@ export class Controller {
   // A job re-resolves the one post it was made from. 'single' says so: its URL can itself be a listing
   // the client would otherwise expand - a 哔哩哔哩 video that turned out to have 分P - and downloading
   // all of them under one job is not what the user picked.
-  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), (job, signal) => this.parser.parse(job.url, undefined, signal, { browserOnly: job.method === 'browser', single: job.single || job.itemId === '*' }), () => this.emit(), job => { if (this.store.data.settings.notifications) void this.nativeNotifications.show({ title: i18n.t('desktop:notificationCompleted'), body: job.title }, () => this.activateWindow?.()).catch(() => {}); void this.processing.completed(job).catch(error => log.error('Automatic transcription failed', error)) }, file => shell.trashItem(file))
+  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), async (job, signal) => {
+    const plan = await this.parser.parse(job.url, undefined, signal, { browserOnly: job.method === 'browser', single: job.single || job.itemId === '*', reuse: true })
+    if (plan.loadFormats) await this.readTiers(plan, signal)
+    return plan
+  }, () => this.emit(), job => { if (this.store.data.settings.notifications) void this.nativeNotifications.show({ title: i18n.t('desktop:notificationCompleted'), body: job.title }, () => this.activateWindow?.()).catch(() => {}); void this.processing.completed(job).catch(error => log.error('Automatic transcription failed', error)) }, file => shell.trashItem(file))
   private processing = new ProcessingService(path.join(app.getPath('userData'), 'processing'), this.engine, app.getAppPath(), () => this.store.data.settings, (url, init) => net.fetch(url instanceof URL ? url.href : url, init), () => this.emit(), async (id, directory, signal) => {
     const job = this.queue.jobs.find(job => job.id === id)
     if (!job || /\.(mp4|mkv|webm|mp3|m4a|wav|flac|m3u8)(?:[?#]|$)/i.test(job.url)) return []
@@ -137,7 +141,8 @@ export class Controller {
   // one per entry: reading every entry would be dozens of requests to one platform in a burst. The
   // listing is already on screen; the tiers appear in the quality menu when they arrive.
   private async sampleTiers(plan: ParsePlan): Promise<void> {
-    if (!plan.result.listing) return
+    if (plan.result.formats) return
+    if (!plan.result.listing && !plan.loadFormats) return
     // Only onto the listing it was read for: the user may have parsed something else meanwhile. A
     // listing whose first video offers no tiers still gets an answer - an empty list - so the menu
     // settles on the default instead of reading forever.
@@ -150,14 +155,23 @@ export class Controller {
   }
   // The tiers of a listing's first video, which stand for the whole listing; nothing for a result that
   // is not a listing or has no video with a page of its own.
-  private async readTiers(plan: ParsePlan): Promise<Pick<ParsePlan['result'], 'formats' | 'audioFormats'> | undefined> {
+  private async readTiers(plan: ParsePlan, signal?: AbortSignal): Promise<Pick<ParsePlan['result'], 'formats' | 'audioFormats'> | undefined> {
+    plan.formatController ||= new AbortController()
+    const sampling = signal ? AbortSignal.any([signal, plan.formatController.signal]) : plan.formatController.signal
+    if (plan.loadFormats) {
+      const raw = await plan.loadFormats(sampling)
+      const sample = mediaResult(raw, plan.result.url, plan.result.method).items[0]
+      const item = plan.result.items.find(item => item.id === plan.sampleItemId)
+      if (item && sample) { item.formats = sample.formats; item.audioFormats = sample.audioFormats }
+      return { formats: sample?.formats || [], audioFormats: sample?.audioFormats || [] }
+    }
     if (!plan.result.listing) return undefined
     // Engine playlists already carry per-entry formats when they have been fully extracted. Sampling
     // the first episode again would repeat the same番剧 page request and can trigger Bilibili risk control.
     if (plan.result.groups?.some(group => group.id === 'playlist')) return undefined
     const first = plan.result.items.find(item => item.kind === 'video' && !item.wall && item.url)
     if (!first?.url) return undefined
-    const sample = await this.parser.parse(first.url, undefined, new AbortController().signal, { single: true })
+    const sample = await this.parser.parse(first.url, undefined, sampling, { single: true })
     return { formats: sample.result.items[0]?.formats, audioFormats: sample.result.items[0]?.audioFormats }
   }
   private emit(): void { const win = this.window(); if (win && !win.isDestroyed()) win.webContents.send('desktop:state', this.state()) }
@@ -187,6 +201,7 @@ export class Controller {
   // reports whatever it is given this time - including the same refusal, if the window was closed
   // without signing in. Cleared first, so a second close does not turn the page a second time.
   private async afterLogin(): Promise<void> {
+    this.parser.invalidate()
     this.browserSites = await this.browser.sites()
     const pending = this.pendingPage
     this.pendingPage = undefined
@@ -313,19 +328,20 @@ export class Controller {
           break
         }
         case 'browser:clear':
+          this.parser.invalidate()
           this.subscriptions.interrupt()
           this.queryRevision += 1; this.querying?.controller.abort()
-          this.parsing?.abort(); this.plan = undefined; this.parseState = { status: 'idle' }
+          this.parsing?.abort(); this.plan?.formatController?.abort(); this.plan = undefined; this.parseState = { status: 'idle' }
           for (const job of this.queue.jobs) if (['running', 'queued'].includes(job.status)) this.queue.action(job.id, 'pause')
           await this.browser.clear(); this.browserSites = 0; break
-        case 'media:cancel': this.queryRevision += 1; this.parsing?.abort(); this.querying?.controller.abort(); this.parsing = undefined; this.plan = undefined; this.parseState = { status: 'idle' }; break
+        case 'media:cancel': this.queryRevision += 1; this.parsing?.abort(); this.querying?.controller.abort(); this.parsing = undefined; this.plan?.formatController?.abort(); this.plan = undefined; this.parseState = { status: 'idle' }; break
         case 'media:parse': {
           this.subscriptions.interrupt()
           this.queryRevision += 1
           const { url } = commandSchemas['media:parse'].parse(input)
           this.querying?.controller.abort()
           this.parsing?.abort(); const controller = new AbortController(); this.parsing = controller
-          this.plan = undefined; this.parseState = { status: 'parsing' }; this.emit()
+          this.plan?.formatController?.abort(); this.plan = undefined; this.parseState = { status: 'parsing' }; this.emit()
           try {
             const plan = await this.parser.parse(url, undefined, controller.signal)
             controller.signal.throwIfAborted(); this.plan = plan; this.parseState = { status: 'idle', result: plan.result }
@@ -452,7 +468,7 @@ export class Controller {
             const plan = await this.parser.parse(url, undefined, AbortSignal.timeout(300_000), page > 1 ? { page } : {})
             // The window reads a listing's tiers in the background once the listing is on screen; the
             // command line has no screen to fill in later, so it waits for them before it answers.
-            if (!plan.result.formats && plan.result.listing) Object.assign(plan.result, await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined }) || { formats: [], audioFormats: [] })
+            if (!plan.result.formats && (plan.result.listing || plan.loadFormats)) Object.assign(plan.result, await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined }) || { formats: [], audioFormats: [] })
             this.detached.set(plan.result.id, plan)
             for (const id of [...this.detached.keys()].slice(0, -DETACHED)) this.detached.delete(id)
             return { ok: true, state: this.state(), result: plan.result }
@@ -590,5 +606,5 @@ export class Controller {
     }
   }
   processingMedia(id: string): string { return this.processing.media(id) }
-  stop(): void { this.subscriptions.stop(); this.nativeNotifications.stop(); powerMonitor.removeListener('resume', this.resumeSubscriptions); this.parsing?.abort(); this.querying?.controller.abort(); void this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
+  stop(): void { this.subscriptions.stop(); this.nativeNotifications.stop(); powerMonitor.removeListener('resume', this.resumeSubscriptions); this.parsing?.abort(); this.plan?.formatController?.abort(); for (const plan of this.detached.values()) plan.formatController?.abort(); this.querying?.controller.abort(); void this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
 }

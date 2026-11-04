@@ -29,7 +29,7 @@ const base64 = (value: string) => Buffer.from(value, 'utf8').toString('base64').
 // accepted, and so is an empty one, which is all a machine without WebGL has to report. They are
 // still read off this machine rather than hardcoded, because one constant shared by every install is
 // itself the thing that makes a population of clients recognisable.
-function device(print: Fingerprint): Record<string, string> {
+export function device(print: Fingerprint): Record<string, string> {
   return {
     dm_img_list: '[]',
     dm_img_str: base64(print.glVersion),
@@ -59,7 +59,7 @@ function storedKeys(storage: Record<string, string> | undefined): { image: strin
   return image && sub ? { image, sub } : undefined
 }
 
-async function mixin(fetch: Fetcher, storage: Record<string, string> | undefined, signal: AbortSignal): Promise<string> {
+export async function mixin(fetch: Fetcher, storage: Record<string, string> | undefined, signal: AbortSignal): Promise<string> {
   // The keys rotate daily; half an hour keeps a long session from re-fetching them on every page.
   if (cached && Date.now() - cached.at < 30 * 60_000) return cached.mixin
   let keys = storedKeys(storage)

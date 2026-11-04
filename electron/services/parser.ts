@@ -6,7 +6,8 @@ import { findAdapter } from './listings'
 import { LoginRequired, VerificationRequired } from './login'
 import { logger } from './log'
 import { i18n } from '../../shared/i18n'
-import { SHORTENERS, flattenEntries, mediaResult, needsBrowser, normalizeUrl, platformOf, type RawInfo } from './media'
+import { BilibiliApi } from './listings/bilibili-api'
+import { ARTICLE_HOSTS, SHORTENERS, flattenEntries, mediaResult, needsBrowser, normalizeUrl, platformOf, type RawInfo } from './media'
 
 const log = logger('parser')
 
@@ -15,11 +16,14 @@ const log = logger('parser')
 export type DownloadSource = { kind: 'engine'; request: EngineRequest } | { kind: 'http'; url: string; cookies: Cookie[]; headers: Record<string, string>; extension: string } | { kind: 'collection'; url: string }
 // 'result' holds the page on screen; 'catalog' keeps every item seen so far, so a selection made on an
 // earlier page still resolves when the download is finally started.
-export type ParsePlan = { result: MediaResult; sources: Map<string, DownloadSource>; catalog: Map<string, MediaItem> }
+export type ParsePlan = {
+  result: MediaResult; sources: Map<string, DownloadSource>; catalog: Map<string, MediaItem>
+  loadFormats?: (signal: AbortSignal) => Promise<RawInfo>; sampleItemId?: string; formatController?: AbortController
+}
 // 'page' and 'group' say which page of which tab is wanted; 'single' asks for the one piece of media
 // the address names and nothing around it, which is what a queued job re-resolving itself wants: its
 // URL is one post out of a listing, and expanding that listing again would download all of it.
-export type ParseOptions = { browserOnly?: boolean; page?: number; group?: string; order?: 'reverse'; single?: boolean }
+export type ParseOptions = { browserOnly?: boolean; page?: number; group?: string; order?: 'reverse'; single?: boolean; reuse?: boolean }
 // How many items of a listing are kept. A collection of several hundred still fits; the cap is there so
 // one parse cannot fill the window with more rows than anyone picks from.
 
@@ -85,12 +89,18 @@ export function refusalFor(url: string): string | undefined {
 const REUSE_PARSE_FOR = 2 * 60 * 1_000
 
 export class Parser {
-  // The last few single-work parses, by address. Only ever consulted for 'single': a listing has
-  // pages and a selection behind it, and serving one of those from a cache would show the user a
-  // page they did not ask for.
+  private bilibili: BilibiliApi
+  // The last few single-work parses, reused by download resolution. Listings keep their own pages
+  // and selection, while an explicit new parse still reads fresh metadata.
   private recent = new Map<string, { plan: ParsePlan; at: number }>()
   constructor(private engine: Engine, private browser: EmbeddedBrowser, private fetcher: (url: string, init?: RequestInit) => Promise<Response> = fetch,
-    private redirect?: (url: string, method: 'HEAD' | 'GET', signal: AbortSignal) => Promise<string | undefined>) {}
+    private redirect?: (url: string, method: 'HEAD' | 'GET', signal: AbortSignal) => Promise<string | undefined>) { this.bilibili = new BilibiliApi(browser) }
+  invalidate(): void { this.recent.clear() }
+  private rememberWork(address: string, plan: ParsePlan): void {
+    if (plan.result.listing || plan.loadFormats) return
+    if (this.recent.size >= 8) this.recent.clear()
+    this.recent.set(address, { plan, at: Date.now() })
+  }
   private async extract(request: EngineRequest, signal: AbortSignal): Promise<RawInfo> {
     const raw = await this.engine.request<RawInfo>(request, signal)
     const entries = flattenEntries(raw)
@@ -202,13 +212,11 @@ export class Parser {
     const address = await this.resolve(normalizeUrl(input), signal)
     // A post an adapter reads file by file is re-resolved once per file by the tasks it splits into,
     // so it is kept like a single work: an eight-picture carousel is one read, not eight.
-    if (!options.single && !findAdapter(address)?.post) return await this.read(address, signal, options)
     const held = this.recent.get(address)
-    if (held && Date.now() - held.at < REUSE_PARSE_FOR) return held.plan
+    if ((options.single || options.reuse || findAdapter(address)?.post) && held && Date.now() - held.at < REUSE_PARSE_FOR) return held.plan
     const plan = await this.read(address, signal, options)
     // Only the last handful: this is for the tasks of one post finishing together, not a history.
-    if (this.recent.size > 8) this.recent.clear()
-    this.recent.set(address, { plan, at: Date.now() })
+    this.rememberWork(address, plan)
     return plan
   }
 
@@ -221,7 +229,32 @@ export class Parser {
     // all of it - except the ones that read a single post, which is what that job needs.
     const adapter = findAdapter(url)
     log.info(`解析 ${url}${page > 1 ? ` 第 ${page} 页` : ''}${group ? ` · ${group}` : ''}${single ? ' · 单个作品' : ''}${browserOnly ? ' · 仅浏览器' : ''}${adapter ? ` · 列表适配器 ${adapter.id}` : ''}`)
-    const listing = adapter && (!single || adapter.post) ? await this.browser.inspectProfile(url, page, group, signal, order) : undefined
+    const direct = await this.bilibili.page(url, page, group, order, single, AbortSignal.any([signal, AbortSignal.timeout(10_000)])).catch(error => {
+      signal.throwIfAborted(); log.debug('Bilibili API metadata unavailable; retaining page fallback', error); return undefined
+    })
+    let pendingFormats: Promise<RawInfo> | undefined
+    const directRequest: EngineRequest | undefined = direct ? { operation: 'extract', url: direct.url, cookies: direct.cookies, headers: { Referer: direct.url, 'User-Agent': direct.userAgent } } : undefined
+    const loadFormats = direct ? (formatSignal: AbortSignal) => pendingFormats ||= direct.loadFormats(AbortSignal.any([formatSignal, AbortSignal.timeout(10_000)])).catch(async error => {
+      formatSignal.throwIfAborted(); log.warn('Bilibili API formats unavailable; using local engine', error)
+      // A new or expired session may still need the site's visitor cookies. Only the fallback
+      // pays for that visit, then passes the refreshed identity to the established engine route.
+      await this.browser.warm(direct.url, formatSignal)
+      const identity = await this.browser.identity(direct.url)
+      return this.extract({ ...directRequest!, cookies: identity.cookies, headers: { Referer: direct.url, 'User-Agent': identity.userAgent } }, formatSignal)
+    }) : undefined
+    if (direct?.metadata && !direct.listing) {
+      // Queue resolution needs the actual tiers before choosing a format; the window can paint
+      // metadata first and fill them in afterwards. Keep both callers on the same API request.
+      const plan = this.fromEngine(single ? await loadFormats!(signal) : direct.metadata, directRequest!, 'direct')
+      if (!single) { plan.loadFormats = loadFormats; plan.sampleItemId = plan.result.items[0]?.id }
+      return plan
+    }
+    const listing = direct?.listing ? { ...direct.listing, title: direct.listing.title || i18n.t('errors:parse.group'), kind: direct.listing.kind || 'collection' as const, cookies: direct.cookies, userAgent: direct.userAgent }
+      : adapter && (!single || adapter.post || adapter.work) ? await this.browser.inspectProfile(url, page, group, signal, order, single) : undefined
+    if (listing?.kind === 'work' && listing.sample) {
+      const info = listing.sample.info
+      return this.fromEngine(info, { operation: 'extract', url, info, cookies: listing.cookies, headers: { Referer: url, 'User-Agent': listing.userAgent } }, 'browser')
+    }
     if (listing?.kind === 'post') {
       // One work's files, each fetched as it is: the adapter already has every address, and the
       // engine is the thing that could not read this post.
@@ -234,7 +267,7 @@ export class Parser {
       const result: MediaResult = { id: randomUUID(), url, title: listing.title, platform: platformOf(url), method: 'browser', items }
       return { result, sources, catalog: new Map(items.map(item => [item.id, item])) }
     }
-    if (listing) {
+    if (listing && listing.kind !== 'work') {
       const groups: MediaGroup[] = []
       const items: MediaItem[] = []
       const sources = new Map<string, DownloadSource>()
@@ -260,9 +293,19 @@ export class Parser {
       }
       if (!items.length && page === 1) throw new LoginRequired(i18n.t(listing.kind === 'collection' ? 'errors:parse.listingCollectionEmpty' : 'errors:parse.listingProfileEmpty'))
       const result: MediaResult = { id: randomUUID(), url, title: listing.title, platform: platformOf(url), method: 'browser', listing: listing.kind, groups, items }
-      return { result, sources, catalog: new Map(items.map(item => [item.id, item])) }
+      if (listing.sample) {
+        const info = listing.sample.info
+        const sampleUrl = info.webpage_url || url
+        const samplePlan = this.fromEngine(info, { operation: 'extract', url: sampleUrl, info, cookies: listing.cookies, headers: { Referer: sampleUrl, 'User-Agent': listing.userAgent } }, 'browser')
+        const sample = samplePlan.result.items[0]
+        const item = items.find(item => item.id === listing.sample!.id)
+        if (item && sample) { item.formats = sample.formats; item.audioFormats = sample.audioFormats }
+        result.formats = sample.formats; result.audioFormats = sample.audioFormats
+        this.rememberWork(sampleUrl, samplePlan)
+      }
+      return { result, sources, catalog: new Map(items.map(item => [item.id, item])), loadFormats, sampleItemId: direct?.sampleId }
     }
-    if (!browserOnly) {
+    if (!browserOnly && !ARTICLE_HOSTS.test(new URL(url).hostname)) {
       // The engine goes out as whoever the user is inside this client: the cookies they signed in with
       // here, under the same agent the browser session uses. Without this the first attempt is always
       // anonymous, which fails on anything gated and looks like a stranger on everything else.

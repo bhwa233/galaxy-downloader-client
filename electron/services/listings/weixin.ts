@@ -73,6 +73,8 @@ function resume(key: string, page: number): { from?: Cursor; at: number } {
 
 export const weixin: ProfileAdapter = {
   id: 'weixin',
+  sessionReady: ({ url }) => Boolean(albumOf(url)),
+  reset() { walked = undefined },
   matches(url) { return Boolean(albumOf(url)) || isHomepage(url) },
   entryUrl(url) { return url.href },
   async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {

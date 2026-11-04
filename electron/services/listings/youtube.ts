@@ -165,6 +165,8 @@ let walked: { key: string; api?: string; version: string; channel?: string; owne
 
 export const youtube: ProfileAdapter = {
   id: 'youtube',
+  sessionReady: () => true,
+  reset() { walked = undefined },
   matches(url) {
     return /(^|\.)youtube\.com$/.test(url.hostname) && Boolean(handleOf(url))
   },

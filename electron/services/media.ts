@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import type { MediaResult, MediaItem } from '../../shared/contracts'
 import { i18n } from '../../shared/i18n'
 
+export const ARTICLE_HOSTS = /(^|\.)mp\.weixin\.qq\.com$/
+
 export type RawInfo = {
   id?: string; title?: string; webpage_url?: string; original_url?: string; url?: string; ext?: string; duration?: number; thumbnail?: string;
   thumbnails?: { url?: string; width?: number }[]; _type?: string;

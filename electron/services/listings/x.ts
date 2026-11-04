@@ -45,6 +45,9 @@ type Tweet = { rest_id?: string; legacy?: Legacy; core?: { user_results?: { resu
 // The operation ids X is using right now, found in its own script bundle. Cached for the run: they
 // change with a deploy, not between two pages of one listing.
 let operations: Record<string, string> | undefined
+let operationsAt = 0
+const accounts = new Map<string, { id: string; at: number }>()
+const freshOperations = () => Boolean(operations && Date.now() - operationsAt < 5 * 60_000)
 
 // Searched inside the page, and fetched there without credentials: abs.twimg.com answers without CORS
 // headers, so the credentialed fetch every adapter request goes through is refused outright (measured
@@ -69,11 +72,12 @@ const FIND_OPERATIONS = `(async () => {
   return found
 })()`
 
-async function operationIds(evaluate: Evaluate, signal: AbortSignal): Promise<Record<string, string>> {
-  if (operations) return operations
+async function operationIds(evaluate: Evaluate | undefined, signal: AbortSignal): Promise<Record<string, string>> {
+  if (freshOperations()) return operations!
+  if (!evaluate) return {}
   signal.throwIfAborted()
   const found = await evaluate<Record<string, string>>(FIND_OPERATIONS).catch(() => ({} as Record<string, string>))
-  if (found.UserMedia && found.UserByScreenName && found.TweetResultByRestId) operations = found
+  if (found.UserMedia && found.UserByScreenName && found.TweetResultByRestId) { operations = found; operationsAt = Date.now() }
   return found
 }
 
@@ -136,16 +140,19 @@ function resume(key: string, page: number): { from: string; at: number } {
 
 export const x: ProfileAdapter = {
   id: 'x',
+  sessionReady: ({ cookies }) => Boolean(cookies?.ct0 && cookies.auth_token && freshOperations()),
+  reusePage: 'origin',
+  reset() { operations = undefined; operationsAt = 0; walked = undefined; accounts.clear() },
   matches(url) { return Boolean(handleOf(url)) },
   entryUrl(url) { return `${HOST}/${handleOf(url)}` },
-  async fetchPage({ url, page, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
+  async fetchPage({ url, page, fetch, evaluate, cookies, signal }: PageRequest): Promise<ListingPage | undefined> {
     const handle = handleOf(url)
     if (!handle) throw new Error(i18n.t('errors:listing.noUsername'))
     // Without a way to read the page there is nothing to read the token or the operation ids from,
     // and neither can be invented here.
-    if (!evaluate) return undefined
+    if (!evaluate && !freshOperations()) return undefined
     // Not httpOnly, because X's own scripts read it to put it on every request they make.
-    const token = await evaluate<string>(`(document.cookie.match(/(?:^|; )ct0=([^;]+)/) || [])[1] || ''`).catch(() => '')
+    const token = cookies?.ct0 || await evaluate?.<string>(`(document.cookie.match(/(?:^|; )ct0=([^;]+)/) || [])[1] || ''`).catch(() => '') || ''
     if (!token) throw new LoginRequired(i18n.t('errors:x.noToken'))
     const ids = await operationIds(evaluate, signal)
     // The operation ids were not where this expects them. That is this adapter being out of date with
@@ -153,14 +160,22 @@ export const x: ProfileAdapter = {
     if (!ids.UserMedia || !ids.UserByScreenName) return undefined
     const headers = { authorization: BEARER, 'x-csrf-token': token, 'content-type': 'application/json' }
     const referrer = `${HOST}/${handle}`
-    const call = async (operation: string, variables: object, features: object) =>
-      await fetch(`${HOST}/i/api/graphql/${ids[operation]}/${operation}?variables=${encodeURIComponent(JSON.stringify(variables))}&features=${encodeURIComponent(JSON.stringify(features))}`, { headers, referrer, signal })
+    const call = async (operation: string, variables: object, features: object) => {
+      const response = await fetch(`${HOST}/i/api/graphql/${ids[operation]}/${operation}?variables=${encodeURIComponent(JSON.stringify(variables))}&features=${encodeURIComponent(JSON.stringify(features))}`, { headers, referrer, signal })
+      if ([400, 404].includes(response.status)) { operations = undefined; throw new Error(`X query expired (${response.status})`) }
+      return response
+    }
 
     // Everything below takes a numeric user id, which only the handle lookup can give.
-    const lookup = await call('UserByScreenName', { screen_name: handle, withSafetyModeUserFields: true }, FEATURES)
-    const profile = await lookup.json().catch(() => undefined) as { data?: { user?: { result?: { rest_id?: string } } } } | undefined
-    if (lookup.status >= 400 || !isRecord(profile) || !isRecord(profile.data)) return undefined
-    const rest = profile.data.user?.result?.rest_id
+    const held = accounts.get(handle)
+    let rest = held && Date.now() - held.at < 5 * 60_000 ? held.id : undefined
+    if (!rest) {
+      const lookup = await call('UserByScreenName', { screen_name: handle, withSafetyModeUserFields: true }, FEATURES)
+      const profile = await lookup.json().catch(() => undefined) as { data?: { user?: { result?: { rest_id?: string } } } } | undefined
+      if (lookup.status >= 400 || !isRecord(profile) || !isRecord(profile.data)) return undefined
+      rest = profile.data.user?.result?.rest_id
+      if (rest) { if (accounts.size >= 32) accounts.clear(); accounts.set(handle, { id: rest, at: Date.now() }) }
+    }
     if (!rest) throw new LoginRequired(i18n.t('errors:x.noAccount'))
 
     const { from, at } = resume(handle, page)
@@ -203,14 +218,16 @@ function clipOf(media: Media): string | undefined {
 // no picture at all is a video post and stands down - the engine serves those, with quality choice.
 export const xPost: ProfileAdapter = {
   id: 'x-post',
+  sessionReady: ({ cookies }) => Boolean(cookies?.ct0 && cookies.auth_token && freshOperations()),
+  reusePage: 'origin',
   post: true,
   matches(url) { return Boolean(postIdOf(url)) },
   entryUrl(url) { return url.href },
-  async fetchPage({ url, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
+  async fetchPage({ url, fetch, evaluate, cookies, signal }: PageRequest): Promise<ListingPage | undefined> {
     const id = postIdOf(url)
     if (!id) throw new Error(i18n.t('errors:listing.noPostId'))
-    if (!evaluate) return undefined
-    const token = await evaluate<string>(`(document.cookie.match(/(?:^|; )ct0=([^;]+)/) || [])[1] || ''`).catch(() => '')
+    if (!evaluate && !freshOperations()) return undefined
+    const token = cookies?.ct0 || await evaluate?.<string>(`(document.cookie.match(/(?:^|; )ct0=([^;]+)/) || [])[1] || ''`).catch(() => '') || ''
     if (!token) throw new LoginRequired(i18n.t('errors:x.noToken'))
     const ids = await operationIds(evaluate, signal)
     if (!ids.TweetResultByRestId) return undefined
@@ -218,6 +235,7 @@ export const xPost: ProfileAdapter = {
     const response = await fetch(`${HOST}/i/api/graphql/${ids.TweetResultByRestId}/TweetResultByRestId?variables=${encodeURIComponent(JSON.stringify(variables))}&features=${encodeURIComponent(JSON.stringify(FEATURES))}`, {
       headers: { authorization: BEARER, 'x-csrf-token': token, 'content-type': 'application/json' }, referrer: url.href, signal,
     })
+    if ([400, 404].includes(response.status)) { operations = undefined; throw new Error(`X query expired (${response.status})`) }
     const body = await response.json().catch(() => undefined) as { data?: { tweetResult?: { result?: Tweet & { tweet?: Tweet } } } } | undefined
     if (response.status >= 400 || !isRecord(body) || !isRecord(body.data)) return undefined
     // A post shown with a visibility notice comes wrapped one level down.

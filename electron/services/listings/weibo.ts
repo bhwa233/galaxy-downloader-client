@@ -63,16 +63,18 @@ export function entryOf(status: Status): ListingEntry | undefined {
 
 export const weibo: ProfileAdapter = {
   id: 'weibo',
+  sessionReady: ({ cookies }) => Boolean(cookies?.['XSRF-TOKEN']),
+  reusePage: 'origin',
   matches(url) { return Boolean(uidOf(url)) },
   // The profile page is its own entry point, and it is the page that issues the listing request.
   entryUrl(url) { return `https://weibo.com/u/${uidOf(url)}` },
-  async fetchPage({ url, page, fetch, evaluate, signal }: PageRequest): Promise<ListingPage | undefined> {
+  async fetchPage({ url, page, fetch, evaluate, cookies, signal }: PageRequest): Promise<ListingPage | undefined> {
     const uid = uidOf(url)
     if (!uid) throw new Error(i18n.t('errors:listing.noUserId'))
     // The two headers the profile page's own request carries (captured 2026-09-23). Without them the
     // endpoint answers '403 Forbidden' as HTML rather than a feed. The token is the readable
     // 'XSRF-TOKEN' cookie, which is where the page's own scripts take it from.
-    const token = await evaluate?.<string>(`(document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/) || [])[1] || ''`).catch(() => '') || ''
+    const token = cookies?.['XSRF-TOKEN'] || await evaluate?.<string>(`(document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/) || [])[1] || ''`).catch(() => '') || ''
     const headers: Record<string, string> = { 'X-Requested-With': 'XMLHttpRequest', ...(token ? { 'X-XSRF-TOKEN': token } : {}) }
     const response = await fetch(`https://weibo.com/ajax/statuses/mymblog?uid=${uid}&page=${page}&feature=0`, { headers, referrer: `https://weibo.com/u/${uid}`, signal })
     const body = await response.json().catch(() => undefined) as (Feed & { message?: string }) | undefined

@@ -1,4 +1,5 @@
 import type { AccessWall, GroupKind, ListingKind, MediaStats, Settings } from '../../../shared/contracts'
+import type { RawInfo } from '../media'
 // A creator profile is a listing every platform paginates its own way, so each one contributes an
 // adapter and the browser keeps the crawling generic.
 // 'media' is the file itself, set only by a post adapter: one entry per picture or clip of a post the
@@ -18,7 +19,9 @@ export type Pagination = { index: number; size: number; total?: number; hasMore:
 export type ListingGroup = { id: string; title?: string; kind?: GroupKind; directory?: string; entries: ListingEntry[]; pagination: Pagination; position?: { index: number; total: number } }
 // 'post' is one work's files rather than a list of works - see ProfileAdapter.post.
 export type ListingOwner = { id: string; name: string; avatar?: string }
-export type ListingPage = { title?: string; kind?: ListingKind | 'post'; groups: ListingGroup[]; owner?: ListingOwner }
+// 'sample' is private extraction data already supplied by the list/detail response. Parser consumes
+// it in main and returns only normalized metadata and tiers, never these signed URLs.
+export type ListingPage = { title?: string; kind?: ListingKind | 'post' | 'work'; groups: ListingGroup[]; owner?: ListingOwner; sample?: { id: string; info: RawInfo } }
 // Most adapters serve one group; this is the shape they all had before a second one was possible.
 export function onePage(id: string, title: string | undefined, entries: ListingEntry[], pagination: Pagination, kind?: GroupKind): ListingPage {
   return { title, groups: [{ id, title, kind, entries, pagination }] }
@@ -45,16 +48,21 @@ export type Evaluate = <T>(expression: string) => Promise<T>
 // opposite answers: one stands down, the other is reported.
 export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 // 'group' names which tab the page number belongs to; the others keep whatever page they were on.
-export type PageRequest = { url: URL; page: number; group?: string; order?: 'reverse'; fetch: Fetcher; evaluate?: Evaluate; userAgent: string; locale: Settings['locale']; fingerprint?: Fingerprint; storage?: Record<string, string>; signal: AbortSignal }
+export type PageRequest = { url: URL; page: number; group?: string; order?: 'reverse'; single?: boolean; fetch: Fetcher; evaluate?: Evaluate; userAgent: string; locale: Settings['locale']; fingerprint?: Fingerprint; storage?: Record<string, string>; cookies?: Readonly<Record<string, string>>; signal: AbortSignal }
 
 export interface ProfileAdapter {
   readonly id: string
+  // Only adapters whose API can use the existing partition without a document opt in. These
+  // cookies and all dynamic query information stay in main; none are part of a MediaResult.
+  sessionReady?(request: PageRequest): boolean
+  readonly reusePage?: 'origin'
+  readonly work?: boolean
+  reset?(): void
   matches(url: URL): boolean
   // Where the listing actually lives: a bare space URL lands on a feed that renders too late to read.
   entryUrl(url: URL): string
-  // The only route: the platform's own listing API, called from inside a page of its site. An adapter
-  // without one cannot be served at all, which is the honest answer - there is no grid-walking behind
-  // this, because scrolling a listing is the behaviour the platforms watch for.
+  // The platform's listing API, through its own session or a page that supplies its signing SDK.
+  // There is no grid-walking behind it; pagination stays with each platform's existing adapter.
   //
   // 'undefined' is the adapter standing down: it claimed the address, read it, and found nothing of its
   // own to list - a 哔哩哔哩 video page that is neither multi-part nor part of a collection is one video
