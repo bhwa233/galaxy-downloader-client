@@ -24,6 +24,7 @@
     "cliForeign": "{{path}} 已存在，而且不是 Galaxy Downloader 写入的。"
   },
   "update": {
+    "client": "客户端",
     "title": "应用更新",
     "current": "当前版本 {{version}}",
     "check": "检查更新",

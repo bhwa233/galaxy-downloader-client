@@ -97,7 +97,11 @@ export class Controller {
   })
   // Results parsed for the command line, apart from the window's own; the newest few are kept.
   private detached = new Map<string, ParsePlan>()
-  private commandLine = new CommandLine(app.getPath('userData'), app.getAppPath(), app.isPackaged)
+  private commandLine = new CommandLine(app.getPath('userData'), app.getAppPath(), app.isPackaged, () => this.emit())
+  private selectedDirectory?: string
+  private controlError?: string
+  private controlSync = Promise.resolve()
+  private stopping = false
   private control = new ControlServer(async (name, input) => {
     if (!CONTROLLABLE.has(name)) return { ok: false, message: i18n.t('desktop:errors.unsupportedCommand') }
     return await this.command(name, input)
@@ -118,7 +122,7 @@ export class Controller {
   }
   // What the main process says to the user - errors, a task's log, notifications - is in the window's language.
   constructor(private window: () => BrowserWindow | null, private activateWindow?: () => void) { setLocale(this.store.data.settings.locale) }
-  state(): ClientState { return { subscriptions: this.subscriptions.state(), kernel: this.kernel.state, processing: this.processing.state(this.queue.jobs), settings: this.store.data.settings, jobs: this.queue.jobs.map(job => ({ ...job, files: filesFor(job), originalFiles: job.originalFiles?.filter(file => filesFor(job).includes(file)), processedFiles: job.processedFiles?.filter(file => filesFor(job).includes(file)), url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: this.commandLine.state() } }
+  state(): ClientState { const cli = this.commandLine.state(); return { firstRun: this.store.firstRun, subscriptions: this.subscriptions.state(), kernel: this.kernel.state, processing: this.processing.state(this.queue.jobs), settings: this.store.data.settings, jobs: this.queue.jobs.map(job => ({ ...job, files: filesFor(job), originalFiles: job.originalFiles?.filter(file => filesFor(job).includes(file)), processedFiles: job.processedFiles?.filter(file => filesFor(job).includes(file)), url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: { ...cli, listening: this.control.listening, error: this.controlError || cli.error } } }
   // A successful parse goes to the top of 解析历史: one entry per address, the newest 50 kept. Only
   // successes - a list of failures would bury the entries worth parsing again.
   private remember(plan: ParsePlan): void {
@@ -176,18 +180,27 @@ export class Controller {
   }
   private emit(): void { const win = this.window(); if (win && !win.isDestroyed()) win.webContents.send('desktop:state', this.state()) }
   async initialize(): Promise<void> {
+    void this.syncControl()
+    // Only installed builds own the user's shell integration. Development must not replace it.
+    if (app.isPackaged) void this.commandLine.configure(this.store.data.settings.allowControl)
     this.subscriptions.start()
     powerMonitor.on('resume', this.resumeSubscriptions)
     setVerbose(this.store.data.settings.verboseLogging); await this.kernel.initialize().catch(error => log.warn('Kernel initialization failed', error)); this.kernel.schedule(this.store.data.settings.kernelAutoUpdate); await this.refresh(); await this.checkTools(); this.queue.pump(); this.processing.refresh()
-    await this.commandLine.refresh().catch(error => log.warn('命令行工具刷新失败', error))
-    await this.syncControl()
   }
   // Listening only while the setting allows it. A second client already answering on the address - a
   // development build beside an installed one - leaves this one without a channel, which is logged.
-  private async syncControl(): Promise<void> {
-    const wanted = this.store.data.settings.allowControl
-    if (wanted && !this.control.listening) await this.control.start(controlAddress(!app.isPackaged)).catch(() => {})
-    else if (!wanted && this.control.listening) this.control.stop()
+  private syncControl(): Promise<void> {
+    this.controlSync = this.controlSync.then(async () => {
+      if (this.stopping) return
+      this.controlError = undefined
+      if (this.store.data.settings.allowControl && !this.control.listening) {
+        try { await this.control.start(controlAddress(!app.isPackaged)) }
+        catch { this.controlError = i18n.t('settings:tools.commandLine.channelFailed') }
+      }
+      if (this.stopping || !this.store.data.settings.allowControl) this.control.stop()
+      this.emit()
+    })
+    return this.controlSync
   }
   // The command line asks by result id; a result is the window's or one it parsed itself.
   private planFor(resultId: string): ParsePlan {
@@ -474,8 +487,12 @@ export class Controller {
             return { ok: false, message: refused.message || String(error), wall: refused.wall, verify: refused.verify, loginUrl: refused.loginUrl }
           }
         }
-        case 'cli:install': await this.commandLine.install(); break
-        case 'cli:uninstall': await this.commandLine.uninstall(); break
+        case 'cli:install':
+          if (!this.store.data.settings.allowControl) throw new Error(i18n.t('settings:tools.commandLine.enableFirst'))
+          await this.syncControl(); await this.commandLine.configure(true); break
+        case 'cli:uninstall':
+          this.store.data.settings.allowControl = false; this.store.save()
+          await this.syncControl(); await this.commandLine.configure(false); break
         case 'media:preview': {
           const { resultId, itemId } = commandSchemas['media:preview'].parse(input)
           if (!this.plan || this.plan.result.id !== resultId) throw new Error(i18n.t('desktop:errors.parseExpired'))
@@ -490,14 +507,22 @@ export class Controller {
         case 'preview:place': this.browser.placePreview(commandSchemas['preview:place'].parse(input)); return { ok: true, state: this.state() }
         case 'preview:close': this.browser.closePreview(); break
         case 'settings:save': {
+          const selected = commandSchemas['settings:save'].parse(input).downloadDirectory
+          const downloadDirectory = selected || this.store.data.settings.downloadDirectory
+          if (downloadDirectory !== this.store.data.settings.downloadDirectory && downloadDirectory !== this.selectedDirectory) throw new Error(i18n.t('settings:general.chooseDirectory'))
           const settings = settingsSchema.parse(input)
           const reschedule = settings.concurrency !== this.store.data.settings.concurrency || settings.speedLimit !== this.store.data.settings.speedLimit
+          const controlChanged = settings.allowControl !== this.store.data.settings.allowControl
           queueMicrotask(() => this.subscriptions.reschedule())
-          this.store.data.settings = { ...settings, downloadDirectory: this.store.data.settings.downloadDirectory }; this.store.save(); setVerbose(settings.verboseLogging); setLocale(settings.locale); await this.syncControl(); if (reschedule) this.queue.restartActive(); else this.queue.pump(); this.processing.refresh(); this.kernel.schedule(settings.kernelAutoUpdate); break
+          this.store.data.settings = { ...settings, downloadDirectory }; this.store.save(); this.selectedDirectory = undefined
+          setVerbose(settings.verboseLogging); setLocale(settings.locale); await this.syncControl()
+          if (app.isPackaged && (controlChanged || settings.allowControl && !this.commandLine.state().installed)) void this.commandLine.configure(settings.allowControl)
+          if (reschedule) this.queue.restartActive(); else this.queue.pump(); this.processing.refresh(); this.kernel.schedule(settings.kernelAutoUpdate); break
         }
         case 'settings:directory': {
           const result = await dialog.showOpenDialog(this.window()!, { properties: ['openDirectory', 'createDirectory'], defaultPath: this.store.data.settings.downloadDirectory })
-          if (!result.canceled && result.filePaths[0]) { this.store.data.settings.downloadDirectory = result.filePaths[0]; this.store.save() }; break
+          if (!result.canceled && result.filePaths[0]) this.selectedDirectory = result.filePaths[0]
+          return { ok: true, state: this.state(), directory: result.canceled ? undefined : this.selectedDirectory }
         }
         case 'jobs:action': {
           const { id, action } = commandSchemas['jobs:action'].parse(input)
@@ -603,5 +628,5 @@ export class Controller {
     }
   }
   processingMedia(id: string): string { return this.processing.media(id) }
-  stop(): void { this.updates.stop(); this.subscriptions.stop(); this.nativeNotifications.stop(); powerMonitor.removeListener('resume', this.resumeSubscriptions); this.parsing?.abort(); this.plan?.formatController?.abort(); for (const plan of this.detached.values()) plan.formatController?.abort(); this.querying?.controller.abort(); void this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
+  stop(): void { this.stopping = true; this.updates.stop(); this.subscriptions.stop(); this.nativeNotifications.stop(); powerMonitor.removeListener('resume', this.resumeSubscriptions); this.parsing?.abort(); this.plan?.formatController?.abort(); for (const plan of this.detached.values()) plan.formatController?.abort(); this.querying?.controller.abort(); void this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
 }

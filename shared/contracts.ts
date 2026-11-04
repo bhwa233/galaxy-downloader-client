@@ -184,6 +184,7 @@ export type HistoryEntry = {
   thumbnail?: string; parsedAt: string
 }
 export type ClientState = {
+  firstRun?: boolean;
   subscriptions?: SubscriptionState;
   kernel?: import('./processing').KernelState;
   processing?: ProcessingState;
@@ -206,7 +207,7 @@ export type ClientState = {
   preview?: { title: string };
   // The `galaxy` command: whether its launcher is installed, where, and whether that directory is
   // already on the PATH a new terminal gets.
-  commandLine: { installed: boolean; launcher: string; onPath: boolean };
+  commandLine: { installed: boolean; launcher: string; onPath: boolean; listening?: boolean; configuring?: boolean; error?: string };
 }
 export const parseInput = z.object({ url: z.string().trim().min(1).max(8192) })
 // What to download of each item, any combination: the media itself at 'format', its audio alone (a
@@ -263,7 +264,8 @@ export const commandSchemas = {
   // Where the preview dialog's page area is, in the window's CSS pixels, each time it moves or resizes.
   'preview:place': z.object({ x: z.number().int().min(0).max(100000), y: z.number().int().min(0).max(100000), width: z.number().int().min(0).max(100000), height: z.number().int().min(0).max(100000) }),
   'preview:close': z.null(),
-  'settings:save': settingsSchema, 'settings:directory': z.null(),
+  // A directory is accepted only if it is the current one or was selected by the native dialog.
+  'settings:save': settingsSchema.extend({ downloadDirectory: z.string().min(1).max(32768).optional() }), 'settings:directory': z.null(),
   'jobs:action': jobActionInput,
   // The renderer selects a recorded file by index, never an arbitrary filesystem path.
   'jobs:file': z.object({ id: z.string().uuid(), index: z.number().int().min(0).max(10000), action: z.enum(['open', 'reveal']) }),
@@ -296,7 +298,7 @@ export type CommandInput<C extends Command> = z.input<(typeof commandSchemas)[C]
 export type JobFile = { path: string; exists: boolean; size?: number }
 // 'result', 'jobIds' and 'version' answer the command line; a refusal says which wall it hit, or that a
 // verification is wanted, so the command line can tell a sign-in apart from a failure.
-export type Reply = { ok: true; state: ClientState; subscriptionCandidate?: SubscriptionCandidate; document?: ProcessingDocument; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
+export type Reply = { ok: true; state: ClientState; directory?: string; subscriptionCandidate?: SubscriptionCandidate; document?: ProcessingDocument; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
   | { ok: false; message: string; wall?: AccessWall; verify?: boolean; loginUrl?: string }
 export interface DesktopApi {
   command<C extends Command>(command: C, input: CommandInput<C>): Promise<Reply>

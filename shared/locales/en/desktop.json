@@ -24,6 +24,7 @@
     "cliForeign": "{{path}} already exists and was not written by Galaxy Downloader."
   },
   "update": {
+    "client": "Desktop client",
     "title": "App updates",
     "current": "Current version {{version}}",
     "check": "Check for updates",

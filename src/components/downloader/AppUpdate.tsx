@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
 import { Spinner } from '@/components/ui/spinner'
 import type { Send } from '@/App'
 import type { ClientState } from '../../../shared/contracts'
@@ -23,16 +23,15 @@ export function AppUpdate({ state, send }: { state: ClientState; send: Send }) {
   }
   const status = checking ? 'checking' : pending === 'download' && !transferring && !update.external ? 'connecting' : update.status
   const label = status === 'idle' && update.message ? update.message : t(`update.states.${status}`, { version: update.version })
-  return <Card size="sm" role="region" aria-labelledby="app-update-title">
-    <CardHeader>
-      <CardTitle id="app-update-title">{t('update.title')}</CardTitle>
-      <CardDescription>{t('update.current', { version: update.currentVersion || '—' })}</CardDescription>
-      <CardAction><Button type="button" variant="outline" disabled={busy} onClick={() => run('check')}>
+  return <div role="region" aria-labelledby="app-update-title">
+    <Item className="rounded-none border-0">
+      <ItemContent><ItemTitle id="app-update-title">{t('update.client')}</ItemTitle><ItemDescription>{update.currentVersion || '—'}</ItemDescription></ItemContent>
+      <ItemActions><Button type="button" variant="outline" disabled={busy} onClick={() => run('check')}>
         {checking && <Spinner data-icon="inline-start" aria-hidden="true" />}
         {checking ? t('update.checking') : update.failedOperation === 'check' ? t('update.retryCheck') : t('update.check')}
-      </Button></CardAction>
-    </CardHeader>
-    <CardContent className="flex flex-col gap-3">
+      </Button></ItemActions>
+    </Item>
+    {(status !== 'idle' || update.message) && <div className="flex flex-col gap-3 px-3 pb-3">
       <div className="flex items-center gap-2" role="status" aria-live="polite" aria-atomic="true">
         {['connecting', 'verifying', 'cancelling'].includes(status) && <Spinner aria-hidden="true" />}
         <span>{label}</span>
@@ -52,6 +51,6 @@ export function AppUpdate({ state, send }: { state: ClientState; send: Send }) {
         {update.status === 'ready' && <Button type="button" disabled={hasActiveJobs || busy} onClick={() => run('install')}>{t('update.install')}</Button>}
         {update.status === 'ready' && hasActiveJobs && <span className="text-xs text-muted-foreground">{t('update.pauseFirst')}</span>}
       </div>
-    </CardContent>
-  </Card>
+    </div>}
+  </div>
 }

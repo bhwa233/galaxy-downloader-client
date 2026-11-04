@@ -1,20 +1,27 @@
 {
   "title": "Settings",
-  "description": "Settings stay on this device. Mode and processing options apply to new tasks only.",
+  "description": "Save to apply changes. Download and processing defaults affect new tasks only.",
+  "unsaved": "Unsaved changes",
+  "invalid": "Check input limits and the filename template.",
+  "helpFor": "About {{label}}",
+  "advanced": {
+    "general": "Behavior & display", "download": "Other download settings", "files": "Folders & covers",
+    "transcription": "Local transcription", "output": "File information & covers", "accounts": "Session management", "diagnostics": "Diagnostics and logs"
+  },
+  "subscriptions": { "intervalHint": "Checks every 24 hours by default." },
   "sections": {
     "subscriptions": "Subscriptions",
     "general": "General",
     "download": "Download",
     "files": "Files & media",
-    "browser": "Browser",
-    "appearance": "Appearance",
-    "tools": "Tools & updates",
-    "editing": "Editing & output",
-    "processing": "Video processing"
+    "browser": "Sign-in & accounts",
+    "tools": "Updates & advanced",
+    "editing": "Editing & subtitles"
   },
   "general": {
     "saveLocation": "Save location",
-    "saveLocationHint": "Saved as soon as a folder is chosen; affects new tasks only.",
+    "saveLocationHint": "Used for new tasks after saving settings.",
+    "chooseDirectory": "Choose the save location through the folder picker.",
     "resumeOnStart": {
       "label": "Resume tasks on startup",
       "hint": "Continue the tasks that were downloading or queued when the app last quit."
@@ -29,11 +36,12 @@
     },
     "keepHistory": {
       "label": "Keep parse history",
-      "hint": "Remember successfully parsed links on the new task page so they can be parsed again; stored on this computer only. When off, nothing new is recorded; existing entries can be cleared from the new task page."
+      "hint": "Keep successfully parsed links on this computer for reuse."
     },
     "workMode": {
       "label": "Work mode",
-      "hint": "Download mode saves original media without captions or processing. Editing mode can attach platform caption files and reveals Video processing for models, local recognition, subtitle editing and new video exports. Automatic transcription is optional. Originals are preserved; existing download tasks keep their saved options."
+      "downloadHint": "Save original media without subtitles or transcoding.",
+      "editHint": "Use platform subtitles, local transcription and video exports while preserving originals."
     }
   },
   "download": {
@@ -43,7 +51,7 @@
     },
     "speedLimit": {
       "label": "Global speed limit (KiB/s)",
-      "hint": "0 means unlimited; the limit is split evenly across download slots."
+      "hint": "0 means unlimited."
     },
     "taskSpeedLimit": {
       "label": "Default per-task speed limit (KiB/s)",
@@ -59,7 +67,7 @@
     },
     "batchLimit": {
       "label": "Batch limit",
-      "hint": "The most items one click on \"Download selected\" queues, taken from the top of the list. 0 means no limit."
+      "hint": "Queue the first N selected items per click; 0 means no limit."
     }
   },
   "files": {
@@ -76,7 +84,7 @@
     },
     "organizeByCollection": {
       "label": "Subfolder per collection",
-      "hint": "Collections and parts are saved to a folder named after the collection; with the option above also on, the path is platform/collection."
+      "hint": "Keep each collection or multipart video in its own folder."
     },
     "videoQuality": {
       "label": "Default video quality",
@@ -158,9 +166,9 @@
     }
   },
   "browser": {
-    "sessions_one": "In-app browser · {{count}} site signed in",
-    "sessions_other": "In-app browser · {{count}} sites signed in",
-    "noSessions": "In-app browser has no sessions",
+    "sessions_one": "Saved sessions for {{count}} site",
+    "sessions_other": "Saved sessions for {{count}} sites",
+    "noSessions": "No saved sessions. Sign in through the app when needed.",
     "sessionsHint": "For content that requires signing in, sign in once in the app; the sign-in session is stored on this computer and survives restarts.",
     "clearSessions": "Clear sign-in sessions"
   },
@@ -184,6 +192,10 @@
     }
   },
   "tools": {
+    "kernelAutomatic": "Automatic kernel updates",
+    "kernelAutomaticHint": "Check official stable releases weekly. Verify before use in new tasks; keep the current kernel on failure.",
+    "kernelChecking": "Checking for updates…",
+    "kernelDownloading": "Updating kernel",
     "checking": "Checking",
     "localHint": "Local tools update with the app; downloading and parsing run on this computer.",
     "checkTools": "Check tools",
@@ -192,27 +204,31 @@
     "installUpdate": "Restart to install",
     "verboseLogging": {
       "label": "Verbose logging",
-      "hint": "Write each request's status code, duration, waits and the start of abnormal responses to the log; turn on when troubleshooting parse failures. Credentials are redacted, and logs stay on this computer. Takes effect after saving settings."
+      "hint": "Record request details for troubleshooting. Credentials are redacted and logs stay on this computer."
     },
     "openLogs": "Open log folder",
     "exportLogs": "Export diagnostics log",
     "allowControl": {
-      "label": "Allow the command line and agents",
-      "hint": "Lets the galaxy command line, and agents that use it, parse, download and read tasks through a local channel. Only the current user on this computer can connect; no network port is opened."
+      "label": "Command line & agents",
+      "hint": "Set up the galaxy command for terminals and agents. Only the current user on this computer can connect."
     },
     "commandLine": {
-      "title": "Command line tool",
-      "hint": "Install the galaxy command to parse and download from a terminal or an agent, with the sign-ins kept in this app.",
-      "installed": "Installed: {{path}}. Run galaxy in a new terminal.",
-      "notOnPath": "This directory is not on your PATH yet; add it to your shell profile and open a new terminal.",
-      "install": "Install command line tool",
-      "uninstall": "Remove command line tool"
+      "configuring": "Setting up the command line…",
+      "ready": "Enabled. Run galaxy in a new terminal.",
+      "disabled": "Command line and agent control is disabled.",
+      "needsSetup": "The command is not ready. Retry setup.",
+      "failed": "Command line setup failed. Retry or check diagnostics logs.",
+      "channelFailed": "The command line connection is unavailable. Close other clients and retry.",
+      "enableFirst": "Enable and save command line and agent control first.",
+      "retry": "Retry command line setup"
     }
   },
   "saving": "Saving…",
   "save": "Save settings",
   "saved": "Settings saved",
   "editing": {
+    "languageHint": "For example zh, en; up to 5 languages.",
+    "modelHint": "Models download on demand. Audio is processed on this computer.",
     "hint": "Export to a new file and preserve the original. Video processing uses these format and resolution defaults.",
     "outputFormat": "Video output format",
     "originalFormat": "Keep original format",

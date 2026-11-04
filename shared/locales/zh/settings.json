@@ -1,20 +1,27 @@
 {
   "title": "设置",
-  "description": "设置保存在本机。模式与加工参数只影响新建任务。",
+  "description": "修改后保存。下载与处理设置仅影响新任务。",
+  "unsaved": "有未保存的修改",
+  "invalid": "请检查设置中的输入范围和文件名模板。",
+  "helpFor": "了解{{label}}",
+  "advanced": {
+    "general": "行为与显示", "download": "其他下载设置", "files": "目录与封面",
+    "transcription": "本地转录", "output": "文件信息与封面", "accounts": "会话管理", "diagnostics": "诊断与日志"
+  },
+  "subscriptions": { "intervalHint": "默认每 24 小时检查一次。" },
   "sections": {
     "subscriptions": "订阅",
     "general": "常规",
     "download": "下载",
     "files": "文件与媒体",
-    "browser": "浏览器",
-    "appearance": "外观",
-    "tools": "工具与更新",
-    "editing": "剪辑与输出",
-    "processing": "视频处理"
+    "browser": "登录与账号",
+    "tools": "更新与高级",
+    "editing": "剪辑与字幕"
   },
   "general": {
     "saveLocation": "保存位置",
-    "saveLocationHint": "目录选择后立即保存，只影响新建任务。",
+    "saveLocationHint": "保存设置后用于新任务。",
+    "chooseDirectory": "请通过文件夹选择器选择保存位置。",
     "resumeOnStart": {
       "label": "启动时恢复任务",
       "hint": "继续上次退出时正在下载和等待中的任务。"
@@ -29,11 +36,12 @@
     },
     "keepHistory": {
       "label": "保存解析历史",
-      "hint": "在新建任务页记住解析成功的链接，方便再次解析；只保存在本机。关闭后不再记录，已有的记录可在新建任务页清空。"
+      "hint": "在本机保存成功解析的链接，方便再次使用。"
     },
     "workMode": {
       "label": "工作模式",
-      "hint": "下载模式保存原始媒体，不附带字幕、不转码、不启动本地识别或嵌入封面。剪辑模式可附带平台字幕，并显示视频处理模块，可管理模型、识别和编辑字幕，按需导出转码、软字幕或烧字幕成品，也可开启下载后自动转录。原片始终保留，已有下载任务不受切换影响。"
+      "downloadHint": "保存原始媒体，不附带字幕或转码。",
+      "editHint": "支持平台字幕、本地转录与视频输出，原片始终保留。"
     }
   },
   "download": {
@@ -43,7 +51,7 @@
     },
     "speedLimit": {
       "label": "全局限速（KiB/s）",
-      "hint": "0 为不限速；额度按并发槽位均分。"
+      "hint": "0 为不限速。"
     },
     "taskSpeedLimit": {
       "label": "默认单任务限速（KiB/s）",
@@ -59,7 +67,7 @@
     },
     "batchLimit": {
       "label": "单次批量上限",
-      "hint": "一次点「下载所选」最多入队多少项，按列表顺序取前面的。0 表示不限。"
+      "hint": "每次下载所选的前 N 项；0 表示不限。"
     }
   },
   "files": {
@@ -76,7 +84,7 @@
     },
     "organizeByCollection": {
       "label": "按合集创建子目录",
-      "hint": "合集与分P 保存到以合集名命名的文件夹；与上一项同时开启时为 平台/合集。"
+      "hint": "将合集或分 P 保存到各自的文件夹。"
     },
     "videoQuality": {
       "label": "默认视频质量",
@@ -158,8 +166,8 @@
     }
   },
   "browser": {
-    "sessions_other": "应用内浏览器 · {{count}} 个站点有会话",
-    "noSessions": "应用内浏览器暂无会话",
+    "sessions_other": "已保存 {{count}} 个站点的会话",
+    "noSessions": "暂未保存站点会话，需要时可在应用内登录。",
     "sessionsHint": "需要登录的内容在应用内登录一次即可，登录态保存在本机，重启后继续有效。",
     "clearSessions": "清除登录态"
   },
@@ -183,6 +191,10 @@
     }
   },
   "tools": {
+    "kernelAutomatic": "自动更新内核",
+    "kernelAutomaticHint": "每周检查官方稳定版，校验后用于新任务；失败保留当前内核。",
+    "kernelChecking": "正在检查更新…",
+    "kernelDownloading": "正在更新内核",
     "checking": "检测中",
     "localHint": "本地工具随应用更新，下载和解析均在本机执行。",
     "checkTools": "检测工具",
@@ -191,27 +203,31 @@
     "installUpdate": "重启安装",
     "verboseLogging": {
       "label": "详细日志",
-      "hint": "把每个请求的状态码、耗时、等待和异常响应的开头写进日志，排查解析失败时打开。凭据类参数会脱敏，日志只保存在本机。保存设置后生效。"
+      "hint": "排查问题时记录请求详情；凭据脱敏，日志只保存在本机。"
     },
     "openLogs": "打开日志目录",
     "exportLogs": "导出诊断日志",
     "allowControl": {
-      "label": "允许命令行和 Agent 控制",
-      "hint": "允许 galaxy 命令行和使用它的 Agent 通过本机通道解析、下载和查看任务。只有本机当前用户能连接，不开放网络端口。"
+      "label": "命令行与 Agent",
+      "hint": "自动配置 galaxy 命令，供终端和 Agent 使用；仅允许本机当前用户连接。"
     },
     "commandLine": {
-      "title": "命令行工具",
-      "hint": "安装 galaxy 命令，在终端或 Agent 里解析和下载，使用客户端里的登录态。",
-      "installed": "已安装：{{path}}。新打开的终端里可以运行 galaxy。",
-      "notOnPath": "这个目录还不在 PATH 里，请把它加入 shell 配置后重新打开终端。",
-      "install": "安装命令行工具",
-      "uninstall": "移除命令行工具"
+      "configuring": "正在配置命令行…",
+      "ready": "已启用，新打开的终端可使用 galaxy。",
+      "disabled": "已关闭命令行与 Agent 控制。",
+      "needsSetup": "命令尚未就绪，可重新配置。",
+      "failed": "命令行配置失败，请重试或查看诊断日志。",
+      "channelFailed": "命令行连接不可用，请关闭其他客户端后重试。",
+      "enableFirst": "请先启用并保存命令行与 Agent 设置。",
+      "retry": "重新配置命令行"
     }
   },
   "saving": "正在保存…",
   "save": "保存设置",
   "saved": "设置已保存",
   "editing": {
+    "languageHint": "例如 zh, en；最多 5 种语言。",
+    "modelHint": "模型按需下载，音频仅在本机处理。",
     "hint": "输出为新文件，不覆盖原片；视频处理页导出时使用这里的格式与分辨率。",
     "outputFormat": "视频输出格式",
     "originalFormat": "保持原格式",

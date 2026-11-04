@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowDown, Bell, CheckCheck, ClipboardPaste, FolderOpen, List, Pause, Play, Plus, Search, Settings2, ShieldCheck, Sparkles, Captions, X } from 'lucide-react'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
@@ -22,7 +22,7 @@ import { fixableBySignIn, wallTitle } from '@/components/downloader/walls'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { i18n, setLocale } from '../shared/i18n'
 import { cn, formatBytes, platformLabel } from '@/lib/utils'
-import type { ClientState, Command, CommandInput, Job, JobFile } from '../shared/contracts'
+import type { ClientState, Command, CommandInput, Job, JobFile, Settings } from '../shared/contracts'
 import { version } from '../package.json'
 import type { SubscriptionCandidate } from '../shared/subscriptions'
 
@@ -33,7 +33,7 @@ const Subscriptions = lazy(() => import('@/components/downloader/Subscriptions')
 
 // Falsy when the command failed, so 'if (ok)' still reads the way it did; a success carries back
 // whatever the main process wanted to say about it, which today is how many downloads it started.
-export type Send = <C extends Command>(command: C, input: CommandInput<C>) => Promise<false | { subscriptionCandidate?: SubscriptionCandidate; added?: number; files?: JobFile[]; document?: import('../shared/processing').ProcessingDocument }>
+export type Send = <C extends Command>(command: C, input: CommandInput<C>) => Promise<false | { settings?: Settings; directory?: string; subscriptionCandidate?: SubscriptionCandidate; added?: number; files?: JobFile[]; document?: import('../shared/processing').ProcessingDocument }>
 const navigation = [
   { id: 'all', icon: List },
   { id: 'running', icon: ArrowDown },
@@ -42,8 +42,12 @@ const navigation = [
 export default function App() {
   const { t } = useTranslation(['app', 'common'], { i18n })
   const [state, setState] = useState<ClientState>()
+  const initialized = useRef(false)
   // The language follows the settings before the state is rendered, so a switch never shows a frame in the old one.
-  const apply = useCallback((next: ClientState) => { setLocale(next.settings.locale); document.documentElement.lang = next.settings.locale === 'en' ? 'en' : 'zh-CN'; setState(next) }, [])
+  const apply = useCallback((next: ClientState) => {
+    if (!initialized.current) { initialized.current = true; if (next.firstRun) setPage('new') }
+    setLocale(next.settings.locale); document.documentElement.lang = next.settings.locale === 'en' ? 'en' : 'zh-CN'; setState(next)
+  }, [])
   const [error, setError] = useState('')
   const [url, setUrl] = useState('')
   const [page, setPage] = useState<'all' | 'running' | 'completed' | 'settings' | 'new' | 'processing' | 'subscriptions'>('all')
@@ -60,7 +64,7 @@ export default function App() {
   const [clearFiles, setClearFiles] = useState(false)
   const send: Send = useCallback(async (command, input) => {
     setError('')
-    try { const reply = await window.desktopApi.command(command, input); if (reply.ok) { apply(reply.state); return { subscriptionCandidate: reply.subscriptionCandidate, added: reply.added, files: reply.files, document: reply.document } }; setError(reply.message) } catch (failure) { setError(String(failure)) }
+    try { const reply = await window.desktopApi.command(command, input); if (reply.ok) { apply(reply.state); return { settings: reply.state.settings, directory: reply.directory, subscriptionCandidate: reply.subscriptionCandidate, added: reply.added, files: reply.files, document: reply.document } }; setError(reply.message) } catch (failure) { setError(String(failure)) }
     return false
   }, [apply])
   useEffect(() => { const unsubscribe = window.desktopApi.subscribe(apply); void send('state:get', null); return unsubscribe }, [send, apply])

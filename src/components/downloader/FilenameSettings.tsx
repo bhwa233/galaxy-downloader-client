@@ -35,7 +35,6 @@ export function FilenameSettings({ settings, example, patch }: { settings: Setti
           {(settings.filenameTemplate === 'title-author-date' || custom && settings.customFilenameTemplate.includes('{date}')) && sample.publishedAt === undefined && <ItemDescription>{t('files.cleanNaming.noDate')}</ItemDescription>}
         </ItemContent>
       </Item>
-      <FieldDescription>{t('files.cleanNaming.hint')}</FieldDescription>
     </FieldGroup>
   </FieldSet>
 }

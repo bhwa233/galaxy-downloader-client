@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { settingsSchema, type HistoryEntry, type Settings, type Job } from '../../shared/contracts'
 
@@ -8,11 +8,13 @@ type StoredState = { version: 1; settings: Settings; jobs: Job[]; history: Histo
 // The app has one main-process writer. Atomic replace is sufficient for this local settings/queue store.
 export class Store {
   data: StoredState
+  readonly firstRun: boolean
   private file: string
   // 'locale' is the language a first start takes, before anything has been saved: the system's.
   constructor(directory: string, downloadDirectory: string, locale: Settings['locale'] = 'zh') {
     mkdirSync(directory, { recursive: true })
     this.file = path.join(directory, 'state.json')
+    this.firstRun = !existsSync(this.file)
     this.data = { version: 1, settings: { ...settingsSchema.parse({}), locale, downloadDirectory }, jobs: [], history: [] }
     try {
       const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StoredState

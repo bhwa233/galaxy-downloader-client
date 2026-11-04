@@ -56,7 +56,7 @@ test('real engine parses and downloads a local video, persists history, and isol
     await page.getByRole('button', { name: '保存设置' }).click()
     await expect(page.getByRole('status')).toHaveText('设置已保存')
     await page.screenshot({ path: 'test-results/settings.png', fullPage: true })
-    await page.getByRole('tab', { name: '外观', exact: true }).click()
+    await page.getByRole('tab', { name: '常规', exact: true }).click()
     await page.getByRole('combobox', { name: '主题', exact: true }).click()
     await page.getByRole('option', { name: '夜间', exact: true }).click()
     await page.getByRole('button', { name: '保存设置' }).click()
