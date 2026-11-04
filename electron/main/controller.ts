@@ -77,7 +77,7 @@ export class Controller {
   // for can be made again without them asking twice. Only ever set by a refusal a login could lift.
   private pendingPage?: { resultId: string; page: number; groupId?: string }
   private tools: ClientState['tools'] = { engine: { available: false, version: '' }, ffmpeg: { available: false, version: '' } }
-  private nativeNotifications = new NativeNotifications(() => this.emit())
+  private nativeNotifications = new NativeNotifications()
   // A job re-resolves the one post it was made from. 'single' says so: its URL can itself be a listing
   // the client would otherwise expand - a 哔哩哔哩 video that turned out to have 分P - and downloading
   // all of them under one job is not what the user picked.
@@ -118,7 +118,7 @@ export class Controller {
   }
   // What the main process says to the user - errors, a task's log, notifications - is in the window's language.
   constructor(private window: () => BrowserWindow | null, private activateWindow?: () => void) { setLocale(this.store.data.settings.locale) }
-  state(): ClientState { return { nativeNotifications: this.nativeNotifications.state(), subscriptions: this.subscriptions.state(), kernel: this.kernel.state, processing: this.processing.state(this.queue.jobs), settings: this.store.data.settings, jobs: this.queue.jobs.map(job => ({ ...job, files: filesFor(job), originalFiles: job.originalFiles?.filter(file => filesFor(job).includes(file)), processedFiles: job.processedFiles?.filter(file => filesFor(job).includes(file)), url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: this.commandLine.state() } }
+  state(): ClientState { return { subscriptions: this.subscriptions.state(), kernel: this.kernel.state, processing: this.processing.state(this.queue.jobs), settings: this.store.data.settings, jobs: this.queue.jobs.map(job => ({ ...job, files: filesFor(job), originalFiles: job.originalFiles?.filter(file => filesFor(job).includes(file)), processedFiles: job.processedFiles?.filter(file => filesFor(job).includes(file)), url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: this.commandLine.state() } }
   // A successful parse goes to the top of 解析历史: one entry per address, the newest 50 kept. Only
   // successes - a list of failures would bury the entries worth parsing again.
   private remember(plan: ParsePlan): void {
@@ -176,7 +176,6 @@ export class Controller {
   }
   private emit(): void { const win = this.window(); if (win && !win.isDestroyed()) win.webContents.send('desktop:state', this.state()) }
   async initialize(): Promise<void> {
-    this.nativeNotifications.refresh()
     this.subscriptions.start()
     powerMonitor.on('resume', this.resumeSubscriptions)
     setVerbose(this.store.data.settings.verboseLogging); await this.kernel.initialize().catch(error => log.warn('Kernel initialization failed', error)); this.kernel.schedule(this.store.data.settings.kernelAutoUpdate); await this.refresh(); await this.checkTools(); this.queue.pump(); this.processing.refresh()
@@ -239,9 +238,6 @@ export class Controller {
       const input = commandSchemas[command].parse(raw)
       if ((command.startsWith('processing:') || command.startsWith('models:')) && this.store.data.settings.workMode !== 'edit') throw new Error(this.store.data.settings.locale === 'zh' ? '请在设置中切换到剪辑模式' : 'Switch to editing mode in Settings')
       switch (command) {
-        case 'notifications:test':
-          await this.nativeNotifications.show({ title: i18n.t('desktop:notifications.testTitle'), body: i18n.t('desktop:notifications.testBody') }, () => this.activateWindow?.())
-          break
         case 'subscriptions:resolve': subscriptionCandidate = await this.subscriptions.resolve(commandSchemas[command].parse(input).url); break
         case 'subscriptions:add': {
           const value = commandSchemas[command].parse(input)
@@ -592,6 +588,7 @@ export class Controller {
         case 'tools:check': await this.checkTools(); break
         case 'update:check': await this.updates.check(); break
         case 'update:download': await this.updates.download(); break
+        case 'update:cancel': await this.updates.cancel(); break
         case 'update:install': this.updates.install(); break
       }
       if (!quiet) log.debug(`${command} ${Date.now() - started}ms`)
@@ -606,5 +603,5 @@ export class Controller {
     }
   }
   processingMedia(id: string): string { return this.processing.media(id) }
-  stop(): void { this.subscriptions.stop(); this.nativeNotifications.stop(); powerMonitor.removeListener('resume', this.resumeSubscriptions); this.parsing?.abort(); this.plan?.formatController?.abort(); for (const plan of this.detached.values()) plan.formatController?.abort(); this.querying?.controller.abort(); void this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
+  stop(): void { this.updates.stop(); this.subscriptions.stop(); this.nativeNotifications.stop(); powerMonitor.removeListener('resume', this.resumeSubscriptions); this.parsing?.abort(); this.plan?.formatController?.abort(); for (const plan of this.detached.values()) plan.formatController?.abort(); this.querying?.controller.abort(); void this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
 }

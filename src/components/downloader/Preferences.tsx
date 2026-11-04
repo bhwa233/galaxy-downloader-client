@@ -11,10 +11,10 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Choice } from './Choice'
 import { FilenameSettings } from './FilenameSettings'
+import { AppUpdate } from './AppUpdate'
 import { settingsSchema, type ClientState, type Settings } from '../../../shared/contracts'
 import type { Send } from '@/App'
 import { modelIds } from '../../../shared/processing'
-import { Spinner } from '@/components/ui/spinner'
 
 const sections = ['general', 'download', 'files', 'subscriptions', 'editing', 'processing', 'browser', 'appearance', 'tools'] as const
 type Section = typeof sections[number]
@@ -22,9 +22,6 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
   const { t } = useTranslation(['settings', 'common'])
   const { t: processText } = useTranslation('processing')
   const { t: subscriptionsText } = useTranslation('subscriptions')
-  const { t: desktopText } = useTranslation('desktop')
-  const [testingNotification, setTestingNotification] = useState(false)
-  const [notificationSent, setNotificationSent] = useState(false)
   const [draft, setDraft] = useState(state.settings)
   useEffect(() => { setDraft(current => ({ ...current, theme: state.settings.theme })) }, [state.settings.theme])
   const [languages, setLanguages] = useState(draft.captionLanguages.join(', '))
@@ -33,15 +30,6 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
   const [saving, setSaving] = useState(false)
   const namingValid = draft.filenameTemplate !== 'custom' || Boolean(draft.customFilenameTemplate.trim()) && settingsSchema.shape.customFilenameTemplate.safeParse(draft.customFilenameTemplate).success
   const patch = (value: Partial<Settings>) => { setDraft(current => ({ ...current, ...value })); setSaved(false) }
-  const notificationProbe = <Field>
-    <FieldLabel>{desktopText('notifications.title')}</FieldLabel>
-    <FieldDescription>{state.nativeNotifications?.error || desktopText(state.nativeNotifications?.supported ? 'notifications.ready' : 'notifications.unavailable')}</FieldDescription>
-    <Button type="button" variant="outline" className="self-start" disabled={testingNotification} onClick={() => {
-      setTestingNotification(true); setNotificationSent(false)
-      void send('notifications:test', null).then(result => setNotificationSent(Boolean(result))).finally(() => setTestingNotification(false))
-    }}>{testingNotification && <Spinner />}{desktopText(testingNotification ? 'notifications.testing' : 'notifications.test')}</Button>
-    {notificationSent && !state.nativeNotifications?.error && <FieldDescription>{desktopText('notifications.sent')}</FieldDescription>}
-  </Field>
   const number = (key: 'concurrency' | 'speedLimit' | 'taskSpeedLimit' | 'retries' | 'timeout' | 'batchLimit' | 'transcriptionConcurrency' | 'subscriptionIntervalHours', label: string, min: number, max: number, hint: string) => <Field>
     <FieldLabel htmlFor={`setting-${key}`}>{label}</FieldLabel>
     <Input id={`setting-${key}`} aria-label={label} type="number" required min={min} max={max} value={draft[key]} onChange={event => patch({ [key]: event.target.valueAsNumber })} />
@@ -72,7 +60,6 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
             {toggle('subscriptionAutomatic', subscriptionsText('automatic'), subscriptionsText('automaticHint'))}
             {number('subscriptionIntervalHours', subscriptionsText('interval'), 1, 720, subscriptionsText('intervalHint'))}
             {toggle('subscriptionNotifications', subscriptionsText('systemNotifications'), subscriptionsText('systemNotificationsHint'))}
-            {notificationProbe}
             <FieldDescription>{subscriptionsText('lifecycleHint')}</FieldDescription>
           </FieldGroup></TabsContent>
           <TabsContent value="general"><FieldGroup>
@@ -85,7 +72,6 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
             </Field>
             {toggle('resumeOnStart', t('general.resumeOnStart.label'), t('general.resumeOnStart.hint'))}
             {toggle('notifications', t('general.notifications.label'), t('general.notifications.hint'))}
-            {notificationProbe}
             {toggle('minimizeToTray', t('general.minimizeToTray.label'), t('general.minimizeToTray.hint'))}
             {toggle('keepHistory', t('general.keepHistory.label'), t('general.keepHistory.hint'))}
           </FieldGroup></TabsContent>
@@ -176,12 +162,8 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
             </Item>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => void send('tools:check', null)}>{t('tools.checkTools')}</Button>
-              <Button type="button" variant="outline" disabled={['checking', 'downloading'].includes(state.update.status)} onClick={() => void send('update:check', null)}>{t('tools.checkUpdate')}</Button>
-              {state.update.status === 'available' && <Button type="button" onClick={() => void send('update:download', null)}>{t('tools.downloadUpdate', { version: state.update.version })}</Button>}
-              {state.update.status === 'ready' && <Button type="button" onClick={() => void send('update:install', null)}>{t('tools.installUpdate')}</Button>}
             </div>
-            {state.update.status === 'downloading' && <Progress value={state.update.progress ?? 0} />}
-            {state.update.message && <p className="text-sm">{state.update.message}</p>}
+            <AppUpdate state={state} send={send} />
             {toggle('verboseLogging', t('tools.verboseLogging.label'), t('tools.verboseLogging.hint'))}
             {toggle('allowControl', t('tools.allowControl.label'), t('tools.allowControl.hint'))}
             {/* Installed at once rather than on 保存设置: it writes files and the PATH, not a setting. */}

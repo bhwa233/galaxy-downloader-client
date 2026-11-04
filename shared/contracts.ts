@@ -184,7 +184,6 @@ export type HistoryEntry = {
   thumbnail?: string; parsedAt: string
 }
 export type ClientState = {
-  nativeNotifications?: { supported: boolean; error?: string; lastShownAt?: number };
   subscriptions?: SubscriptionState;
   kernel?: import('./processing').KernelState;
   processing?: ProcessingState;
@@ -197,7 +196,11 @@ export type ClientState = {
   parse: { status: 'idle' | 'parsing' | 'needs-login' | 'error'; message?: string; result?: MediaResult; loginUrl?: string; wall?: AccessWall; verify?: boolean };
   // Login state the client holds itself, in its own browser partition.
   browser: { sites: number };
-  update: { status: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'; version?: string; progress?: number; message?: string };
+  update: {
+    status: 'idle' | 'checking' | 'available' | 'connecting' | 'downloading' | 'verifying' | 'cancelling' | 'ready' | 'error';
+    currentVersion?: string; version?: string; progress?: number; downloaded?: number; total?: number; speed?: number; eta?: number;
+    waiting?: boolean; slow?: boolean; external?: boolean; failedOperation?: 'check' | 'download'; message?: string;
+  };
   // The item whose page is open in the preview dialog. Held here rather than in the window, because
   // the page itself can close it too: Esc pressed inside it never reaches the window.
   preview?: { title: string };
@@ -220,7 +223,6 @@ export const downloadInput = z.object({ resultId: z.string().uuid(), itemIds: z.
 // audio only. Both add to what is on disk and never touch the job they were asked on.
 export const jobActionInput = z.object({ id: z.string().uuid(), action: z.enum(['pause', 'resume', 'retry', 'cancel', 'open', 'reveal', 'copy-link', 'open-page', 'copy-path', 'thumbnail', 'audio', 'login']) })
 export const commandSchemas = {
-  'notifications:test': z.null(),
   'subscriptions:resolve': parseInput,
   'subscriptions:add': z.object({ token: z.string().uuid(), types: z.array(subscriptionType).min(1).max(3), notify: z.boolean().default(true) }),
   'subscriptions:update': z.object({ id: z.string().uuid(), enabled: z.boolean().optional(), notify: z.boolean().optional() }),
@@ -284,7 +286,7 @@ export const commandSchemas = {
   'cli:install': z.null(), 'cli:uninstall': z.null(),
   'logs:export': z.null(), 'logs:open': z.null(),
   'kernel:check': z.null(), 'kernel:rollback': z.null(),
-  'tools:check': z.null(), 'update:check': z.null(), 'update:download': z.null(), 'update:install': z.null(),
+  'tools:check': z.null(), 'update:check': z.null(), 'update:download': z.null(), 'update:cancel': z.null(), 'update:install': z.null(),
 } as const
 export type Command = keyof typeof commandSchemas
 export type CommandInput<C extends Command> = z.input<(typeof commandSchemas)[C]>

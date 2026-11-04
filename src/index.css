@@ -23,3 +23,10 @@ body { margin: 0; min-width: 850px; }
 button, label, input { -webkit-app-region: no-drag; }
 button:not(:disabled), [role=combobox] { cursor: pointer; }
 body { background: var(--background); color: var(--foreground); }
+@keyframes transfer-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="progress-indicator"][data-indeterminate] { animation: transfer-indeterminate 1s linear infinite; }
+}

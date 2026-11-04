@@ -455,7 +455,13 @@ export class Queue {
       this.running.set(job.id, controller)
       job.status = 'running'; job.speed = undefined; job.eta = undefined; job.processingEta = undefined; job.stage = 'download'; job.processingProgress = undefined; job.warnings = []
       this.log(job, i18n.t('queue:log.preparing')); this.persist()
-      const task = this.execute(job, controller.signal).catch(error => {
+      let lastTransfer = Date.now()
+      const pulse = setInterval(() => {
+        if (job.status === 'running' && job.stage === 'download' && (job.downloaded || 0) > 0 && job.speed !== 0 && Date.now() - lastTransfer >= 5_000) {
+          job.speed = 0; job.eta = undefined; this.changed()
+        }
+      }, 1_000)
+      const task = this.execute(job, controller.signal, () => { lastTransfer = Date.now() }).catch(error => {
         if (controller.signal.aborted) return
         // A permission wall is not a broken transfer. Saying which wall it is beats the engine's own
         // wording, and waiting twenty seconds to run into the same wall again helps nobody - the
@@ -467,11 +473,11 @@ export class Queue {
         // A protocol or local path failure cannot be repaired by downloading again.
         const localFailure = error instanceof EngineProtocolError || isFileFailure(error)
         if (!denied && !localFailure) this.resumeLater(job)
-      }).finally(() => { this.running.delete(job.id); this.draining.delete(job.id); job.speed = undefined; job.eta = undefined; job.processingEta = undefined; this.persist(); this.pump() })
+      }).finally(() => { clearInterval(pulse); this.running.delete(job.id); this.draining.delete(job.id); job.speed = undefined; job.eta = undefined; job.processingEta = undefined; this.persist(); this.pump() })
       this.draining.set(job.id, task)
     }
   }
-  private async execute(job: Job, signal: AbortSignal): Promise<void> {
+  private async execute(job: Job, signal: AbortSignal, activity: () => void = () => {}): Promise<void> {
     const settings = { ...this.store.data.settings }
     const budget = settings.speedLimit ? settings.speedLimit / settings.concurrency : Infinity
     const rate = Math.min(budget, job.speedLimit || Infinity)
@@ -530,7 +536,7 @@ export class Queue {
       const stem = `${base}${items.length > 1 ? `-${index + 1}` : ''}`
       const progress = (value: number, stats?: { downloaded: number; total: number; speed?: number; eta?: number }) => {
         job.progress = (index + value) / items.length
-        if (stats) { job.downloaded = completedBytes + stats.downloaded; job.total = items.length === 1 ? stats.total || undefined : undefined; job.speed = stats.speed; job.eta = items.length === 1 ? stats.eta : undefined }
+        if (stats) { activity(); job.downloaded = completedBytes + stats.downloaded; job.total = items.length === 1 ? stats.total || undefined : undefined; job.speed = stats.speed; job.eta = items.length === 1 ? stats.eta : undefined }
         if (Date.now() - lastProgress > 250 || value === 1) { lastProgress = Date.now(); this.changed() }
       }
       this.log(job, i18n.t('queue:log.fileStart', { index: index + 1, total: items.length }))

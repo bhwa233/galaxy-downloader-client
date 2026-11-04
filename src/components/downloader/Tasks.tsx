@@ -10,7 +10,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
-import { Progress } from '@/components/ui/progress'
+import { TransferProgress } from './TransferProgress'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MediaCover, MediaStatsRow } from './MediaCard'
@@ -134,14 +134,20 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
     </AlertDialog>
   </>
 }
-function Metrics({ job }: { job: Job }) {
+function JobProgress({ job, detail = false }: { job: Job; detail?: boolean }) {
   const { t } = useTranslation(['tasks', 'common'])
-  return <div className="flex flex-wrap justify-between gap-3 text-xs tabular-nums text-muted-foreground">
-    <span>{job.downloaded !== undefined ? formatBytes(job.downloaded) : '—'}{job.total ? ` / ${formatBytes(job.total)}` : ''}</span>
-    <span>{job.status === 'running' ? job.stage && job.stage !== 'download' ? `${t(`stages.${job.stage}`)}${job.processingProgress !== undefined ? ` ${Math.round(job.processingProgress * 100)}%` : ''}` : job.speed ? `${formatBytes(job.speed)}/s` : t('preparing') : job.status === 'completed' ? job.completedAt ? t('completedAt', { time: localTime(job.completedAt) }) : '' : `${Math.round(job.progress * 100)}%`}</span>
-    {job.status === 'running' && job.eta !== undefined && <span>{t('remaining', { time: formatDuration(job.eta) })}</span>}
-    {job.status === 'running' && job.stage && job.stage !== 'download' && <span>{job.processingEta === undefined ? t('estimating') : t('estimatedRemaining', { time: formatDuration(job.processingEta) })}</span>}
-  </div>
+  const active = job.status === 'running'
+  const processing = job.stage !== 'download' ? job.stage : undefined
+  const finishing = active && !processing && Boolean(job.total && (job.downloaded || 0) >= job.total)
+  const value = processing ? job.processingProgress !== undefined ? job.processingProgress * 100 : null : job.total || job.status === 'completed' ? job.progress * 100 : null
+  const label = active ? processing ? t(`stages.${processing}`) : finishing ? t('common:transfer.finishing') : t('common:transfer.downloading')
+    : job.status === 'completed' && job.completedAt ? t('completedAt', { time: localTime(job.completedAt) }) : t(`common:statuses.${job.status}`)
+  return <>
+    <TransferProgress label={label} value={value} downloaded={job.downloaded} total={job.total} speed={job.speed}
+      eta={processing ? job.processingEta : job.eta} active={active && !finishing} waiting={active && !processing && job.speed === 0 && Boolean(job.downloaded)}
+      showTransfer={!processing || !active} showBar={(detail || job.status !== 'completed') && (active || value !== null)} />
+    {active && processing && job.processingEta === undefined && <span className="text-xs text-muted-foreground">{t('estimating')}</span>}
+  </>
 }
 // Tasks and subscription updates use this same row: cover size, title, metadata and action placement
 // change together. Callers supply their own state and actions rather than fabricating download jobs.
@@ -174,8 +180,7 @@ export function TaskCard({ job, send, select, density = 'comfortable' }: { job: 
     cover={<Cover job={job} />} select={select} selectLabel={t('viewTask', { title: job.title })} density={density}
     status={<span className={cn('text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>}
     actions={<Actions job={job} send={send} />}>
-      {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
-      <Metrics job={job} />
+      <JobProgress job={job} />
       {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
       {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
@@ -270,11 +275,9 @@ export function TaskInspector({ job, send, close, error, process }: { job?: Job;
               {job.error && <Failure job={job} send={send} />}
               {job.burnRestartRequired && !job.error && <Alert><AlertTitle>{t('burnRestart.title')}</AlertTitle><AlertDescription>{t('burnRestart.hint')}</AlertDescription></Alert>}
               {job.warnings?.map(warning => <Alert key={warning}><AlertTitle>{t('subtitleWarning')}</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
-              <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} />
-              {job.status === 'running' && job.stage && job.stage !== 'download' && <p className="text-sm text-muted-foreground">{t(`stages.${job.stage}`)}</p>}
+              <JobProgress job={job} detail />
               {process && job.kind !== 'image' && job.files.length > 0 && <Button variant="outline" onClick={process}>{t('processing:title')}</Button>}
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm [&_dt]:text-muted-foreground">
-                <dt>{t('fields.progress')}</dt><dd className="tabular-nums">{Math.round((job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100)}%</dd>
                 <dt>{t('fields.platformKind')}</dt><dd>{platformLabel(job.platform)} / {t(`common:kinds.${job.kind || 'video'}`)}</dd>
                 {job.workMode === 'edit' && job.kind === 'video' && <>
                   <dt>{t('fields.outputFormat')}</dt><dd>{job.outputFormat && job.outputFormat !== 'original' ? job.outputFormat.toUpperCase() : t('files.originalFormat')}</dd>
@@ -290,10 +293,6 @@ export function TaskInspector({ job, send, close, error, process }: { job?: Job;
                 {(job.views ?? job.danmaku ?? job.comments ?? job.likes) !== undefined && <><dt>{t('fields.stats')}</dt><dd><MediaStatsRow views={job.views} danmaku={job.danmaku} comments={job.comments} likes={job.likes} className="text-sm" /></dd></>}
                 <dt>{t('fields.source')}</dt><dd className="break-all">{job.url}</dd>
                 <dt>{t('fields.directory')}</dt><dd className="break-all">{job.directory}</dd>
-                <dt>{t('fields.downloaded')}</dt><dd className="tabular-nums">{job.downloaded !== undefined ? formatBytes(job.downloaded) : t('noData')}{job.total ? ` / ${formatBytes(job.total)}` : ''}</dd>
-                <dt>{t('fields.speed')}</dt><dd className="tabular-nums">{job.status === 'running' && job.speed ? `${formatBytes(job.speed)}/s` : '—'}</dd>
-                {job.status === 'running' && job.eta !== undefined && <><dt>{t('fields.eta')}</dt><dd className="tabular-nums">{formatDuration(job.eta)}</dd></>}
-                {job.status === 'running' && job.stage && job.stage !== 'download' && <><dt>{t('fields.processingEta')}</dt><dd className="tabular-nums">{job.processingEta === undefined ? t('estimating') : formatDuration(job.processingEta)}</dd></>}
                 {/* Breaks picked up again on their own since the last time it finished or was retried by hand. */}
                 {job.attempts ? <><dt>{t('fields.autoResume')}</dt><dd className="tabular-nums">{t('attempts', { count: job.attempts })}</dd></> : null}
                 <dt>{t('fields.createdAt')}</dt><dd>{localTime(job.createdAt)}</dd>
