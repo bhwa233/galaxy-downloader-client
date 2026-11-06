@@ -22,6 +22,8 @@ let window: BrowserWindow | null = null
 let controller: Controller
 let tray: Tray | undefined
 let quitting = false
+let shutdown: Promise<void> | undefined
+let shutdownFinished = false
 let activationRequested = false
 // Started by the command line when it found no client running: the window is made but not shown, and
 // the tray or opening the app again brings it up.
@@ -103,5 +105,11 @@ function showWindow(): void {
   window?.show()
   window?.focus()
 }
-app.on('before-quit', () => { quitting = true; controller?.stop(); tray?.destroy() })
+app.on('before-quit', event => {
+  quitting = true; tray?.destroy()
+  if (!controller || shutdownFinished) return
+  event.preventDefault()
+  // Keep main alive until cancelled workers exit and remove their private files.
+  shutdown ||= controller.stop().catch(error => { log.warn('Shutdown cleanup failed', error) }).finally(() => { shutdownFinished = true; app.quit() })
+})
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

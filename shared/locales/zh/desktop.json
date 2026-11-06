@@ -13,6 +13,7 @@
   "errors": {
     "untrustedPage": "不可信的页面",
     "unsupportedCommand": "不支持的操作",
+    "quitting": "应用正在退出，请等待处理任务停止。",
     "parseExpired": "解析结果已过期，请重新解析",
     "selectionMissing": "所选内容不存在",
     "needsPurchase": "所选内容里有需要单独购买的，无法下载",

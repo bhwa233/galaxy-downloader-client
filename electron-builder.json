@@ -3,6 +3,7 @@
   "appId": "com.bhwa233.galaxy-downloader",
   "productName": "Galaxy Downloader",
   "asar": true,
+  "afterPack": "scripts/after-pack.mjs",
   "electronLanguages": [
     "zh-CN",
     "en-US"
@@ -12,7 +13,8 @@
   },
   "files": [
     "dist-electron",
-    "dist"
+    "dist",
+    "!**/*.log"
   ],
   "mac": {
     "artifactName": "${name}_${version}_mac_${arch}.${ext}",

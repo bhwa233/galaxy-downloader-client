@@ -46,14 +46,19 @@ export function runProcess<T>(executable: string, args: string[], input: unknown
     let failureCode: string | undefined
     let bytes = 0
     let timedOut = false
+    let stopping: Promise<void> | undefined
     const started = Date.now()
     // What the call was for, without the cookies and headers it carries.
     const request = input as { operation?: string; url?: string } | undefined
     const label = `${request?.operation || path.basename(executable)}${request?.url ? ` ${request.url}` : ''}`
     log.debug(`开始 ${label}`)
     const stop = () => {
-      if (!child.pid) return
-      if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => child.kill())
+      if (!child.pid || stopping) return
+      if (process.platform === 'win32') stopping = new Promise<void>(done => {
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+        killer.once('close', () => done())
+        killer.once('error', () => { child.kill(); done() })
+      })
       else { try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill() } }
     }
     const timer = setTimeout(() => { timedOut = true; stop() }, timeout)
@@ -77,10 +82,13 @@ export function runProcess<T>(executable: string, args: string[], input: unknown
     child.stderr.on('data', chunk => { error = (error + redact(String(chunk))).slice(-4000) })
     child.stdin.on('error', () => { /* Early process exit is handled by close. */ })
     child.on('error', failure => { error = failure.message; failureCode = (failure as NodeJS.ErrnoException).code })
-    child.on('close', code => {
+    child.on('close', async code => {
       clearTimeout(timer)
       signal?.removeEventListener('abort', stop)
       output.close()
+      // The onefile bootloader can close before taskkill has stopped FFmpeg.
+      // Join the tree termination before callers clean up files opened by descendants.
+      await stopping
       const took = `${Date.now() - started}ms`
       if (signal?.aborted) { log.info(`取消 ${label} ${took}`); reject(new DOMException(i18n.t('queue:errors.cancelled'), 'AbortError')) }
       else if (timedOut) { log.warn(`超时 ${label} ${took}`); reject(new Error(i18n.t('queue:errors.timeout'))) }

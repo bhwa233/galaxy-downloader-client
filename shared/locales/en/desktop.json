@@ -13,6 +13,7 @@
   "errors": {
     "untrustedPage": "Untrusted page",
     "unsupportedCommand": "Unsupported operation",
+    "quitting": "The app is closing. Wait for processing tasks to stop.",
     "parseExpired": "The parse result has expired; parse again",
     "selectionMissing": "The selected content doesn't exist",
     "needsPurchase": "The selection includes items that must be purchased separately and can't be downloaded",

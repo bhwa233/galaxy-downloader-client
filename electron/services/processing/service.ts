@@ -24,6 +24,7 @@ export class ProcessingService {
   readonly models: ModelManager
   private documents = new Map<string, StoredDocument>()
   private active = new Map<string, AbortController>()
+  private draining = new Set<Promise<unknown>>()
   private stopped = false
   constructor(private directory: string, private engine: Engine, private root: string, private settings: () => Settings, fetcher: typeof fetch, private changed: () => void, private platformCaptions: (jobId: string, directory: string, signal: AbortSignal) => Promise<{ file: string; language: string }[]>) {
     mkdirSync(directory, { recursive: true })
@@ -67,7 +68,7 @@ export class ProcessingService {
   private summary(doc: StoredDocument): ProcessingSummary { return { id: doc.id, title: doc.title, sourceName: doc.sourceName, jobId: doc.jobId, durationSeconds: doc.durationSeconds, status: doc.status, stage: doc.stage, progress: doc.progress, error: doc.error, updatedAt: doc.updatedAt, captionCount: doc.captions.length, language: doc.language, model: doc.model } }
   get(id: string): ProcessingDocument { const doc = this.require(id); return { ...this.summary(doc), revision: doc.revision, captions: doc.captions, speakers: doc.speakers, tracks: doc.tracks, activeTrack: doc.activeTrack, exports: doc.exports } }
   private require(id: string): StoredDocument { const doc = this.documents.get(id); if (!doc) throw new Error('Media document not found'); return doc }
-  media(id: string): string { const doc = this.require(id); if (!existsSync(doc.sourcePath)) throw new Error('Source media is missing'); return doc.sourcePath }
+  media(id: string): string { const doc = this.require(id); if (!existsSync(doc.sourcePath) || signature(doc.sourcePath) !== doc.sourceSignature) throw new Error('Source media is missing or changed'); return doc.sourcePath }
   private folder(id: string): string { const directory = path.join(this.directory, id); mkdirSync(directory, { recursive: true }); return directory }
   private save(doc: StoredDocument): void {
     doc.updatedAt = new Date().toISOString()
@@ -166,7 +167,8 @@ export class ProcessingService {
       if (this.active.has(doc.id) || !['queued', 'waiting-model'].includes(doc.status) || !doc.pending) continue
       if (doc.status === 'waiting-model' && !this.models.ready(doc.model!)) continue
       const controller = new AbortController(); this.active.set(doc.id, controller)
-      void this.run(doc, controller.signal).catch(error => { doc.status = controller.signal.aborted ? 'cancelled' : 'failed'; doc.error = controller.signal.aborted ? undefined : redact(error instanceof Error ? error.message : String(error)); this.save(doc) }).finally(() => { this.active.delete(doc.id); this.pump() })
+      const work = this.run(doc, controller.signal).catch(error => { doc.status = controller.signal.aborted ? 'cancelled' : 'failed'; doc.error = controller.signal.aborted ? undefined : redact(error instanceof Error ? error.message : String(error)); this.save(doc) }).finally(() => { this.active.delete(doc.id); this.draining.delete(work); this.pump() })
+      this.draining.add(work)
     }
   }
   private async run(doc: StoredDocument, signal: AbortSignal): Promise<void> {
@@ -223,7 +225,14 @@ export class ProcessingService {
     doc.captionCount = doc.captions.length; doc.revision++; doc.status = 'completed'; doc.progress = 1; doc.stage = result.resultKind === 'no-speech' ? 'no-speech' : undefined; doc.pending = undefined; this.save(doc)
     rmSync(wav, { force: true })
   }
-  async export(id: string, format: 'txt' | 'md' | 'srt' | 'vtt' | 'soft' | 'burn' | 'video', output: string): Promise<ProcessingDocument> {
+  export(id: string, format: 'txt' | 'md' | 'srt' | 'vtt' | 'soft' | 'burn' | 'video', output: string): Promise<ProcessingDocument> {
+    const work = this.exportDocument(id, format, output)
+    this.draining.add(work)
+    const settled = () => { this.draining.delete(work) }
+    void work.then(settled, settled)
+    return work
+  }
+  private async exportDocument(id: string, format: 'txt' | 'md' | 'srt' | 'vtt' | 'soft' | 'burn' | 'video', output: string): Promise<ProcessingDocument> {
     const doc = this.require(id); this.editable(doc)
     if (['soft', 'burn', 'srt', 'vtt'].includes(format) && !doc.captions.length) throw new Error('No subtitles to export')
     if (path.resolve(output) === path.resolve(doc.sourcePath) || existsSync(output)) throw new Error('Choose a new output file; originals are never overwritten')
@@ -249,6 +258,10 @@ export class ProcessingService {
     doc.exportPaths.push(output); doc.exports.push({ name: path.basename(output), createdAt: new Date().toISOString() }); this.save(doc); return this.get(id)
   }
   exportPath(id: string, index: number): string { const file = this.require(id).exportPaths[index]; if (!file || !existsSync(file)) throw new Error('Exported file is missing'); return file }
-  stop(): void { this.stopped = true; this.models.stop(); for (const controller of this.active.values()) controller.abort() }
+  async stop(): Promise<void> {
+    this.stopped = true; this.models.stop()
+    for (const controller of this.active.values()) controller.abort()
+    await Promise.allSettled(this.draining)
+  }
   refresh(): void { this.pump(); this.changed() }
 }

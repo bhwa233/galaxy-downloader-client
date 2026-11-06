@@ -248,6 +248,7 @@ export class Controller {
     try {
       if (typeof name !== 'string' || !Object.hasOwn(commandSchemas, name)) throw new Error(i18n.t('desktop:errors.unsupportedCommand'))
       const command = name as Command
+      if (this.stopping && !['state:get', 'processing:get', 'clipboard:read'].includes(command)) throw new Error(i18n.t('desktop:errors.quitting'))
       const input = commandSchemas[command].parse(raw)
       if ((command.startsWith('processing:') || command.startsWith('models:')) && this.store.data.settings.workMode !== 'edit') throw new Error(this.store.data.settings.locale === 'zh' ? '请在设置中切换到剪辑模式' : 'Switch to editing mode in Settings')
       switch (command) {
@@ -628,5 +629,14 @@ export class Controller {
     }
   }
   processingMedia(id: string): string { return this.processing.media(id) }
-  stop(): void { this.stopping = true; this.updates.stop(); this.subscriptions.stop(); this.nativeNotifications.stop(); powerMonitor.removeListener('resume', this.resumeSubscriptions); this.parsing?.abort(); this.plan?.formatController?.abort(); for (const plan of this.detached.values()) plan.formatController?.abort(); this.querying?.controller.abort(); void this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
+  async stop(): Promise<void> {
+    this.stopping = true; this.updates.stop(); this.subscriptions.stop(); this.nativeNotifications.stop()
+    powerMonitor.removeListener('resume', this.resumeSubscriptions)
+    this.parsing?.abort(); this.plan?.formatController?.abort()
+    for (const plan of this.detached.values()) plan.formatController?.abort()
+    this.querying?.controller.abort()
+    const drained = [this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)), this.processing.stop()]
+    this.kernel.stop(); this.browser.close(); this.control.stop()
+    await Promise.allSettled(drained)
+  }
 }
