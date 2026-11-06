@@ -51,9 +51,5 @@
     "waiting": "Waiting for download data…",
     "measuring": "Measuring speed…",
     "remaining": "About {{time}} remaining"
-  },
-  "workModes": {
-    "download": "Download mode",
-    "edit": "Editing mode"
   }
 }

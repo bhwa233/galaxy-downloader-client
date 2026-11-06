@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { Copy, Download, ExternalLink, FileX, FolderOpen, Image as ImageIcon, Layers, Link as LinkIcon, LogIn, Music, Pause, Play, RotateCcw, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -41,7 +40,7 @@ function Actions({ job, send }: { job: Job; send: Send }) {
   </>
   if (job.status === 'completed') return <Button variant="ghost" size="icon" title={t('revealFile')} aria-label={t('revealFile')} disabled={busy} onClick={() => run('reveal')}><FolderOpen /></Button>
   const resume = job.status === 'paused'
-  const label = job.burnRestartRequired ? t('restartBurn') : resume ? t('resume') : t('common:retry')
+  const label = resume ? t('resume') : t('common:retry')
   return <Button variant="ghost" size="icon" title={label} aria-label={label} disabled={busy} onClick={() => run(resume ? 'resume' : 'retry')}>{resume ? <Play /> : <RotateCcw />}</Button>
 }
 // Right-clicking a task. The row already carries the one action its state calls for; this is where the
@@ -78,8 +77,8 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
           <ContextMenuItem onClick={() => run('pause')}><Pause />{t('pause')}</ContextMenuItem>
           <ContextMenuItem onClick={() => run('cancel')}><X />{t('common:cancel')}</ContextMenuItem>
         </>}
-        {job.status === 'paused' && <ContextMenuItem onClick={() => run('resume')}><Play />{t(job.burnRestartRequired ? 'restartBurn' : 'resume')}</ContextMenuItem>}
-        {(job.status === 'failed' || job.status === 'cancelled') && <ContextMenuItem onClick={() => run('retry')}><RotateCcw />{job.burnRestartRequired ? t('restartBurn') : t('common:retry')}</ContextMenuItem>}
+        {job.status === 'paused' && <ContextMenuItem onClick={() => run('resume')}><Play />{t('resume')}</ContextMenuItem>}
+        {(job.status === 'failed' || job.status === 'cancelled') && <ContextMenuItem onClick={() => run('retry')}><RotateCcw />{t('common:retry')}</ContextMenuItem>}
         <ContextMenuItem variant="destructive" onClick={() => { setWithFiles(false); setRemoving(true) }}><Trash2 />{t('removeRecordMenu')}</ContextMenuItem>
         {/* The batch this task was queued with. Everything above stays available on the task itself:
             acting on the batch is doing the same thing to each of them, not taking their controls away. */}
@@ -181,7 +180,6 @@ export function TaskCard({ job, send, select, density = 'comfortable' }: { job: 
     status={<span className={cn('text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>}
     actions={<Actions job={job} send={send} />}>
       <JobProgress job={job} />
-      {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
       {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
   </TaskListRow></JobMenu>
@@ -189,9 +187,8 @@ export function TaskCard({ job, send, select, density = 'comfortable' }: { job: 
 // What a failure was and what to do about it. A permission wall is known for certain, from the engine's
 // own wording, and its message already says what to do. Anything else is read off the error the way a
 // user would read it; where nothing matches, the error is shown as it is with the general advice.
-type FailureKind = 'resuming' | 'burnRestart' | 'noSpace' | 'permission' | 'expired' | 'network' | 'convert'
+type FailureKind = 'resuming' | 'noSpace' | 'permission' | 'expired' | 'network' | 'convert'
 const FAILURES: { pattern: RegExp; kind: FailureKind }[] = [
-  { pattern: /自动重新合成|restarting subtitle processing automatically/i, kind: 'burnRestart' },
   { pattern: /自动续传|resuming automatically/i, kind: 'resuming' },
   { pattern: /ENOSPC|no space|not enough (disk )?space|insufficient (disk )?space|disk full|磁盘空间/i, kind: 'noSpace' },
   { pattern: /EACCES|EPERM|EROFS|permission denied|access (is )?denied|read-only file system|not writable|拒绝访问/i, kind: 'permission' },
@@ -209,10 +206,10 @@ function Failure({ job, send }: { job: Job; send: Send }) {
   const retry = job.status === 'failed' || job.status === 'cancelled'
   return <Alert variant="destructive">
     <AlertTitle>{title}</AlertTitle>
-    <AlertDescription className="break-words"><p>{job.error}</p>{hint && <p>{hint}</p>}{job.burnRestartRequired && kind !== 'burnRestart' && <p>{t('burnRestart.hint')}</p>}</AlertDescription>
+    <AlertDescription className="break-words"><p>{job.error}</p>{hint && <p>{hint}</p>}</AlertDescription>
     {(login || retry) && <div className="mt-2 flex flex-wrap gap-2">
       {login && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'login' })}><LogIn />{t('common:openLogin')}</Button>}
-      {retry && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'retry' })}><RotateCcw />{job.burnRestartRequired ? t('restartBurn') : t('common:retry')}</Button>}
+      {retry && <Button variant="outline" size="sm" onClick={() => void send('jobs:action', { id: job.id, action: 'retry' })}><RotateCcw />{t('common:retry')}</Button>}
     </div>}
   </Alert>
 }
@@ -226,12 +223,10 @@ function Files({ job, send }: { job: Job; send: Send }) {
   useEffect(() => { void send('jobs:files', { id: job.id }).then(reply => { if (reply) setFound(reply.files) }) }, [send, job.id, key])
   if (!job.files.length) return <p className="text-sm text-muted-foreground">{t('files.empty')}</p>
   return <>{job.files.map((file, index) => {
-    const role = job.originalFiles?.includes(file) ? 'original' : job.processedFiles?.includes(file) ? 'processed' : undefined
     const entry = found?.find(item => item.path === file)
     return <Item key={file} variant="outline" size="sm">
       <ItemMedia>{entry && !entry.exists ? <FileX className="size-4 text-destructive" /> : <Download className="size-4" />}</ItemMedia>
       <ItemContent>
-        {role && <Badge variant="secondary" className="w-fit">{t(`files.${role}`)}</Badge>}
         <ItemTitle className="break-all whitespace-normal" title={file}>{file.split(/[\\/]/).pop()}</ItemTitle>
         <ItemDescription className={cn('tabular-nums', entry && !entry.exists && 'text-destructive')}>
           {!entry ? t('files.checking') : entry.exists ? entry.size !== undefined ? formatBytes(entry.size) : t('files.saved') : t('files.missing')}
@@ -245,8 +240,8 @@ function Files({ job, send }: { job: Job; send: Send }) {
   })}</>
 }
 type InspectorTab = 'overview' | 'files' | 'log'
-export function TaskInspector({ job, send, close, error, process }: { job?: Job; send: Send; close: () => void; error?: string; process?: () => void }) {
-  const { t } = useTranslation(['tasks', 'common', 'processing'])
+export function TaskInspector({ job, send, close, error }: { job?: Job; send: Send; close: () => void; error?: string }) {
+  const { t } = useTranslation(['tasks', 'common'])
   const [tab, setTab] = useState<InspectorTab>('overview')
   return <Sheet open={Boolean(job)} onOpenChange={open => { if (!open) close() }}>
     <SheetContent side="right" className="sm:max-w-lg">
@@ -273,16 +268,10 @@ export function TaskInspector({ job, send, close, error, process }: { job?: Job;
             </TabsList>
             <TabsContent value="overview" className="flex flex-col gap-4">
               {job.error && <Failure job={job} send={send} />}
-              {job.burnRestartRequired && !job.error && <Alert><AlertTitle>{t('burnRestart.title')}</AlertTitle><AlertDescription>{t('burnRestart.hint')}</AlertDescription></Alert>}
               {job.warnings?.map(warning => <Alert key={warning}><AlertTitle>{t('subtitleWarning')}</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
               <JobProgress job={job} detail />
-              {process && job.kind !== 'image' && job.files.length > 0 && <Button variant="outline" onClick={process}>{t('processing:title')}</Button>}
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm [&_dt]:text-muted-foreground">
                 <dt>{t('fields.platformKind')}</dt><dd>{platformLabel(job.platform)} / {t(`common:kinds.${job.kind || 'video'}`)}</dd>
-                {job.workMode === 'edit' && job.kind === 'video' && <>
-                  <dt>{t('fields.outputFormat')}</dt><dd>{job.outputFormat && job.outputFormat !== 'original' ? job.outputFormat.toUpperCase() : t('files.originalFormat')}</dd>
-                  <dt>{t('fields.outputResolution')}</dt><dd>{job.outputResolution && job.outputResolution !== 'original' ? t('resolutionLimit', { value: job.outputResolution }) : t('files.originalResolution')}</dd>
-                </>}
                 <dt>{t('fields.method')}</dt><dd>{job.method === 'browser' ? t('methods.browser') : t('methods.local')}</dd>
                 {/* What the platform said about the media when it was parsed; older jobs carry none of it. */}
                 {job.author && <><dt>{t('fields.author')}</dt><dd>{job.author}</dd></>}

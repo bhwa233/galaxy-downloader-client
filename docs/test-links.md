@@ -1,5 +1,26 @@
 # 测试链接清单
 
+## 2026-11-06：移除剪辑模式
+
+删除工作模式、视频处理工作台、本地 ASR 与引擎的字幕加工、转码；封面嵌入、元数据与章节、仅音频格式转换、平台字幕另存为 SRT 并入唯一的下载模式。范围见 `requirements.md` 文首同日一节。
+
+`pnpm typecheck`、`pnpm lint`、`pnpm test`（64 项；删去 `test/covers.test.ts` 中两项专测剪辑模式行为的用例：`cover processing respects the work mode and the media kind`、`asking for the audio of a video that is already downloading builds a second task`）、`pnpm build`、`pnpm test:e2e` 通过。
+
+真实 Windows Electron（开发构建、本机 `.venv` 引擎），用一份旧格式 `state.json` 启动：设置为剪辑模式（`workMode: edit`、`subtitles: burn`、`outputFormat: mkv`、自动转录等），另有一个暂停中的旧剪辑任务（`subtitles: burn`、`burnRestartRequired`、`stage: burn`）。
+
+- 读取后设置中的剪辑模式字段全部丢弃，封面、元数据、音频格式、字幕语言等保留；旧任务的剪辑字段被去掉，字幕折算为 `file`。
+- 继续旧任务：<https://www.youtube.com/watch?v=jNQXAC9IVRw> 只下载、不加工，得到 AV1/Opus MKV 与 `.en.srt`。
+- 同一视频「视频 + 音频」并开启平台字幕、保存并嵌入封面（JPG）、元数据与章节、音频转 MP3：
+  - 音频：MP3 192 kb/s，带标题、艺术家、3 个章节和 JPG 封面（attached pic），旁边保存 `.jpg`。
+  - 视频：yt-dlp 合并为 MKV（AV1/Opus），带标题与章节、旁边有 `.en.srt` 和 `.jpg`；**封面没有嵌入**，任务完成并记录提示「封面没有嵌入，媒体已保存：ffprobe not found」。MKV 嵌封面需要 ffprobe，打包里只有 ffmpeg；改动前剪辑模式走同一个 yt-dlp 后处理，同样会失败，而且是整个任务失败，现在改为跳过并提示。
+- 直接调用本地引擎下载同一视频 `133+140`（H.264/AAC → MP4）：mutagen 嵌入封面（WebP 自动转 PNG，attached pic），标题、艺术家、章节写入，未勾保存的封面图片被删除，进度报告 `embed` 阶段。
+- 设置 → 文件与媒体的界面截图核对：画质、音频格式、封面分组可见。
+
+未验证：客户端自己通过 HTTP 下载的直链文件（抖音等浏览器来源）交给引擎 `process` 做封面、元数据与音频转换的路径，需要登录态的真实站点，本轮没有跑到。另外发现一个改动前就存在的问题：默认画质设为 480p 时，本地 HTTP 直链（generic 提取器，没有高度信息）因 `b[height<=480]` 过滤报 `Requested format is not available`，与本次删除无关，未修改。
+
+一次性探针脚本已删除，未保留为测试规格。
+
+
 ## 2026-11-03：主线整合作者订阅与列表、命名改进
 
 将订阅提交 `542fb06`（0.7.0）与本轮列表／命名／剪辑字幕提交 `2c68fc2` 整合。冲突保留了作者头像与账号标识、原生通知状态、订阅页、私有下载工作区和整合集查询状态；订阅自动检查将正在运行的整列表查询视为繁忙，并在前台解析／查询开始时中断后台读取。

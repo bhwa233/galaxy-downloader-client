@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDown, Bell, CheckCheck, ClipboardPaste, FolderOpen, List, Pause, Play, Plus, Search, Settings2, ShieldCheck, Sparkles, Captions, X } from 'lucide-react'
+import { ArrowDown, Bell, CheckCheck, ClipboardPaste, FolderOpen, List, Pause, Play, Plus, Search, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
@@ -27,13 +27,12 @@ import { version } from '../package.json'
 import type { SubscriptionCandidate } from '../shared/subscriptions'
 
 const Result = lazy(() => import('@/components/downloader/Result').then(module => ({ default: module.Result })))
-const VideoProcessing = lazy(() => import('@/components/downloader/VideoProcessing').then(module => ({ default: module.VideoProcessing })))
 const Preferences = lazy(() => import('@/components/downloader/Preferences').then(module => ({ default: module.Preferences })))
 const Subscriptions = lazy(() => import('@/components/downloader/Subscriptions').then(module => ({ default: module.Subscriptions })))
 
 // Falsy when the command failed, so 'if (ok)' still reads the way it did; a success carries back
 // whatever the main process wanted to say about it, which today is how many downloads it started.
-export type Send = <C extends Command>(command: C, input: CommandInput<C>) => Promise<false | { settings?: Settings; directory?: string; subscriptionCandidate?: SubscriptionCandidate; added?: number; files?: JobFile[]; document?: import('../shared/processing').ProcessingDocument }>
+export type Send = <C extends Command>(command: C, input: CommandInput<C>) => Promise<false | { settings?: Settings; directory?: string; subscriptionCandidate?: SubscriptionCandidate; added?: number; files?: JobFile[] }>
 const navigation = [
   { id: 'all', icon: List },
   { id: 'running', icon: ArrowDown },
@@ -50,9 +49,8 @@ export default function App() {
   }, [])
   const [error, setError] = useState('')
   const [url, setUrl] = useState('')
-  const [page, setPage] = useState<'all' | 'running' | 'completed' | 'settings' | 'new' | 'processing' | 'subscriptions'>('all')
+  const [page, setPage] = useState<'all' | 'running' | 'completed' | 'settings' | 'new' | 'subscriptions'>('all')
   const [settingsSection, setSettingsSection] = useState<'general' | 'subscriptions' | 'tools'>('general')
-  const [processingId, setProcessingId] = useState<string>()
   const [selectedJob, setSelectedJob] = useState<string>()
   const [search, setSearch] = useState('')
   const [kind, setKind] = useState('all')
@@ -64,12 +62,11 @@ export default function App() {
   const [clearFiles, setClearFiles] = useState(false)
   const send: Send = useCallback(async (command, input) => {
     setError('')
-    try { const reply = await window.desktopApi.command(command, input); if (reply.ok) { apply(reply.state); return { settings: reply.state.settings, directory: reply.directory, subscriptionCandidate: reply.subscriptionCandidate, added: reply.added, files: reply.files, document: reply.document } }; setError(reply.message) } catch (failure) { setError(String(failure)) }
+    try { const reply = await window.desktopApi.command(command, input); if (reply.ok) { apply(reply.state); return { settings: reply.state.settings, directory: reply.directory, subscriptionCandidate: reply.subscriptionCandidate, added: reply.added, files: reply.files } }; setError(reply.message) } catch (failure) { setError(String(failure)) }
     return false
   }, [apply])
   useEffect(() => { const unsubscribe = window.desktopApi.subscribe(apply); void send('state:get', null); return unsubscribe }, [send, apply])
   useEffect(() => { if (state?.subscriptions?.focus?.token) setPage('subscriptions') }, [state?.subscriptions?.focus?.token])
-  useEffect(() => { if (state?.settings.workMode === 'download') setPage(page => page === 'processing' ? 'all' : page) }, [state?.settings.workMode])
   const theme = state?.settings.theme
   useEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)')
@@ -81,7 +78,6 @@ export default function App() {
   const speed = active.reduce((sum, job) => sum + (job.speed || 0), 0)
   const query = search.trim().toLocaleLowerCase()
   const jobs = state.jobs.filter(job => (page === 'all' || job.status === page) && (kind === 'all' || (job.kind || (job.audioOnly ? 'audio' : 'video')) === kind) && (platform === 'all' || job.platform === platform) && (!query || `${job.title} ${job.platform} ${job.url}`.toLocaleLowerCase().includes(query))).sort((a, b) => sort === 'oldest' ? a.createdAt.localeCompare(b.createdAt) : sort === 'progress' ? b.progress - a.progress : sort === 'title' ? a.title.localeCompare(b.title) : b.createdAt.localeCompare(a.createdAt))
-  const processJob = async (id: string) => { const reply = await send('processing:from-job', { id }); if (reply && reply.document) { setProcessingId(reply.document.id); setSelectedJob(undefined); setPage('processing') } }
   const title = t(`nav.${page}`)
   const batch = (action: 'pause' | 'resume') => { setBatchBusy(true); void send('jobs:batch', { action }).finally(() => setBatchBusy(false)) }
   const paste = async () => { setPage('new'); try { const reply = await window.desktopApi.command('clipboard:read', null); if (reply.ok) setUrl(reply.clipboardText || ''); else setError(reply.message) } catch { setError(t('clipboardFailed')) } }
@@ -116,7 +112,6 @@ export default function App() {
           <SidebarMenuButton tooltip={t('nav.subscriptions')} isActive={page === 'subscriptions'} onClick={() => setPage('subscriptions')}><Bell /><span>{t('nav.subscriptions')}</span></SidebarMenuButton>
           <SidebarMenuBadge>{state.subscriptions?.items.filter(item => !item.read).length || 0}</SidebarMenuBadge>
         </SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>
-        {state.settings.workMode === 'edit' && <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem><SidebarMenuButton tooltip={t('nav.processing')} isActive={page === 'processing'} onClick={() => setPage('processing')}><Captions /><span>{t('nav.processing')}</span></SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>}
       </SidebarContent>
       <SidebarFooter>
         <Item variant="muted" size="sm" className="group-data-[collapsible=icon]:hidden">
@@ -150,7 +145,7 @@ export default function App() {
           settings={() => { setSettingsSection('subscriptions'); setPage('settings') }}
           parseAuthor={source => { setUrl(source.url); setPage('new'); void send('media:parse', { url: source.url }) }}
           parse={item => { setUrl(item.url); setPage('new'); void send('subscriptions:parse', { id: item.id }) }} /></Suspense>
-          : page === 'processing' && state.settings.workMode === 'edit' ? <Suspense fallback={<p role="status">{t('starting')}</p>}><VideoProcessing state={state} send={send} initialId={processingId} /></Suspense> : page === 'settings' ? <Suspense fallback={<p role="status">{t('openingSettings')}</p>}><Preferences key={settingsSection} initialSection={settingsSection} state={state} send={send} /></Suspense> : page === 'new' ? <div className="flex flex-col gap-4">
+          : page === 'settings' ? <Suspense fallback={<p role="status">{t('openingSettings')}</p>}><Preferences key={settingsSection} initialSection={settingsSection} state={state} send={send} /></Suspense> : page === 'new' ? <div className="flex flex-col gap-4">
             {errorBanner}
             {/* Share messages and long links expand the input to fit their contents.
                 Enter parses rather than inserting a new line. */}
@@ -247,7 +242,7 @@ export default function App() {
         </>}
       </main>
     </SidebarInset>
-    <TaskInspector error={error} job={state.jobs.find((job: Job) => job.id === selectedJob)} send={send} close={() => setSelectedJob(undefined)} process={state.settings.workMode === 'edit' && selectedJob ? () => void processJob(selectedJob) : undefined} />
+    <TaskInspector error={error} job={state.jobs.find((job: Job) => job.id === selectedJob)} send={send} close={() => setSelectedJob(undefined)} />
     <Preview preview={state.preview} send={send} />
   </SidebarProvider></TooltipProvider></Toaster></I18nextProvider>
 }

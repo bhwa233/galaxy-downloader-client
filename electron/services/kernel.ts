@@ -4,7 +4,7 @@ import path from 'node:path'
 import { Engine, redact } from './engine'
 import { downloadHttp, type Fetcher } from './http-download'
 
-import type { KernelState } from '../../shared/processing'
+import type { KernelState } from '../../shared/contracts'
 type Release = { version: string; file: string; sha256: string }
 type Installed = { active?: Release; previous?: Release; checkedAt?: string }
 const CHECK_INTERVAL_MS = 7 * 24 * 3600_000

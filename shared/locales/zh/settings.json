@@ -5,18 +5,23 @@
   "invalid": "请检查设置中的输入范围和文件名模板。",
   "helpFor": "了解{{label}}",
   "advanced": {
-    "general": "行为与显示", "download": "其他下载设置", "files": "目录与封面",
-    "transcription": "本地转录", "output": "文件信息与封面", "accounts": "会话管理", "diagnostics": "诊断与日志"
+    "general": "行为与显示",
+    "download": "其他下载设置",
+    "files": "更多目录选项",
+    "output": "文件信息",
+    "accounts": "会话管理",
+    "diagnostics": "诊断与日志"
   },
-  "subscriptions": { "intervalHint": "默认每 24 小时检查一次。" },
+  "subscriptions": {
+    "intervalHint": "默认每 24 小时检查一次。"
+  },
   "sections": {
     "subscriptions": "订阅",
     "general": "常规",
     "download": "下载",
     "files": "文件与媒体",
     "browser": "登录与账号",
-    "tools": "更新与高级",
-    "editing": "剪辑与字幕"
+    "tools": "更新与高级"
   },
   "general": {
     "saveLocation": "保存位置",
@@ -37,11 +42,6 @@
     "keepHistory": {
       "label": "保存解析历史",
       "hint": "在本机保存成功解析的链接，方便再次使用。"
-    },
-    "workMode": {
-      "label": "工作模式",
-      "downloadHint": "保存原始媒体，不附带字幕或转码。",
-      "editHint": "支持平台字幕、本地转录与视频输出，原片始终保留。"
     }
   },
   "download": {
@@ -120,16 +120,6 @@
     },
     "subtitles": {
       "legend": "字幕",
-      "label": "字幕",
-      "embed": "软字幕（可开关）",
-      "burn": "硬字幕（固定显示）",
-      "languageOptions": {
-        "en": "英文",
-        "zh": "中文",
-        "bilingual": "中英双语"
-      },
-      "file": "保存为独立字幕文件",
-      "off": "不下载字幕",
       "languages": "字幕语言",
       "languagesPlaceholder": "留空跟随界面语言",
       "languagesHint": "逗号分隔，按优先级排列；填 all 下载全部语言。",
@@ -137,11 +127,11 @@
         "label": "使用自动生成字幕",
         "hint": "该语言没有人工字幕时，回退到平台的语音识别字幕。"
       },
-      "normalize": {
-        "label": "整理重叠字幕时间轴",
-        "hint": "合并 YouTube 滚动式字幕片段，避免同一语言同时显示两行。"
-      },
-      "hint": "使用平台已有字幕；允许自动字幕时可使用平台识别或翻译的字幕，不在客户端自行翻译。软字幕和硬字幕写入成品，原片保持不变。"
+      "hint": "只使用平台已有字幕；允许自动字幕时也会保存平台识别或翻译的字幕，客户端不自行翻译或识别。",
+      "download": {
+        "label": "下载平台字幕",
+        "hint": "把平台已有的字幕另存为 SRT 文件，放在视频旁边；不嵌入、不烧录视频。"
+      }
     },
     "cleanNaming": {
       "mode": "命名方式",
@@ -163,6 +153,15 @@
       "noAuthor": "平台未提供作者名称，将省略作者名。",
       "noDate": "平台未提供发布日期，将省略日期。",
       "hint": "新任务不再追加随机编号。同名自动加 (2)、(3)；已入队任务保留原文件名。扩展名由实际媒体决定。"
+    },
+    "organizeByChannel": {
+      "label": "按频道／作者分目录"
+    },
+    "metadata": {
+      "label": "写入标题、艺术家等元数据"
+    },
+    "chapters": {
+      "label": "保留章节标记"
     }
   },
   "browser": {
@@ -220,19 +219,10 @@
       "channelFailed": "命令行连接不可用，请关闭其他客户端后重试。",
       "enableFirst": "请先启用并保存命令行与 Agent 设置。",
       "retry": "重新配置命令行"
-    }
+    },
+    "kernel": "yt-dlp 内核"
   },
   "saving": "正在保存…",
   "save": "保存设置",
-  "saved": "设置已保存",
-  "editing": {
-    "languageHint": "例如 zh, en；最多 5 种语言。",
-    "modelHint": "模型按需下载，音频仅在本机处理。",
-    "hint": "输出为新文件，不覆盖原片；视频处理页导出时使用这里的格式与分辨率。",
-    "outputFormat": "视频输出格式",
-    "originalFormat": "保持原格式",
-    "outputResolution": "输出分辨率",
-    "originalResolution": "保持原分辨率",
-    "resolutionHint": "分辨率只降不升，按画面短边限制，保持比例，不拉伸、不裁切。"
-  }
+  "saved": "设置已保存"
 }

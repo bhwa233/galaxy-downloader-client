@@ -2,6 +2,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import path from 'node:path'
 import { settingsSchema, type HistoryEntry, type Settings, type Job } from '../../shared/contracts'
 
+// What 剪辑模式 recorded on a job before it was removed: read once to carry the subtitle choice
+// over, then dropped.
+type LegacyJob = { workMode?: 'download' | 'edit'; deferProcessing?: boolean; includeSubtitles?: boolean }
+const LEGACY_JOB_KEYS = ['workMode', 'deferProcessing', 'includeSubtitles', 'outputFormat', 'outputResolution', 'originalFiles', 'processedFiles', 'captionLanguages',
+  'autoTranscribe', 'transcriptionModel', 'transcriptionSpeakers', 'subtitleLanguage', 'subtitleNormalizeOverlaps', 'burnRestartRequired']
+
 // 'history' arrived after version 1 was already on disk, so it is optional in what is read back.
 type StoredState = { version: 1; settings: Settings; jobs: Job[]; history: HistoryEntry[] }
 
@@ -26,14 +32,18 @@ export class Store {
       this.data.jobs = saved.jobs.filter(job => typeof job.id === 'string' && typeof job.url === 'string').map(job => {
         // Older profile jobs stored a position in the listing; retain the original post instead.
         const profileJob = job.sourceUrl && /^https?:/.test(job.sourceUrl) && /(?:\/user\/(?:profile\/)?|space\.bilibili\.com\/|bilibili\.com\/space\/)/.test(job.url)
-        return { ...job, url: profileJob ? job.sourceUrl! : job.url, itemId: profileJob ? '*' : job.itemId, sourceUrl: undefined,
-          outputFormat: job.outputFormat || (!job.workMode && (job.subtitles === 'embed' || job.subtitles === 'burn') ? 'mp4' : 'original'), outputResolution: job.outputResolution || 'original',
-          workMode: job.workMode || (job.subtitles && job.subtitles !== 'off' || job.audioFormat && job.audioFormat !== 'best' || job.embedThumbnail ? 'edit' : 'download'),
+        // Jobs saved before then carry the removed 剪辑模式 fields. Their subtitles become a sidecar file or
+        // nothing: in 下载模式 or with processing deferred only 'includeSubtitles' meant anything.
+        const { workMode, deferProcessing, includeSubtitles } = job as Job & LegacyJob
+        const rest: Record<string, unknown> = { ...job }
+        for (const key of LEGACY_JOB_KEYS) delete rest[key]
+        const subtitles = workMode === 'download' || deferProcessing ? includeSubtitles : Boolean(job.subtitles) && (job.subtitles as string) !== 'off'
+        return { ...rest as Job, url: profileJob ? job.sourceUrl! : job.url, itemId: profileJob ? '*' : job.itemId, sourceUrl: undefined,
+          subtitles: subtitles ? 'file' : 'off', stage: (['download', 'convert', 'embed'] as unknown[]).includes(job.stage) ? job.stage : undefined,
           // Jobs saved before the Chrome CDP route became the client's own browser session.
           method: (job.method as string) === 'chrome' ? 'browser' : job.method,
           kind: job.kind || (job.audioOnly ? 'audio' : 'video'), speed: undefined, eta: undefined, logs: job.logs || [],
           processingEta: undefined,
-          burnRestartRequired: job.status !== 'completed' && (job.burnRestartRequired || job.stage === 'burn') || undefined,
           status: job.status === 'running' || job.status === 'queued' ? (this.data.settings.resumeOnStart ? 'queued' : 'paused') : job.status }
       })
     } catch (error) {

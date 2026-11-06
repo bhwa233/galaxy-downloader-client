@@ -132,7 +132,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
   const [audioFormatId, setAudioFormatId] = useState('best')
   const [audioLanguageOverride, setAudioLanguageOverride] = useState<string>()
   const [includeSubtitles, setIncludeSubtitles] = useState(settings.downloadSubtitles)
-  const subtitleOptions = { includeSubtitles: settings.workMode === 'edit' && includeSubtitles, audioFormat: 'best' as const }
+  const subtitleOptions = { includeSubtitles }
   // What to download of each ticked item, any combination of the three. Back to the media alone on
   // every parse, so a choice made for one result does not quietly carry over to the next.
   const [kinds, setKinds] = useState<DownloadKind[]>(['video'])
@@ -244,7 +244,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
   const bytesOf = (item: MediaItem): number | undefined => {
     if (item.kind === 'image' || item.wall) return undefined
     if (audioOnlyMode) {
-      if (subtitleOptions.audioFormat !== 'best') return undefined
+      if (settings.audioFormat !== 'best') return undefined
       const own = item.audioFormats || []
       const list = own.length ? own : result.listing ? result.audioFormats || [] : []
       const tier = list.find(entry => entry.id === effectiveAudioFormatId) || list.find(entry => (entry.audioLanguage || 'und') === audioLanguage)
@@ -411,7 +411,7 @@ export function Result({ result, parse, settings, send, login, connecting, close
         {skipped.length ? t('skipped', { list: skipped.join(t('listSeparator')) }) : ''}
       </span>
       {selectedItems.length > 0 && <Button variant="ghost" size="sm" onClick={() => setReviewingSelection(true)}>{t('query.reviewSelected')}</Button>}
-      {settings.workMode === 'edit' && !pictures && kinds.includes('video') && <Field orientation="horizontal" className="w-fit">
+      {!pictures && kinds.includes('video') && <Field orientation="horizontal" className="w-fit">
         <Checkbox id="download-platform-subtitles" checked={includeSubtitles} onCheckedChange={checked => setIncludeSubtitles(checked === true)} />
         <FieldLabel htmlFor="download-platform-subtitles">{t('attachSubtitles')}</FieldLabel>
       </Field>}

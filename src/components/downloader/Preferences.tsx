@@ -16,11 +16,10 @@ import { AppUpdate } from './AppUpdate'
 import { TransferProgress } from './TransferProgress'
 import { settingsSchema, type ClientState, type Settings } from '../../../shared/contracts'
 import type { Send } from '@/App'
-import { modelIds } from '../../../shared/processing'
 
-const sections = ['general', 'download', 'files', 'subscriptions', 'editing', 'browser', 'tools'] as const
+const sections = ['general', 'download', 'files', 'subscriptions', 'browser', 'tools'] as const
 type Section = typeof sections[number]
-type NumericSetting = 'concurrency' | 'speedLimit' | 'taskSpeedLimit' | 'retries' | 'timeout' | 'batchLimit' | 'transcriptionConcurrency' | 'subscriptionIntervalHours'
+type NumericSetting = 'concurrency' | 'speedLimit' | 'taskSpeedLimit' | 'retries' | 'timeout' | 'batchLimit' | 'subscriptionIntervalHours'
 type BooleanSetting = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings]
 
 function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
@@ -40,16 +39,14 @@ function FieldContentLabel({ id, label, hint }: { id: string; label: string; hin
 
 export function Preferences({ state, send, initialSection = 'general' }: { state: ClientState; send: Send; initialSection?: Section }) {
   const { t } = useTranslation(['settings', 'common'])
-  const { t: processText } = useTranslation('processing')
   const { t: subscriptionsText } = useTranslation('subscriptions')
   const [draft, setDraft] = useState(state.settings)
-  const [languages, setLanguages] = useState(draft.captionLanguages.join(', '))
   const [section, setSection] = useState<Section>(initialSection)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [choosingDirectory, setChoosingDirectory] = useState(false)
   const [kernelChecking, setKernelChecking] = useState(false)
-  const candidate = { ...draft, captionLanguages: languages.split(',').map(value => value.trim()).filter(Boolean) }
+  const candidate = draft
   const valid = settingsSchema.safeParse(candidate).success && (draft.filenameTemplate !== 'custom' || Boolean(draft.customFilenameTemplate.trim()))
   const dirty = JSON.stringify(candidate) !== JSON.stringify(state.settings)
   const patch = (value: Partial<Settings>) => { setDraft(current => ({ ...current, ...value })); setSaved(false) }
@@ -58,7 +55,7 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
     setSaving(true)
     try {
       const result = await send('settings:save', candidate)
-      if (result && result.settings) { setDraft(result.settings); setLanguages(result.settings.captionLanguages.join(', ')); setSaved(true) }
+      if (result && result.settings) { setDraft(result.settings); setSaved(true) }
     } finally { setSaving(false) }
   }
   const chooseDirectory = async () => {
@@ -93,12 +90,10 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
         {dirty && !valid && <p role="alert" className="mb-4 text-sm text-destructive">{t('invalid')}</p>}
         <FieldSet disabled={saving} className="flex-1">
           <Tabs orientation="vertical" value={section} onValueChange={value => setSection(value as Section)} className="flex-1 gap-6">
-            <TabsList className="w-40 shrink-0 items-stretch gap-1 self-stretch rounded-none border-r bg-transparent p-0 pr-4">{sections.filter(id => id !== 'editing' || draft.workMode === 'edit').map(id =>
+            <TabsList className="w-40 shrink-0 items-stretch gap-1 self-stretch rounded-none border-r bg-transparent p-0 pr-4">{sections.map(id =>
               <TabsTrigger key={id} value={id} className="h-9 flex-none justify-start rounded-md border-0 px-3 font-normal hover:bg-muted/60 data-active:bg-muted data-active:font-medium dark:data-active:border-transparent dark:data-active:bg-muted group-data-[variant=default]/tabs-list:data-active:shadow-none">{t(`sections.${id}`)}</TabsTrigger>)}
             </TabsList>
             <TabsContent value="general"><FieldGroup>
-              <Choice label={t('general.workMode.label')} value={draft.workMode} onChange={value => patch({ workMode: value as Settings['workMode'] })} options={(['download', 'edit'] as const).map(value => ({ value, label: t(`common:workModes.${value}`) }))} />
-              <FieldDescription>{t(`general.workMode.${draft.workMode}Hint`)}</FieldDescription>
               <Choice label="语言 · Language" value={draft.locale} onChange={value => patch({ locale: value as Settings['locale'] })} options={[{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]} />
               <Choice label={t('appearance.theme.label')} value={draft.theme} onChange={value => patch({ theme: value as Settings['theme'] })} options={[{ value: 'system', label: t('appearance.theme.system') }, { value: 'light', label: t('appearance.theme.light') }, { value: 'dark', label: t('appearance.theme.dark') }]} />
               <SettingsSection title={t('advanced.general')}>
@@ -127,12 +122,30 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
               </Field>
               <FilenameSettings settings={draft} example={state.parse.result?.items[0]} patch={patch} />
               {toggle('organizeByCollection', t('files.organizeByCollection.label'), t('files.organizeByCollection.hint'))}
-              <Choice label={t('files.videoQuality.label')} value={draft.workMode === 'edit' ? draft.editVideoQuality : draft.videoQuality} onChange={value => patch(draft.workMode === 'edit' ? { editVideoQuality: value as Settings['videoQuality'] } : { videoQuality: value as Settings['videoQuality'] })} options={[{ value: 'best', label: t('files.videoQuality.best') }, ...['1080', '720', '480'].map(value => ({ value, label: t('files.videoQuality.upTo', { height: value }) }))]} />
+              <Choice label={t('files.videoQuality.label')} value={draft.videoQuality} onChange={value => patch({ videoQuality: value as Settings['videoQuality'] })} options={[{ value: 'best', label: t('files.videoQuality.best') }, ...['1080', '720', '480'].map(value => ({ value, label: t('files.videoQuality.upTo', { height: value }) }))]} />
+              <Choice label={t('files.audioFormat.label')} value={draft.audioFormat} onChange={value => patch({ audioFormat: value as Settings['audioFormat'] })} options={[{ value: 'best', label: t('files.audioFormat.best') }, ...(['mp3', 'm4a', 'flac'] as const).map(value => ({ value, label: t('files.audioFormat.convert', { format: value.toUpperCase() }) }))]} />
+              <SettingsSection title={t('files.cover.legend')}>
+                {toggle('saveThumbnail', t('files.cover.save.label'), t('files.cover.save.hint'))}
+                {toggle('embedThumbnailInVideo', t('files.cover.embedVideo.label'), t('files.cover.embedVideo.hint'))}
+                {toggle('embedThumbnailInAudio', t('files.cover.embedAudio.label'), t('files.cover.embedAudio.hint'))}
+                {(draft.saveThumbnail || draft.embedThumbnailInVideo || draft.embedThumbnailInAudio) && <Choice label={t('files.cover.format.label')} value={draft.thumbnailFormat} onChange={value => patch({ thumbnailFormat: value as Settings['thumbnailFormat'] })} options={[{ value: 'original', label: t('files.cover.format.original') }, { value: 'jpg', label: t('files.cover.format.jpg') }]} />}
+                <FieldDescription>{t('files.cover.hint')}</FieldDescription>
+              </SettingsSection>
+              <SettingsSection title={t('files.subtitles.legend')}>
+                {toggle('downloadSubtitles', t('files.subtitles.download.label'), t('files.subtitles.download.hint'))}
+                {draft.downloadSubtitles && <>
+                  <Field><FieldLabel htmlFor="subtitle-languages">{t('files.subtitles.languages')}</FieldLabel><Input id="subtitle-languages" value={draft.subtitleLanguages} placeholder={t('files.subtitles.languagesPlaceholder')} onChange={event => patch({ subtitleLanguages: event.target.value })} /><FieldDescription>{t('files.subtitles.languagesHint')}</FieldDescription></Field>
+                  {toggle('subtitleAutoGenerated', t('files.subtitles.autoGenerated.label'), t('files.subtitles.autoGenerated.hint'))}
+                  <FieldDescription>{t('files.subtitles.hint')}</FieldDescription>
+                </>}
+              </SettingsSection>
+              <SettingsSection title={t('advanced.output')}>
+                {toggle('embedMetadata', t('files.metadata.label'))}
+                {toggle('embedChapters', t('files.chapters.label'))}
+              </SettingsSection>
               <SettingsSection title={t('advanced.files')}>
                 {toggle('organizeByPlatform', t('files.organizeByPlatform.label'), t('files.organizeByPlatform.hint'))}
-                {toggle('organizeByChannel', processText('channel'))}
-                {toggle(draft.workMode === 'edit' ? 'editSaveThumbnail' : 'saveThumbnail', t('files.cover.save.label'), t('files.cover.save.hint'))}
-                {draft.workMode === 'edit' && draft.editSaveThumbnail && <Choice label={t('files.cover.format.label')} value={draft.thumbnailFormat} onChange={value => patch({ thumbnailFormat: value as Settings['thumbnailFormat'] })} options={[{ value: 'original', label: t('files.cover.format.original') }, { value: 'jpg', label: t('files.cover.format.jpg') }]} />}
+                {toggle('organizeByChannel', t('files.organizeByChannel.label'))}
               </SettingsSection>
             </FieldGroup></TabsContent>
             <TabsContent value="subscriptions"><FieldGroup>
@@ -140,26 +153,6 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
               {draft.subscriptionAutomatic && number('subscriptionIntervalHours', subscriptionsText('interval'), 1, 720, t('subscriptions.intervalHint'))}
               {toggle('subscriptionNotifications', subscriptionsText('systemNotifications'), subscriptionsText('systemNotificationsHint'))}
             </FieldGroup></TabsContent>
-            {draft.workMode === 'edit' && <TabsContent value="editing"><FieldGroup>
-              <Choice label={t('editing.outputFormat')} value={draft.outputFormat} onChange={value => patch({ outputFormat: value as Settings['outputFormat'] })} options={[{ value: 'original', label: t('editing.originalFormat') }, { value: 'mp4', label: 'MP4' }, { value: 'mkv', label: 'MKV' }]} />
-              <Choice label={t('editing.outputResolution')} value={draft.outputResolution} onChange={value => patch({ outputResolution: value as Settings['outputResolution'] })} options={[{ value: 'original', label: t('editing.originalResolution') }, ...['2160', '1440', '1080', '720', '480'].map(value => ({ value, label: `${value}p` }))]} />
-              {toggle('downloadSubtitles', processText('attach'), processText('attachHint'))}
-              {draft.downloadSubtitles && <>
-                <Field><FieldLabel htmlFor="caption-languages">{processText('defaultLanguage')}</FieldLabel><Input id="caption-languages" value={languages} onChange={event => { setLanguages(event.target.value); setSaved(false) }} /><FieldDescription>{t('editing.languageHint')}</FieldDescription></Field>
-                {toggle('subtitleAutoGenerated', t('files.subtitles.autoGenerated.label'), t('files.subtitles.autoGenerated.hint'))}
-              </>}
-              <SettingsSection title={t('advanced.transcription')}>
-                {toggle('autoTranscribe', processText('automatic'), processText('automaticHint'))}
-                <Choice label={processText('model')} value={draft.transcriptionModel} onChange={value => patch({ transcriptionModel: value as Settings['transcriptionModel'] })} options={modelIds.map(value => ({ value, label: state.processing?.models.find(model => model.id === value)?.name || value }))} />
-                {number('transcriptionConcurrency', processText('concurrency'), 1, 4, t('editing.modelHint'))}
-              </SettingsSection>
-              <SettingsSection title={t('advanced.output')}>
-                {toggle('embedThumbnailInVideo', t('files.cover.embedVideo.label'), t('files.cover.embedVideo.hint'))}
-                {toggle('embedThumbnailInAudio', t('files.cover.embedAudio.label'))}
-                {toggle('embedMetadata', processText('metadata'))}
-                {toggle('embedChapters', processText('chapters'))}
-              </SettingsSection>
-            </FieldGroup></TabsContent>}
             <TabsContent value="browser"><FieldGroup>
               <FieldDescription>{state.browser.sites ? t('browser.sessions', { count: state.browser.sites }) : t('browser.noSessions')}</FieldDescription>
               <Button type="button" variant="outline" className="self-start" onClick={() => void send('browser:login', { url: '' })}>{t('common:openLogin')}</Button>
@@ -168,7 +161,7 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
             <TabsContent value="tools"><FieldGroup>
               <ItemGroup className="gap-0 rounded-lg border">
                 <div role="region" aria-labelledby="kernel-version-title">
-                  <Item className="rounded-none border-0"><ItemContent><ItemTitle id="kernel-version-title">{processText('kernel')}</ItemTitle><ItemDescription>{state.kernel?.version || state.tools.engine.version || '—'}</ItemDescription></ItemContent><ItemActions><Button type="button" variant="outline" disabled={kernelBusy} onClick={() => {
+                  <Item className="rounded-none border-0"><ItemContent><ItemTitle id="kernel-version-title">{t('tools.kernel')}</ItemTitle><ItemDescription>{state.kernel?.version || state.tools.engine.version || '—'}</ItemDescription></ItemContent><ItemActions><Button type="button" variant="outline" disabled={kernelBusy} onClick={() => {
                     setKernelChecking(true); void send('kernel:check', null).finally(() => setKernelChecking(false))
                   }}>{kernelBusy && <Spinner data-icon="inline-start" aria-hidden="true" />}{t(kernelBusy ? 'tools.kernelChecking' : 'tools.checkUpdate')}</Button></ItemActions></Item>
                   {(kernelBusy || state.kernel?.error) && <div className="px-3 pb-3" role="status">{state.kernel?.error ? <p className="text-sm text-destructive">{state.kernel.error}</p> : state.kernel?.status === 'downloading' ? <TransferProgress label={t('tools.kernelDownloading')} value={state.kernel.progress === undefined ? null : state.kernel.progress * 100} showTransfer={false} /> : <p className="text-sm text-muted-foreground">{t('tools.kernelChecking')}</p>}</div>}

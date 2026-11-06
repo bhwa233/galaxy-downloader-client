@@ -5,18 +5,23 @@
   "invalid": "Check input limits and the filename template.",
   "helpFor": "About {{label}}",
   "advanced": {
-    "general": "Behavior & display", "download": "Other download settings", "files": "Folders & covers",
-    "transcription": "Local transcription", "output": "File information & covers", "accounts": "Session management", "diagnostics": "Diagnostics and logs"
+    "general": "Behavior & display",
+    "download": "Other download settings",
+    "files": "More folder options",
+    "output": "File information",
+    "accounts": "Session management",
+    "diagnostics": "Diagnostics and logs"
   },
-  "subscriptions": { "intervalHint": "Checks every 24 hours by default." },
+  "subscriptions": {
+    "intervalHint": "Checks every 24 hours by default."
+  },
   "sections": {
     "subscriptions": "Subscriptions",
     "general": "General",
     "download": "Download",
     "files": "Files & media",
     "browser": "Sign-in & accounts",
-    "tools": "Updates & advanced",
-    "editing": "Editing & subtitles"
+    "tools": "Updates & advanced"
   },
   "general": {
     "saveLocation": "Save location",
@@ -37,11 +42,6 @@
     "keepHistory": {
       "label": "Keep parse history",
       "hint": "Keep successfully parsed links on this computer for reuse."
-    },
-    "workMode": {
-      "label": "Work mode",
-      "downloadHint": "Save original media without subtitles or transcoding.",
-      "editHint": "Use platform subtitles, local transcription and video exports while preserving originals."
     }
   },
   "download": {
@@ -120,16 +120,6 @@
     },
     "subtitles": {
       "legend": "Subtitles",
-      "label": "Subtitles",
-      "embed": "Soft subtitles (switchable)",
-      "burn": "Hard subtitles (permanent)",
-      "languageOptions": {
-        "en": "English",
-        "zh": "Chinese",
-        "bilingual": "Chinese + English"
-      },
-      "file": "Save as separate subtitle file",
-      "off": "Don't download subtitles",
       "languages": "Subtitle languages",
       "languagesPlaceholder": "Leave empty to follow the interface language",
       "languagesHint": "Comma-separated, in order of priority; enter all to download every language.",
@@ -137,11 +127,11 @@
         "label": "Use auto-generated subtitles",
         "hint": "Fall back to the platform's speech-recognition subtitles when a language has no human-made ones."
       },
-      "normalize": {
-        "label": "Normalize overlapping subtitle cues",
-        "hint": "Join YouTube rolling caption fragments so one language does not render twice at once."
-      },
-      "hint": "Uses captions provided by the platform, including platform-generated captions when enabled. No client-side translation. Embedded or burned captions affect only the output, leaving the source intact."
+      "hint": "Only subtitles the platform already has are used; with automatic subtitles allowed, the platform's own recognised or translated tracks are saved too. The client never translates or transcribes.",
+      "download": {
+        "label": "Download platform subtitles",
+        "hint": "Save the subtitles the platform already has as SRT files next to the video; nothing is embedded or burned in."
+      }
     },
     "cleanNaming": {
       "mode": "Naming style",
@@ -163,6 +153,15 @@
       "noAuthor": "The author name is unavailable; it will be omitted.",
       "noDate": "The publication date is unavailable; the date will be omitted.",
       "hint": "New tasks have no random suffix. Duplicate names receive (2), (3), etc. Queued tasks keep their names. The extension depends on the media."
+    },
+    "organizeByChannel": {
+      "label": "Create channel / uploader folders"
+    },
+    "metadata": {
+      "label": "Embed title, artist and available metadata"
+    },
+    "chapters": {
+      "label": "Keep chapter markers"
     }
   },
   "browser": {
@@ -221,19 +220,10 @@
       "channelFailed": "The command line connection is unavailable. Close other clients and retry.",
       "enableFirst": "Enable and save command line and agent control first.",
       "retry": "Retry command line setup"
-    }
+    },
+    "kernel": "yt-dlp kernel"
   },
   "saving": "Saving…",
   "save": "Save settings",
-  "saved": "Settings saved",
-  "editing": {
-    "languageHint": "For example zh, en; up to 5 languages.",
-    "modelHint": "Models download on demand. Audio is processed on this computer.",
-    "hint": "Export to a new file and preserve the original. Video processing uses these format and resolution defaults.",
-    "outputFormat": "Video output format",
-    "originalFormat": "Keep original format",
-    "outputResolution": "Output resolution",
-    "originalResolution": "Keep original resolution",
-    "resolutionHint": "Resolution only decreases, capped by the shorter edge. Aspect ratio is preserved without stretching or cropping."
-  }
+  "saved": "Settings saved"
 }

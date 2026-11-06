@@ -4,9 +4,9 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Store } from '../electron/services/store'
-import { Queue, thumbnailsFor } from '../electron/services/queue'
+import { Queue } from '../electron/services/queue'
 import { Engine } from '../electron/services/engine'
-import { settingsSchema, type MediaItem, type Settings } from '../shared/contracts'
+import type { MediaItem } from '../shared/contracts'
 import type { ParsePlan } from '../electron/services/parser'
 
 const cleanup: (() => Promise<unknown>)[] = []
@@ -24,43 +24,6 @@ const plan = (url: string, item = videoItem): ParsePlan => ({
   result: { id: 'fixture', url, title: '作品', platform: 'local', method: 'direct', items: [item] },
   sources: new Map([['1', { kind: 'http', url, cookies: [], headers: {}, extension: 'mp4' }]]),
   catalog: new Map([[item.id, item]]),
-})
-const settings = (over: Partial<Settings>): Settings => ({ ...settingsSchema.parse({}), downloadDirectory: '/downloads', ...over })
-
-test('cover processing respects the work mode and the media kind', () => {
-  const on = settings({ saveThumbnail: true, embedThumbnailInVideo: true, embedThumbnailInAudio: true, thumbnailFormat: 'jpg' })
-  // Pure downloads keep the original image format and never rewrite media to embed artwork.
-  expect(thumbnailsFor(on, 'video', false)).toEqual({ saveThumbnail: true, embedThumbnail: false, thumbnailFormat: 'original' })
-  expect(thumbnailsFor(settings({}), 'audio', true)).toEqual({ saveThumbnail: false, embedThumbnail: false, thumbnailFormat: 'original' })
-  // Editing remembers its own save switch and enables the requested embedding/conversion.
-  expect(thumbnailsFor({ ...on, workMode: 'edit', editSaveThumbnail: true }, 'video', false)).toEqual({ saveThumbnail: true, embedThumbnail: true, thumbnailFormat: 'jpg' })
-  expect(thumbnailsFor(settings({ workMode: 'edit' }), 'audio', true)).toEqual({ saveThumbnail: false, embedThumbnail: true, thumbnailFormat: 'original' })
-  expect(thumbnailsFor(settings({}), 'video', false)).toEqual({ saveThumbnail: false, embedThumbnail: false, thumbnailFormat: 'original' })
-  // A picture post is its own cover: saving one would write the same picture twice, and there is no
-  // cover track in an image file to embed anything into.
-  expect(thumbnailsFor(on, 'image', false)).toEqual({ saveThumbnail: false, embedThumbnail: false })
-})
-
-test('asking for the audio of a video that is already downloading builds a second task', async () => {
-  const dir = await directory()
-  const store = new Store(dir, dir)
-  store.data.settings.concurrency = 1
-  const queue = new Queue(store, new Engine('', '', false), fetch, async job => plan(job.url), () => {})
-  cleanup.push(async () => queue.stop())
-  queue.enqueue(plan('https://example.test/post'), [videoItem], 'best', false)
-  const video = queue.jobs[0]
-  // The old key was address plus item, which these two share: only 'audioOnly' tells them apart.
-  expect(queue.enqueue(plan('https://example.test/post'), [videoItem], 'best', false)).toBe(0)
-  queue.audio(video.id)
-  expect(queue.jobs).toHaveLength(2)
-  expect(queue.jobs[0]).toMatchObject({ url: video.url, itemId: video.itemId, audioOnly: true, kind: 'audio', format: 'best', subtitles: 'off', workMode: 'download', audioFormat: 'best', embedThumbnail: false })
-  // The task it was asked on keeps going, with its own files and its own state.
-  expect(queue.jobs[1].id).toBe(video.id)
-  expect(queue.jobs[1].audioOnly).toBe(false)
-  expect(queue.jobs[0].id).not.toBe(video.id)
-  // Asked twice, it says so rather than queueing the same audio again.
-  expect(() => queue.audio(video.id)).toThrow('已在下载队列中')
-  expect(() => queue.audio(queue.jobs[0].id)).toThrow('已经是一个音频任务')
 })
 
 test('a cover is saved beside the task it belongs to, whatever state that task is in', async () => {

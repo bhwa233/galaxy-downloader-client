@@ -7,8 +7,7 @@
     "all": "全部任务",
     "running": "进行中",
     "completed": "已完成",
-    "settings": "设置",
-    "processing": "视频处理"
+    "settings": "设置"
   },
   "workspace": "工作空间",
   "activeDownloads_other": "{{count}} 个任务正在执行",
