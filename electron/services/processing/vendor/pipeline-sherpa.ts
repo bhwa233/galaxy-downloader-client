@@ -148,7 +148,8 @@ const loadAddon = (): SherpaAddon => {
     return require('sherpa-onnx-node') as SherpaAddon
   } catch (err) {
     throw new Error(
-      `sherpa-onnx-node native addon is not available: ${err instanceof Error ? err.message : String(err)}`
+      `sherpa-onnx-node native addon is not available: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err }
     )
   }
 }
