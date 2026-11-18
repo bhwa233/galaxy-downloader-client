@@ -12,7 +12,14 @@ const emit = (value: unknown) => process.stdout.write(JSON.stringify(value) + '\
 process.stdin.on('end', () => {
   void (async () => {
     const request = JSON.parse(input) as PipelineRunInput & { modelsDirectory: string }
-    if (request.manifestPath && !loadChunkManifest(request.manifestPath)) saveChunkManifest(request.manifestPath, { key: { taskId: request.sourceFilePath, fingerprint: sourceFingerprint(request.sourceFilePath), modelVersion: `galaxy-v1-${request.asrTier}` }, durationMs: request.durationMs, speakers: [], turns: [], chunks: [], stages: [] })
+    if (request.manifestPath) {
+      const key = { taskId: request.sourceFilePath, fingerprint: sourceFingerprint(request.sourceFilePath), modelVersion: `galaxy-v2-vad-${request.asrTier}` }
+      const saved = loadChunkManifest(request.manifestPath)
+      // Older revisions decoded VAD silence gaps; do not resume those chunks.
+      if (!saved || saved.key.taskId !== key.taskId || saved.key.fingerprint !== key.fingerprint || saved.key.modelVersion !== key.modelVersion) {
+        saveChunkManifest(request.manifestPath, { key, durationMs: request.durationMs, speakers: [], turns: [], chunks: [], stages: [] })
+      }
+    }
     const models = new ModelManager(request.modelsDirectory)
     const pipeline = new SherpaTranscriptionPipeline({ models, createAddon: () => require('sherpa-onnx-node') as SherpaAddon, provider: 'cpu' })
     const result = await pipeline.run({ ...request, onProgress: progress => emit({ kind: 'processing', status: progress.stage, progress: progress.percent }), onPartial: segment => emit({ kind: 'partial', result: segment }) })

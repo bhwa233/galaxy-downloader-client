@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { ArrowDown, CheckCheck, ClipboardPaste, FolderOpen, List, Pause, Play, Plus, Search, Settings2, ShieldCheck, Sparkles, Captions, X } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowDown, Bell, CheckCheck, ClipboardPaste, FolderOpen, List, Pause, Play, Plus, Search, Settings2, ShieldCheck, Sparkles, Captions, X } from 'lucide-react'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupTextarea } from '@/components/ui/input-group'
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item'
 import { Separator } from '@/components/ui/separator'
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarSeparator, SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { Toaster } from '@/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -22,16 +22,18 @@ import { fixableBySignIn, wallTitle } from '@/components/downloader/walls'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { i18n, setLocale } from '../shared/i18n'
 import { cn, formatBytes, platformLabel } from '@/lib/utils'
-import type { ClientState, Command, CommandInput, Job, JobFile } from '../shared/contracts'
+import type { ClientState, Command, CommandInput, Job, JobFile, Settings } from '../shared/contracts'
 import { version } from '../package.json'
+import type { SubscriptionCandidate } from '../shared/subscriptions'
 
 const Result = lazy(() => import('@/components/downloader/Result').then(module => ({ default: module.Result })))
 const VideoProcessing = lazy(() => import('@/components/downloader/VideoProcessing').then(module => ({ default: module.VideoProcessing })))
 const Preferences = lazy(() => import('@/components/downloader/Preferences').then(module => ({ default: module.Preferences })))
+const Subscriptions = lazy(() => import('@/components/downloader/Subscriptions').then(module => ({ default: module.Subscriptions })))
 
 // Falsy when the command failed, so 'if (ok)' still reads the way it did; a success carries back
 // whatever the main process wanted to say about it, which today is how many downloads it started.
-export type Send = <C extends Command>(command: C, input: CommandInput<C>) => Promise<false | { added?: number; files?: JobFile[]; document?: import('../shared/processing').ProcessingDocument }>
+export type Send = <C extends Command>(command: C, input: CommandInput<C>) => Promise<false | { settings?: Settings; directory?: string; subscriptionCandidate?: SubscriptionCandidate; added?: number; files?: JobFile[]; document?: import('../shared/processing').ProcessingDocument }>
 const navigation = [
   { id: 'all', icon: List },
   { id: 'running', icon: ArrowDown },
@@ -40,11 +42,16 @@ const navigation = [
 export default function App() {
   const { t } = useTranslation(['app', 'common'], { i18n })
   const [state, setState] = useState<ClientState>()
+  const initialized = useRef(false)
   // The language follows the settings before the state is rendered, so a switch never shows a frame in the old one.
-  const apply = useCallback((next: ClientState) => { setLocale(next.settings.locale); document.documentElement.lang = next.settings.locale === 'en' ? 'en' : 'zh-CN'; setState(next) }, [])
+  const apply = useCallback((next: ClientState) => {
+    if (!initialized.current) { initialized.current = true; if (next.firstRun) setPage('new') }
+    setLocale(next.settings.locale); document.documentElement.lang = next.settings.locale === 'en' ? 'en' : 'zh-CN'; setState(next)
+  }, [])
   const [error, setError] = useState('')
   const [url, setUrl] = useState('')
-  const [page, setPage] = useState<'all' | 'running' | 'completed' | 'settings' | 'new' | 'processing'>('all')
+  const [page, setPage] = useState<'all' | 'running' | 'completed' | 'settings' | 'new' | 'processing' | 'subscriptions'>('all')
+  const [settingsSection, setSettingsSection] = useState<'general' | 'subscriptions' | 'tools'>('general')
   const [processingId, setProcessingId] = useState<string>()
   const [selectedJob, setSelectedJob] = useState<string>()
   const [search, setSearch] = useState('')
@@ -57,10 +64,11 @@ export default function App() {
   const [clearFiles, setClearFiles] = useState(false)
   const send: Send = useCallback(async (command, input) => {
     setError('')
-    try { const reply = await window.desktopApi.command(command, input); if (reply.ok) { apply(reply.state); return { added: reply.added, files: reply.files, document: reply.document } }; setError(reply.message) } catch (failure) { setError(String(failure)) }
+    try { const reply = await window.desktopApi.command(command, input); if (reply.ok) { apply(reply.state); return { settings: reply.state.settings, directory: reply.directory, subscriptionCandidate: reply.subscriptionCandidate, added: reply.added, files: reply.files, document: reply.document } }; setError(reply.message) } catch (failure) { setError(String(failure)) }
     return false
   }, [apply])
   useEffect(() => { const unsubscribe = window.desktopApi.subscribe(apply); void send('state:get', null); return unsubscribe }, [send, apply])
+  useEffect(() => { if (state?.subscriptions?.focus?.token) setPage('subscriptions') }, [state?.subscriptions?.focus?.token])
   useEffect(() => { if (state?.settings.workMode === 'download') setPage(page => page === 'processing' ? 'all' : page) }, [state?.settings.workMode])
   const theme = state?.settings.theme
   useEffect(() => {
@@ -96,13 +104,18 @@ export default function App() {
         <SidebarGroup><SidebarGroupContent><SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton tooltip={t('nav.new')} isActive={page === 'new'} onClick={() => setPage('new')}><Plus /><span>{t('nav.new')}</span></SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu></SidebarGroupContent></SidebarGroup>
-        <SidebarGroup>
+        <SidebarGroup role="group" aria-label={t('workspace')}>
           <SidebarGroupLabel>{t('workspace')}</SidebarGroupLabel>
           <SidebarGroupContent><SidebarMenu>{navigation.map(({ id, icon: Icon }) => <SidebarMenuItem key={id}>
             <SidebarMenuButton tooltip={t(`nav.${id}`)} isActive={page === id} onClick={() => setPage(id)}><Icon /><span>{t(`nav.${id}`)}</span></SidebarMenuButton>
             <SidebarMenuBadge>{id === 'all' ? state.jobs.length : state.jobs.filter(job => job.status === id).length}</SidebarMenuBadge>
           </SidebarMenuItem>)}</SidebarMenu></SidebarGroupContent>
         </SidebarGroup>
+        <SidebarSeparator />
+        <SidebarGroup role="group" aria-label={t('nav.subscriptions')}><SidebarGroupContent><SidebarMenu><SidebarMenuItem>
+          <SidebarMenuButton tooltip={t('nav.subscriptions')} isActive={page === 'subscriptions'} onClick={() => setPage('subscriptions')}><Bell /><span>{t('nav.subscriptions')}</span></SidebarMenuButton>
+          <SidebarMenuBadge>{state.subscriptions?.items.filter(item => !item.read).length || 0}</SidebarMenuBadge>
+        </SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>
         {state.settings.workMode === 'edit' && <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem><SidebarMenuButton tooltip={t('nav.processing')} isActive={page === 'processing'} onClick={() => setPage('processing')}><Captions /><span>{t('nav.processing')}</span></SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>}
       </SidebarContent>
       <SidebarFooter>
@@ -111,12 +124,12 @@ export default function App() {
           <ItemContent><ItemTitle className="tabular-nums">{formatBytes(speed)}<span className="text-muted-foreground"> /s</span></ItemTitle><ItemDescription>{t('activeDownloads', { count: active.length })}</ItemDescription></ItemContent>
         </Item>
         <SidebarMenu>
-          <SidebarMenuItem><SidebarMenuButton tooltip={t('nav.settings')} isActive={page === 'settings'} onClick={() => setPage('settings')}><Settings2 /><span>{t('nav.settings')}</span></SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton tooltip={t('nav.settings')} isActive={page === 'settings'} onClick={() => { setSettingsSection('general'); setPage('settings') }}><Settings2 /><span>{t('nav.settings')}</span></SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"><ShieldCheck className="size-3.5" />{t('localOnly')}</div></SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
-    <SidebarInset className="h-svh">
+    <SidebarInset className="h-svh min-w-0">
       <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
         <SidebarTrigger />
         <Separator orientation="vertical" className="mr-1 h-5" />
@@ -133,16 +146,17 @@ export default function App() {
       </header>
       <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-6">
         {page !== 'new' && !selectedJob && errorBanner}
-        {page === 'processing' && state.settings.workMode === 'edit' ? <Suspense fallback={<p role="status">{t('starting')}</p>}><VideoProcessing state={state} send={send} initialId={processingId} /></Suspense> : page === 'settings' ? <Suspense fallback={<p role="status">{t('openingSettings')}</p>}><Preferences key="preferences" state={state} send={send} /></Suspense> : page === 'new' ? <div className="flex flex-col gap-4">
+        {page === 'subscriptions' ? <Suspense fallback={<p role="status">{t('starting')}</p>}><Subscriptions state={state} send={send} error={error}
+          settings={() => { setSettingsSection('subscriptions'); setPage('settings') }}
+          parseAuthor={source => { setUrl(source.url); setPage('new'); void send('media:parse', { url: source.url }) }}
+          parse={item => { setUrl(item.url); setPage('new'); void send('subscriptions:parse', { id: item.id }) }} /></Suspense>
+          : page === 'processing' && state.settings.workMode === 'edit' ? <Suspense fallback={<p role="status">{t('starting')}</p>}><VideoProcessing state={state} send={send} initialId={processingId} /></Suspense> : page === 'settings' ? <Suspense fallback={<p role="status">{t('openingSettings')}</p>}><Preferences key={settingsSection} initialSection={settingsSection} state={state} send={send} /></Suspense> : page === 'new' ? <div className="flex flex-col gap-4">
             {errorBanner}
-            {/* One link at a time, so the box is two lines and never grows: what gets pasted is often a
-                whole share message - 抖音 and 小红书 put the link inside a sentence - and the link is taken
-                out of it before parsing. Enter parses; there is no new line to type. Pasting and parsing
-                sit under it, half the width each; while a parse runs, the second offers to stop it rather
-                than a third button appearing. */}
+            {/* Share messages and long links expand the input to fit their contents.
+                Enter parses rather than inserting a new line. */}
             <form className="flex flex-col gap-2" onSubmit={event => { event.preventDefault(); if (url.trim()) void send('media:parse', { url }) }}>
               <InputGroup>
-                <InputGroupTextarea id="media-url" aria-label={t('mediaUrl')} rows={2} className="min-h-0 field-sizing-fixed" placeholder={t('mediaUrlPlaceholder')} value={url}
+                <InputGroupTextarea id="media-url" aria-label={t('mediaUrl')} rows={2} className="min-h-14 min-w-0" placeholder={t('mediaUrlPlaceholder')} value={url}
                   onChange={event => setUrl(event.target.value)}
                   onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} />
               </InputGroup>
@@ -160,7 +174,13 @@ export default function App() {
                 the one that gets no button. */}
             {state.parse.message && !state.parse.result && <Alert variant="destructive">
               <AlertTitle>{state.parse.verify ? t('common:verifyTitle') : (state.parse.wall && wallTitle(state.parse.wall)) || t('parseFailed')}</AlertTitle>
-              <AlertDescription>{state.parse.message}</AlertDescription>
+              <AlertDescription>
+                <div>{state.parse.message}</div>
+                {!state.parse.verify && !state.parse.wall && <div className="mt-2 flex flex-col items-start gap-2">
+                  <span>{t('parseKernelHint')}</span>
+                  <Button variant="outline" size="sm" onClick={() => { setSettingsSection('tools'); setPage('settings') }}>{t('kernelUpdateSettings')}</Button>
+                </div>}
+              </AlertDescription>
               {(state.parse.verify || fixableBySignIn(state.parse.wall)) && <AlertAction><Button variant="outline" size="sm" disabled={connecting} onClick={() => login(state.parse.loginUrl || '')}>{state.parse.verify ? t('common:openVerify') : t('common:openLogin')}</Button></AlertAction>}
             </Alert>}
             {/* Closing a result clears it, which is what the ✕ beside it means; it no longer leaves the page. */}

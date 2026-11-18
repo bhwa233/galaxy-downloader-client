@@ -2,6 +2,7 @@
   "parse": {
     "incompleteTracks": "Couldn't read the complete video and audio. Parse the link again.",
     "xiaohongshuProfile": "Xiaohongshu profiles can't be parsed yet. Use a link to a single note instead.",
+    "notAResource": "This link can't be parsed: it is a platform home or feed page, not a work or a listing. Paste a link to a specific video, collection, or author page.",
     "collectionEmpty": "Nothing in this collection can be downloaded: no episodes were read, or every episode must be bought separately",
     "listingCollectionEmpty": "Nothing was read from this collection. Open the sign-in window, sign in or complete verification, then try again.",
     "listingProfileEmpty": "No posts were read from this profile. Open the sign-in window, sign in or complete verification, then try again.",
@@ -11,7 +12,8 @@
     "challenge": "This site requires access verification. Open the verification page, complete the check, then close it and retry.",
     "pageEmptyKnown": "The page offered nothing to download. If it needs a sign-in to view, open the sign-in window, sign in or complete verification, then try again.",
     "pageEmpty": "This page has nothing to download.",
-    "expired": "This parse result has expired. Parse the link again."
+    "expired": "This parse result has expired. Parse the link again.",
+    "listingStalled": "The platform returned no new collection entries. The full collection could not be confirmed; try again later."
   },
   "browser": {
     "loginTitle": "Sign in",
@@ -58,7 +60,7 @@
     "apiMessage": "Bilibili API returned {{code}}: {{message}}",
     "series": "Series",
     "collection": "Collection",
-    "parts": "Parts",
+    "original": "Original",
     "wbiKeys": "Couldn't get the WBI signing keys",
     "uploads": "{{author}}'s uploads"
   },
@@ -78,6 +80,7 @@
     "collectionEmpty": "No posts were read from this collection. Open the sign-in window, sign in, then try again.",
     "authorCollection": "{{author}}'s collection",
     "collection": "Collection",
+    "original": "Original",
     "show": "Short drama {{id}}",
     "episodes_one": " ({{count}} episode)",
     "episodes_other": " ({{count}} episodes)",

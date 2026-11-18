@@ -4,12 +4,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { i18n } from '../../shared/i18n'
+import { logger } from './log'
 
 const run = promisify(execFile)
 // Every launcher this client writes carries this line, so it only ever removes or rewrites its own.
 const MARK = 'Galaxy Downloader command line'
+const log = logger('command-line')
 
-export type CommandLineState = { installed: boolean; launcher: string; onPath: boolean }
+export type CommandLineState = { installed: boolean; launcher: string; onPath: boolean; configuring?: boolean; error?: string }
 
 // Installs the `galaxy` command: the command line bundle copied out of the app, and a launcher that
 // runs it with the client's own binary as Node. Copied rather than pointed at, because an AppImage is
@@ -19,9 +21,15 @@ export type CommandLineState = { installed: boolean; launcher: string; onPath: b
 //
 // Checked for a library that puts a command on the PATH: there is none for an Electron app - VS Code
 // and others each do it by hand, per platform - so it is written here, for the two cases this client
-// ships: a per-user directory added to the user's PATH on Windows, ~/.local/bin elsewhere.
+// ships: a per-user directory added to the user's PATH on Windows, ~/.local/bin with a managed
+// shell-profile entry elsewhere. Only the marked entry is removed when the user disables it.
 export class CommandLine {
-  constructor(private userData: string, private appPath: string, private packaged: boolean) {}
+  private desired = false
+  private task?: Promise<void>
+  private configuring = false
+  private error?: string
+  private registered?: boolean
+  constructor(private userData: string, private appPath: string, private packaged: boolean, private changed: () => void = () => {}) {}
 
   private get windows() { return process.platform === 'win32' }
   private get directory() { return this.windows ? path.join(this.userData, 'bin') : path.join(os.homedir(), '.local', 'bin') }
@@ -31,9 +39,27 @@ export class CommandLine {
   private get executable() { return process.env.APPIMAGE || process.execPath }
 
   state(): CommandLineState {
-    const installed = existsSync(this.launcher) && readFileSync(this.launcher, 'utf8').includes(MARK)
-    const onPath = (process.env.PATH || '').split(path.delimiter).some(entry => path.resolve(entry) === this.directory)
-    return { installed, launcher: this.launcher, onPath }
+    let installed = false
+    try { installed = existsSync(this.launcher) && readFileSync(this.launcher, 'utf8').includes(MARK) } catch { /* Configuration reports inaccessible paths. */ }
+    const inherited = (process.env.PATH || '').split(path.delimiter).some(entry => this.windows ? path.resolve(entry).toLowerCase() === this.directory.toLowerCase() : path.resolve(entry) === this.directory)
+    return { installed, launcher: this.launcher, onPath: this.registered ?? inherited, configuring: this.configuring, error: this.error }
+  }
+
+  // Serialize registration, and finish at the latest saved preference if it changes mid-install.
+  // Startup does not wait for shell integration; configuration failures remain retryable in Settings.
+  configure(enabled: boolean): Promise<void> {
+    this.desired = enabled
+    if (this.task) return this.task
+    this.configuring = true; this.error = undefined; this.changed()
+    this.task = (async () => {
+      let target: boolean
+      do {
+        target = this.desired; this.error = undefined
+        try { if (target) await this.install(); else await this.uninstall() }
+        catch (error) { log.warn('Command registration failed', error); this.error = i18n.t('settings:tools.commandLine.failed') }
+      } while (target !== this.desired)
+    })().finally(() => { this.configuring = false; this.task = undefined; this.changed() })
+    return this.task
   }
 
   async install(): Promise<CommandLineState> {
@@ -44,19 +70,17 @@ export class CommandLine {
     copyFileSync(bundle, this.script)
     mkdirSync(this.directory, { recursive: true })
     writeFileSync(this.launcher, this.windows ? this.cmd() : this.sh(), { mode: 0o755 })
-    if (this.windows) await this.userPath('add')
+    await this.userPath('add')
     return this.state()
   }
 
   async uninstall(): Promise<CommandLineState> {
-    if (this.state().installed) rmSync(this.launcher, { force: true })
-    rmSync(path.dirname(this.script), { recursive: true, force: true })
-    if (this.windows) await this.userPath('remove')
+    if (existsSync(this.launcher) && !this.state().installed) throw new Error(i18n.t('desktop:errors.cliForeign', { path: this.launcher }))
+    rmSync(this.launcher, { force: true })
+    rmSync(this.script, { force: true })
+    await this.userPath('remove')
     return this.state()
   }
-
-  // Once installed, kept pointing at this copy of the client.
-  async refresh(): Promise<void> { if (this.state().installed) await this.install() }
 
   // A development build only answers its own development launcher, and cannot start itself: the
   // binary alone is not the app. An installed client can, so its launcher says where it is.
@@ -82,9 +106,35 @@ export class CommandLine {
   // The user's own PATH, through .NET rather than setx, which silently cuts a PATH at 1024 characters.
   // The directory travels in an environment variable so no quoting of it reaches the script.
   private async userPath(change: 'add' | 'remove'): Promise<void> {
+    if (!this.windows) {
+      const homeDirectory = os.homedir()
+      const shell = path.basename(process.env.SHELL || 'sh')
+      const profiles = shell === 'zsh' ? [path.join(process.env.ZDOTDIR || homeDirectory, '.zshrc')]
+        : shell === 'fish' ? [path.join(process.env.XDG_CONFIG_HOME || path.join(homeDirectory, '.config'), 'fish', 'conf.d', 'galaxy-downloader.fish')]
+          : shell === 'bash' ? [path.join(homeDirectory, '.bashrc'), path.join(homeDirectory, existsSync(path.join(homeDirectory, '.bash_profile')) ? '.bash_profile' : '.profile')]
+            : [path.join(homeDirectory, '.profile')]
+      const start = `# >>> ${MARK} >>>`, end = `# <<< ${MARK} <<<`
+      const directory = `'${this.directory.replace(/'/g, `'\\''`)}'`
+      const command = shell === 'fish' ? `if not contains -- ${directory} $PATH\n    set -gx PATH ${directory} $PATH\nend`
+        : `case ":$PATH:" in *:${directory}:*) ;; *) export PATH=${directory}:"$PATH" ;; esac`
+      for (const profile of profiles) {
+        const original = existsSync(profile) ? readFileSync(profile, 'utf8') : ''
+        let content = original
+        const from = content.indexOf(start), to = content.indexOf(end, from)
+        if (from >= 0) {
+          if (to < 0) throw new Error('Incomplete command-line PATH entry')
+          content = content.slice(0, from) + content.slice(to + end.length).replace(/^\r?\n/, '')
+        }
+        if (change === 'add') content += `${content && !content.endsWith('\n') ? '\n' : ''}${start}\n${command}\n${end}\n`
+        if (content !== original) { mkdirSync(path.dirname(profile), { recursive: true }); writeFileSync(profile, content, { mode: 0o600 }) }
+      }
+      this.registered = change === 'add'
+      return
+    }
     const script = change === 'add'
-      ? "$d=$env:GALAXY_BIN; $p=[Environment]::GetEnvironmentVariable('Path','User'); $parts=@($p -split ';' | Where-Object { $_ }); if ($parts -notcontains $d) { [Environment]::SetEnvironmentVariable('Path', (($parts + $d) -join ';'), 'User') }"
-      : "$d=$env:GALAXY_BIN; $p=[Environment]::GetEnvironmentVariable('Path','User'); $parts=@($p -split ';' | Where-Object { $_ -and $_ -ne $d }); [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')"
-    await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, GALAXY_BIN: this.directory }, windowsHide: true })
+      ? "$d=$env:GALAXY_BIN; $p=[Environment]::GetEnvironmentVariable('Path','User'); $parts=@($p -split ';' | Where-Object { $_ }); if ($parts -notcontains $d) { [Environment]::SetEnvironmentVariable('Path', (($parts + $d) -join ';'), 'User') }; Write-Output 'true'"
+      : "$d=$env:GALAXY_BIN; $p=[Environment]::GetEnvironmentVariable('Path','User'); $parts=@($p -split ';' | Where-Object { $_ }); if ($parts -contains $d) { [Environment]::SetEnvironmentVariable('Path', (($parts | Where-Object { $_ -ne $d }) -join ';'), 'User') }; Write-Output 'false'"
+    const result = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$ErrorActionPreference='Stop'; " + script], { env: { ...process.env, GALAXY_BIN: this.directory }, windowsHide: true, timeout: 15_000 })
+    this.registered = result.stdout.trim() === 'true'
   }
 }

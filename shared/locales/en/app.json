@@ -2,6 +2,7 @@
   "starting": "Starting the local client…",
   "appSubtitle": "Media download manager",
   "nav": {
+    "subscriptions": "Subscriptions",
     "new": "New task",
     "all": "All tasks",
     "running": "In progress",
@@ -26,6 +27,8 @@
   "cancelParse": "Cancel parsing",
   "parse": "Parse",
   "parseFailed": "Parsing failed",
+  "parseKernelHint": "If parsing keeps failing, check for yt-dlp kernel updates and try again.",
+  "kernelUpdateSettings": "Open kernel updates",
   "showingResult": "Showing parse results…",
   "startAll": "Start all",
   "pauseAll": "Pause all",

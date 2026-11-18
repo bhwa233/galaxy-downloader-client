@@ -1,6 +1,180 @@
 # 测试链接清单
 
+## 2026-11-03：主线整合作者订阅与列表、命名改进
+
+将订阅提交 `542fb06`（0.7.0）与本轮列表／命名／剪辑字幕提交 `2c68fc2` 整合。冲突保留了作者头像与账号标识、原生通知状态、订阅页、私有下载工作区和整合集查询状态；订阅自动检查将正在运行的整列表查询视为繁忙，并在前台解析／查询开始时中断后台读取。
+
+作者账号归一统一放在 Parser 的媒体转换处：B 站／YouTube 使用已有的列表 owner 元信息和账号 URL，微博使用条目自己的作者永久链接；已有的每条作品作者标识优先。原始适配器条目的返回约定保持兼容，合集／喜欢列表不借用列表创建者作为作品作者。前轮三个精确对象断言失败随此兼容调整解决，没有修改测试规格。
+
+整合后的 `pnpm check` 通过（类型检查、Lint、66 项既有单测、renderer/main/preload/CLI/processing worker 构建）；现有 Electron E2E 通过，输出目录 `test-results/e2e-main-final`。
+
+真实 Windows Electron 整合验证：
+
+- 侧栏“订阅”可进入更新／管理页。识别抖音作者“天爱Talk”，读取 20 条真实作品及头像并建立已读基线；公开状态不包含内部 seen／分页断点。
+- “设置 → 订阅”保存两小时间隔。暂停该来源后重启客户端，来源 ID、暂停状态、间隔及下载任务名称均保留。
+- 同一构建解析真实 B 站视频 `BV13SxN6vEyx`，完整合集仍超过 500 条；整合集倒序完成，日期快捷项保持草稿、取消不提交。
+- 下载该真实视频成功，新文件名为 `495045064_2026-10-27_小松绿打喷嚏 (2)`；下载模式即使请求附带字幕仍保存 `includeSubtitles=false`。输出文件位于公开目录，不暴露私有暂存路径。renderer pageerror 为 0。
+
+报告：`test-results/main-integration/results.json`；截图：`subscriptions.png`、`date-draft-with-subscriptions.png`（同目录）。一次性探针未保留为测试规格。没有在本轮等待真实新作品发布或物理点击系统通知。
+
+原主目录基于 0.4.5 的未提交修改已保存为可恢复的本地分支 `codex/backup-main-local-20261103-a5cb5b98`，以免把旧实现覆盖到新主线。该快照与原主目录的工作文件已逐字比较一致。
+
+
+## 2026-11-03：平台字幕限剪辑模式与订阅入口核对
+
+“附带平台字幕”结果页入口仅在剪辑模式显示，设置中的平台字幕开关、默认语言和平台自动字幕选项移至“剪辑与输出”。新任务入队由主进程再次检查模式：下载模式即使旧设置和请求都带 `includeSubtitles=true`，仍保存 `includeSubtitles=false`、`subtitles=off`；剪辑模式可保存 `includeSubtitles=true`、`subtitles=file`。已入队任务的历史参数不改写。
+
+原生 Windows 真实客户端使用 <https://www.bilibili.com/video/BV1Ps421u7ju> 解析结果，实际切换两种模式并核对结果页、设置页和新任务入队字段，四组检查通过，renderer pageerror 为 0。入队探针任务随后取消，未声称本轮完成了平台字幕文件下载。`pnpm build`（含 typecheck）、`pnpm lint`、下载与封面相关 12 项既有检查、现有 Electron E2E 均通过；没有新增或修改测试规格，一次性探针已删除。截图：`test-results/subtitle-mode/editing-caption-settings.png`；结果：`test-results/subtitle-mode/results.json`。
+
+同时重新 fetch 核对：`origin/main` 仍为 `5c8d65e`（0.6.0）；作者订阅在 `origin/codex/creator-subscriptions` 的 `542fb06`（0.7.0），该分支的 `App.tsx` 已接入侧栏“订阅”、更新列表与管理订阅。当前预览基于主线，因此不包含该独立分支；本轮仅核对位置，没有自动整合订阅分支。
+
+
+## 2026-11-03：日期快捷项先选择、后应用
+
+快捷日期改为弹窗草稿：选择近一周、今年等仅高亮并填写起止日期，不发起查询、不关闭弹窗；手动修改日期后取消快捷项高亮。清除日期仅清空草稿。取消、关闭或 Escape 放弃草稿，重新打开恢复已应用的范围；点击“应用并查找”才提交日期条件。
+
+原生 Windows 构建后，以隔离客户端对真实 B 站合集 <https://www.bilibili.com/video/BV1Ps421u7ju>（3 条）实际点击验证：快捷项填充与高亮、切换快捷项、手工修改、清除、取消和右上角关闭后重新打开、应用日期和清除已应用日期均符合上述规则；确认点击应用前主进程查询条件没有改变。再次打开已经应用的“今年”仍正确高亮，结束边界为下一年 1 月 1 日零点。renderer pageerror 为 0。
+
+`pnpm build`（含 typecheck）与 `pnpm lint` 通过。一次性真实客户端探针已删除，没有新增或修改测试规格。截图：`test-results/date-draft/preset-awaits-apply.png`；详细结果：`test-results/date-draft/results.json`。正在运行的开发服务已返回包含新日期草稿逻辑的模块，HTTP 200。
+
+
+## 2026-11-03：干净文件名、作者 ID、整合集排序与日期查找
+
+基于 `origin/main` 的 `5c8d65e`（0.6.0）在隔离工作区实现。原目录的未提交改动未移动、未覆盖；未提交、未发布。依照 AGENTS.md，没有新增、修改或删除任何测试规格。
+
+验证环境：原生 Windows，Node 26.13.0、pnpm 11.8.0、Electron 44.4.5、本地 yt-dlp 2026.08.19。真实站点验证使用隔离临时客户端目录，复用本机已有应用内登录状态，没有修改真实用户的任务或设置；凭据不进入记录。
+
+| 场景 | 结果 |
+| --- | --- |
+| B 站完整合集：<https://www.bilibili.com/video/BV1daxy6JENt/> | 本次为 507 条，全部返回且全部有发布时间；超过原先 500 条限制仍完整显示，合集倒序的首尾与原顺序相反 |
+| B 站分页合集：<https://space.bilibili.com/495045064/lists/8798877?type=season> | 初始 30/507 条；`sort_reverse=true` 第一条为 `BV1st4P69EZb`，与原顺序最后一条一致；客户端直接取得倒序第一页，继续读取第二页后为 60 条且首条不变 |
+| 整合集日期查找 | 选择 2026-10-01 至 2026-10-31，完整 507 条得到 179 条匹配；每条都满足起止边界，最新发布排序逐条检查为单调不增 |
+| 跨页停止与继续 | 由仅加载第一页开始查找，在已检查 360 条 / 匹配 45 条时停止，状态为 stopped；继续后读完 507 条，匹配 179 条，与全量查询一致 |
+| 抖音合集：<https://www.douyin.com/collection/7331672245112965129> | 成功读取 6 条，作者公开账号为 `XPIN_hardware`；公开账号 ID 进入统一媒体字段 |
+| 抖音分页合集：<https://www.douyin.com/collection/7676329928593246262> | 首屏 14 条，通过平台游标读取 6 页后共 84 条；hasMore 为 false，条目不重复，完整倒序与原始 84 条的反转逐项一致 |
+| 真实 B 站视频：<https://www.bilibili.com/video/BV13SxN6vEyx/> | 成功保存 `495045064_2026-10-27_小松绿打喷嚏.mp4` 与同基础名称的 JPG 封面；视频 639003 字节，完整 FFmpeg 解码退出 0 |
+| 暂停与重启恢复 | 第三个同名任务保存名称为 `495045064_2026-10-27_小松绿打喷嚏 (3)`；在进度约 0.255% 时暂停，关闭并重新启动真实客户端后仍为 paused、名称不变；继续后视频及封面均完成，视频仍为 639003 字节 |
+| 同名保护 | 再次下载得到 `495045064_2026-10-27_小松绿打喷嚏 (2).mp4` 及对应封面；原文件保留，两份视频字节数与 SHA-256 相同 |
+| 检查与构建 | `pnpm typecheck`、`pnpm lint`、`pnpm build` 通过；实际构建产生 renderer / main / preload / CLI / processing worker |
+| 现有 Electron E2E | `pnpm test:e2e` 通过；后续构建的同一测试入口 `pnpm exec playwright test --output=test-results/e2e-final` 也通过，覆盖真实引擎下载、重启后历史保留与 renderer 隔离 |
+| 现有单测 | 63/66 通过。剩余 3 条是 B 站 / YouTube / 微博条目精确对象断言不接受新增的 `authorId` 字段。未修改测试来迁就新行为；此前 Windows 退出清理竞争已修复，下载与封面相关 12 项检查通过 |
+
+已验证的视频首次尝试限制到 480p 时，平台没有提供该档位，任务如实失败；改用最佳可用画质后完成下载。没有以这个站点/画质失败来声称文件保存失败，也没有修改既有画质选择策略。
+
+边界：本次真实日期范围样本是 2026 年 8–11 月，没有把它描述成已实测 2024–2026 跨年样本。抖音更大规模合集、其他平台原生排序参数和缺少日期时补抓每条详情不在上述实测结论中；只有平台实际给出的时间参与日期查询。自动 Mix 无固定终点，界面明确提示部分结果。原有长列表的分批挂载策略继续保留，本轮没有宣称完成全部条目虚拟化。
+
+
 本文汇总全部平台的测试链接，供实现与验收时使用。**状态列只有两种**：已验证 = 在真实浏览器里打开并确认过可用；待补 = 还没有拿到可用的样本。拿不到的都写了原因，不要凭空编链接。
+
+## 2026-11-01：0.6.0 Release 排版修正
+
+发布说明首行只作为 GitHub Release 标题，其余行生成正文，修复页面重复显示版本标题的问题；0.6.0 中文「使用提示」及对应英文内容已删除。一次性探针解析实际工作流 YAML、运行其中的 Bash 并以替身 `gh` 接收参数，确认标题保留、正文从「新增」开始且不含重复标题或使用提示；临时探针目录已清理。新版本说明与中英文 README 的 Markdown 检查通过。已通过 `gh release edit` 更新线上正文，并重新读取确认其与本地生成内容一致，附件仍为 10 个。此项只改发布文案和工作流，没有重新运行客户端或应用测试。
+
+## 2026-11-01：0.6.0 发布准备与回归
+
+版本从 0.5.2 升至 0.6.0，更新说明保存在 `docs/releases/0.6.0.md`：中文正文、折叠英文摘要及 0.5.2 至 0.6.0 的提交对比链接。发布工作流在新版本没有 tag 时检查对应说明非空；三个平台构建成功后，从同一提交检出文件，使用一级标题作为 Release 标题、文件全文作为正文。
+
+用户本轮明确允许修改测试。`test/collections.test.ts` 的过期断言已调整为单P 视频属于合集时返回 `work`、`collection`，并核对首组只指向粘贴的视频、首组无后续页、合集保留所请求的页码。已有 Electron E2E 还保留了任务区「卡片视图」切换与恢复断言，而任务区已在 0.5.1 改为仅列表；本轮移除这两处过期操作，保留真实下载、文件字节、搜索、设置、主题、重启恢复与 renderer 隔离检查。
+
+Windows 原生验证结果：
+
+| 检查 | 结果 |
+| --- | --- |
+| `pnpm check` | 通过：类型检查、Lint、66 项单测和 renderer / main / preload / CLI / 离线处理 worker 构建全部完成 |
+| 构建后的 Electron E2E | `pnpm exec playwright test --output=test-results/e2e-release-0.6.0`，1 passed（18.1 秒）；与 `pnpm test:e2e` 使用同一构建和测试入口 |
+| Release 工作流演练 | 一次性脚本解析实际 YAML 并运行其中的 Bash：缺文件及纯空白正文被拒；有效说明允许发布；已有 tag 跳过；以替身 `gh` 确认标题、正文文件、提交和含空格的附件路径均完整传入，未访问发布 API |
+| Markdown | `markdownlint-cli@0.48.0` 检查新版本说明与中英文 README，通过；扩展检查三份既有文档时发现历史格式问题，并对照 HEAD 确认原有 67 处。本轮新增的重复「抖音」标题已改名，未批量改写历史记录 |
+| 真实 B 站解析 | 构建后的 Electron，以隔离临时用户目录打开 <https://www.bilibili.com/video/BV19dx369EDD/>；显示 `v0.6.0`，「单视频」默认选中，旁边「合集 59/72」；合集有 72 条与「原视频」角标；未入队下载 |
+| 真实时长筛选 | 同一窗口选「1 分钟以内」显示 9 条；自定义 2–4 分钟显示 32 条；renderer pageerror 为 0 |
+
+本机 pnpm 默认在运行脚本前自动安装依赖，被无 TTY 的目录替换提示阻断；仅在验证进程中关闭 `verify_deps_before_run` 与 `manage_package_manager_versions` 后完成检查，没有改项目配置。最初单测曾因 Windows 临时目录重命名 `EPERM` 失败，重跑为 66 通过；E2E 首次生成视频也因系统临时目录 `Permission denied` 失败，改用仓库 `test-results/release-0.6.0-temp` 作为验证进程的 TEMP / TMP 后通过。引擎准备命令安装 PyInstaller 时长时间停留在下载元数据，已终止该安装；本轮真实解析与 E2E 使用现有 `.venv` 中的 yt-dlp 2026.8.19。没有修改下载器实现来规避环境故障。
+
+截图位于忽略目录 `test-results/driver/release-0.6.0-{work,collection,duration,custom-duration}.png`。一次性工作流探针已删除，临时客户端已关闭。抖音登录态、多P 加合集组合和跨平台安装包不由本轮本机实测覆盖；长列表分批挂载的性能证据沿用下节，未重复测帧率。
+
+## 客户端实测结果（2026-11-01，长合集分批挂载）
+
+494 条合集 <https://www.bilibili.com/video/BV1daxy6JENt/>（小松绿Viridis）之前一次挂完 494 张卡，滚动肉眼可见掉帧。实测根因是挂载卡片数：同一页面只改变挂载数量，全部 494 张时慢滚（500px/s）`p50` 18ms / 快滚（2400px/s）`p50` 24ms，挂 120 张时 12ms，挂 40 张时 6ms，72 条的合集本来就是 6ms；滚动 2 秒里主线程 `TaskDuration` 2.06–2.25s（完全占满），而 layout/style 只占 0.13s，时间花在 paint/raster/compositing 上。虚拟化没有现成件，所以按用户拍板的方案 B 做了分批挂载：先挂 120 张，`InView`（`react-intersection-observer`，`rootMargin: 320px`）进入视野时再挂下一批，直到全部挂完。
+
+真实 Electron 窗口验证（dev 构建，窗口以 `--remote-debugging-port=9333` 启动，探针走 CDP 填「媒体链接」、点「解析」，切到「合集」后按帧测滚动）：
+
+| 操作 | 读到 | 截图 |
+| --- | --- | --- |
+| 解析 494 条合集，切「合集」 | 首屏只挂 120 张卡、120 个 `img`、2727 个节点、`scrollHeight` 6285；副标题仍是「共 494 项，已加载 494 项」 | `test-results/driver/bilibili-video-lazy-first.png` |
+| 120 张挂载时慢滚 / 快滚各 2 秒 | `p50` 6ms / 12ms（全量时是 18ms / 24ms），`over33` 只有 3 帧 | — |
+| 滚到底（6 轮） | 卡片数 126 → 246 → 366 → 486 → 500（含「全选」「字幕」两个 `label`），`scrollHeight` 6285 → 12198 → 18110 → 24022 → 24795，最后一批只补剩下的 14 张 | `-lazy-bottom.png` |
+
+`pnpm typecheck` 与 `pnpm lint` 通过（实际是直接调 `node node_modules/typescript/bin/tsc` 与 eslint）；一次性探针已删除，没有新增或修改测试用例。
+
+取舍：滚到后面挂载数仍会累积回全部 494 张（此时帧时间回到 ~24ms），真正封顶要靠虚拟化，这轮没做；全选 / 下载 / 筛选仍按筛选后的整个列表算，没挂载的条目也会被选中。没有 `IntersectionObserver` 的环境退化成底部「加载更多」按钮（这条没有在真实环境里验，Electron 里 IO 总是存在）。
+
+## 客户端实测结果（2026-11-01，时长筛选）
+
+结果区在「时间」右边多了一个「时长」下拉：1 分钟以内 / 1–10 分钟 / 10 分钟以上 / 自定义…，只在当前 tab 的条目能按长度分出差别时出现。「自定义…」打开对话框，按分钟填「最短 / 最长」（留空表示不限、两端都包含，最短大于最长会自动对调）。它与 关键字 / 时间 / 只看 按 AND 组合，同时作用于显示与全选；平台没给时长的条目在筛选开启时被排除。
+
+真实 Electron 窗口验证（dev 构建，窗口以 `--remote-debugging-port=9333` 启动，探针走 CDP 填「媒体链接」、点「解析」后读 DOM）：
+
+| 操作 | 读到 | 截图 |
+| --- | --- | --- |
+| 解析 <https://www.bilibili.com/video/BV19dx369EDD/>，切到「合集 59/72」 | 「时长」下拉出现，默认「全部时长」，列表 72 项 | `test-results/driver/bilibili-video-duration-all.png` |
+| 选「1 分钟以内」 | 触发文字「1 分钟以内」，可见 9 条（0:04–0:53），底部「已选 1 / 9」 | `-duration-short.png` |
+| 选「自定义…」填 2 / 4 应用 | 触发文字「2–4 分钟」，可见 32 条（2:xx–4:xx），底部「已选 1 / 32」 | `-duration-custom.png`、`-duration-dialog.png` |
+| 再开对话框填 5 / 2 应用 | 自动对调成「2–5 分钟」，可见 51 条 | — |
+| 对话框里点「全部时长」 | 回到 72 项 | — |
+| 切到「单视频」tab | 「时长」下拉消失（单条没有可筛的）；切回合集后所选仍在 | — |
+
+`pnpm typecheck` 与 `pnpm lint` 通过（实际是直接调 `node node_modules/typescript/bin/tsc` 与 eslint，因为 `pnpm <script>` 在这个环境里会自装 pnpm 而被拒）；一次性探针已删除，没有新增或修改测试用例。
+
+未覆盖：混排列表（抖音主页、X / Instagram 单帖）里没时长的条目会在筛选开启时被排除，本轮没有登录态样本复验；「所有条目完全等长」的列表（控件不出现）也没有在线样本。
+
+## 客户端实测结果（2026-10-31，视频链接优先显示原视频）
+
+粘 <https://www.bilibili.com/video/BV19dx369EDD/> 时，之前只列出所属合集的 64 条，默认勾选合集第一条；原视频在合集里排第 59 条，既不好找，直接点「下载」还会下成别的视频。现在单P 且属于合集时出两个 tab：「本视频」排第一并默认打开，合集条目一次给全（来自同一次 `wbi/view` 的 `ugc_season`，不再额外调合集分页接口），合集里与当前视频同一个 BV 的条目打「原视频」角标，本视频标题带「第 N / M 集」。
+
+验证用了两路，都是真实 B 站、匿名：
+
+1. 一次性 `tsc` 探针直接调 `electron/services/listings/bilibili-collection.ts` 的 `bilibiliVideo.fetchPage`（真实 `fetch` + `Referer`），打印每个 `ListingGroup` 的 id、标题、条目数、分页与标记。
+2. 真实 Electron 客户端窗口：以 `--remote-debugging-port` 启动构建后的客户端，CDP 填「媒体链接」、点「解析」，读 `[role=tab]` 的 `aria-selected`、勾选数量与角标，再滚到标记条目截图。
+
+| 链接 | 结果 | 结论 |
+| --- | --- | --- |
+| <https://www.bilibili.com/video/BV19dx369EDD/> | 探针：`work`「本视频 · 第 59 / 64 集」1 条 + `collection`「小松绿💚」64 条（`pagination hasMore:false`），合集第 59 条带「原视频」；窗口：两个 tab「本视频 · 第 59 / 72 集」（默认选中，已选 1 项）与「小松绿💚 72」，合集视图已加载 72 项、没有「加载更多」，第 59 条卡片右上角显示「原视频」 | ✅ 原视频优先、合集全量、角标正确 |
+| <https://www.bilibili.com/video/BV1Ps421u7ju> | 探针：`work`「本视频 · 第 2 / 3 集」+ `collection`「少女乐队」3 条，第 2 条带「原视频」 | ✅ 集序号与标记 |
+| <https://www.bilibili.com/video/BV1GJ411x7h7> | 探针：`(stood down)`，回落引擎，单视频行为不变 | ✅ 不带合集时不接管 |
+
+两路采集相隔约 10 小时，同一个合集从 64 集涨到 72 集，符合合集仍在更新，不是解析不一致。
+
+第三路（2026-11-01）：本地解析引擎装好（`.venv` 里的 yt-dlp `2026.08.19`）后，用同一个真实窗口再解析一次 `BV19dx369EDD`。日志确认走 `列表适配器 bilibili-video`、73 条；随后为主条目采样画质，第一次 `extract` 因 yt-dlp 读不了 Chrome cookie（`Failed to decrypt with DPAPI`）失败，客户端按设计自动改为不带 cookie 重试并成功（`完成 extract … 3418ms`）。结果页默认停留在「本视频」tab、该条已勾选，显示「已选 1 / 1 · 约 20.7 MB」，画质菜单不再停在「读取中」；没有入队下载。截图：`test-results/driver/bilibili-video-work-tab-engine.png`。
+
+未覆盖：抖音的同批改动（本作品 + 合集两个 tab、原作品角标）缺少登录账号的 `persist:media` 会话，没有在真实响应上复验。
+
+回归：`pnpm typecheck`、`pnpm lint` 通过；既有单测 65 通过、1 失败——`test/collections.test.ts` 里「单P + 合集只有一个 tab」的断言因本次规则变化已过期，按原型阶段的规矩没有改测试。一次性探针与 CDP 脚本已删除，没有新增或修改测试用例。截图：`test-results/driver/bilibili-video-work-tab.png`、`test-results/driver/bilibili-video-collection-tab.png`、`test-results/driver/bilibili-video-original-mark.png`。
+
+第四路（2026-11-01，tab 与头部显示收敛）：把「第 N / M 集」从「本视频」tab 移走，改成容器 tab 的徽章「59/72」（`ListingGroup`/`MediaGroup.position`）；有多个 tab 时不再显示结果区大标题，副标题挪到 tab 条下方、只在 分P/合集 tab 显示。真实窗口（`--remote-debugging-port`，CDP 驱动）解析 `BV19dx369EDD` 读到：`h2` 为 null；两个 tab「本视频」「小松绿💚 59/72」，默认打开本视频、该条已勾选；切到合集后 tab 条下方出现「哔哩哔哩 · 共 72 项，已加载 72 项」，第 59 条带「原视频」。`pnpm typecheck`、`pnpm lint` 通过。截图：`test-results/driver/bilibili-video-tab-badge-work.png`、`test-results/driver/bilibili-video-tab-badge-collection.png`。
+
+## 客户端实测结果（2026-11-01，tab 只写类型词）
+
+tab 文案不再由各平台自己拼（「本视频」「分P」「本作品」各一套），改成组上的 `kind` 决定的类型词：`单视频` / `多P` / `合集`，列表自己的名字（合集名、视频标题）降为 tab 的悬停提示。`GroupKind` 在 `shared/contracts.ts`，文案在 `result.json` 的 `groups.*`，各适配器只声明 kind（哔哩哔哩视频页、抖音作品页、各平台主页、X/Instagram 单帖文件、抖音短剧目录都归了词条，YouTube 频道等单列表结果不受影响）。这样其它平台出多 tab 时直接复用同一套词，不用再造一组中文。
+
+验证：
+
+1. 一次性 `tsc` 探针用假的 `wbi/view` 回复驱动 `bilibiliVideo.fetchPage`：多P+合集 → `parts`（`title` 是视频标题）+ `collection`（`title` 是合集名，`position` 2/2）；单P+合集 → `work`（`title` 是视频标题）+ `collection`。`Collection` 的 `directory` 仍是合集名，落盘不受文案影响。
+2. 真实 Electron 窗口（dev 构建 + CDP）：解析 <https://www.bilibili.com/video/BV19dx369EDD/>，`[role=tab]` 读到两个 tab，文本 `单视频`（默认选中）与 `合集 59/72`，`title` 属性分别是「单视频 · 【小松绿】…」与「合集 · 小松绿💚」；结果区没有大标题，单视频 tab 下没有副标题，已选 `1/1 · 约 20.7 MB`；切到合集后仍是 72 项、第 59 条「原视频」（见上一节）。截图：`test-results/driver/bilibili-video-tab-kind.png`。
+
+未覆盖：多P+合集没有可用的在线样本（`BV1bK411W797` 是 23P 但不在合集里，`BV1MwxY63Eer` 是 17 集合集但单P），所以 `多P` tab 只有假回复的证据；抖音侧（作品页 + mix）未在登录账号下复验，文案机制与哔哩哔哩共用。`pnpm typecheck`、`pnpm lint` 通过，没有新增或修改测试用例，一次性探针脚本与截图目录已删除。
+
+## 客户端实测结果（2026-11-01，tab 与按钮同排、只看收敛）
+
+结果区原先两行：上一行是标题与 关键字 / 时间 / 视图 / 关闭，下一行是 tab 条与「全部 / 视频 / 图片」。现在合成一行——有 tab 时 tab 占左侧、按钮靠右；没有 tab 时这一行仍是标题。副标题「平台 · 共 N 项，已加载 N 项」仍在下方、只跟 多P/合集 tab 显示。
+
+「只看」改成只在**当前列表同时含图文与视频**时出现（`src/components/downloader/Result.tsx` 的 `mixed`）：纯视频列表（视频页的多P/合集、UP 主页）没有可筛的东西，`图片` 在那里只会把每张封面各排一个任务；图文与视频混排的列表（抖音主页、X / Instagram 单帖等）照旧显示，仍同时作用于显示与全选。单个作品的卡片仍有右键「下载封面」。
+
+真实 Electron 窗口（dev 构建 + CDP）解析 <https://www.bilibili.com/video/BV19dx369EDD/>：`h2` 为 null，`[role=tab]` 两个「单视频」（默认选中）/「合集 59/72」，与视图切换、关闭在同一行，页面上没有「全部」筛选按钮；切到合集后出现副标题「哔哩哔哩 · 共 72 项，已加载 72 项」。`pnpm typecheck`、`pnpm lint` 通过，没有新增或修改测试用例；一次性 CDP 脚本已删除。截图：`test-results/driver/bilibili-video-row-work.png`、`test-results/driver/bilibili-video-row-collection.png`。混排列表下的「只看」本轮没有重新验证（没有可用的登录态样本）。
+
+## 客户端实测结果（2026-11-01，首页/信息流链接的报错）
+
+粘 <https://www.bilibili.com/?page=Moments> 这类平台首页或信息流地址时，以前会先让引擎试两次（`Unsupported URL`），再回退到应用内浏览器读到 0 个媒体，最后按「已知平台页面为空」报「需要登录才能继续」——登录其实解决不了。现在 `electron/services/parser.ts` 的拒绝表在解析入口就拦下各平台的首页/信息流路径（bilibili `/`、`/v/…`、`/video/`、`/bangumi/`、`/anime/`、`/dynamic`、`/feed`；抖音 `/`、`/discover`、`/hot`、`/search`；YouTube `/feed/`、`/results`；X `/home`、`/explore`、`/search`；微博 `/hot`、`/search`；Instagram `/explore`），文案是「暂不支持解析这个链接：它是平台首页或信息流，不是作品页或列表页。请粘贴具体的视频、合集或作者主页链接。」（`errors:parse.notAResource`）。
+
+真实 Electron 窗口实测：该链接 0.7 秒返回「解析未完成」+ 上述文案，没有登录按钮，也不再等浏览器预热；同一窗口随后解析 <https://www.bilibili.com/video/BV1MwxY63Eer/> 正常（「本视频 · 第 1 / 17 集」+ 合集两个 tab，默认本视频）。`pnpm typecheck`、`pnpm lint` 通过，没有新增或修改测试用例。截图：`test-results/driver/unsupported-home.png`。
 
 ## 客户端实测结果（2026-10-13，平台原始音轨音质选择）
 
@@ -668,3 +842,263 @@ Windows 旧二进制在本机版本探测中原本就能成功，未把它伪装
 门禁：pnpm check（typecheck、lint、66 项既有单测及构建）通过；Linux、Windows PyInstaller 引擎均实际构建。现有 Electron E2E 再次执行，完成解析和下载后仍在 `test/e2e/e2e.spec.ts:50` 等待已删除的“卡片视图”按钮失败；未改测试，也未宣称 E2E 全绿。Windows 验证覆盖原生 Node／Python／打包引擎／FFmpeg，不等同于完整 NSIS 安装器与 Windows Electron GUI 回归。
 
 证据在忽略目录 `test-results/issues-20261026/`：browser-result.json、client-result.json、windows-result.json，以及 Windows 临时目录内的原生引擎与媒体。一次性驱动、基线源文件和隔离用户目录在验证后删除。
+
+本轮界面截图：`test-results/driver/filename-settings-final.png`、`publication-date-dialog.png`、`collection-more-filters.png`、`collection-complete.png`。页面错误收集为 0。一次性命令探针未写入测试规格，临时客户端已关闭。清理复制登录状态所在的临时目录时，自动审批策略两次返回 `blocked by policy`（包含已核实的精确路径删除），未执行删除；副本仍位于本机 `C:\Users\40417\AppData\Local\Temp\galaxy-filenames-collections-20261103`，未纳入 Git。原用户目录未改动。
+
+## 2026-11-01：作者订阅、视频主筛选与共用任务列表
+
+原生 Windows x64 / Electron 44.4.5，使用隔离用户目录与客户端自己的浏览器分区。未读取或改写用户真实订阅、任务和登录数据；未新增／修改持久化测试规格。
+
+| 真实站点 | 输入 | 实际结果 |
+| --- | --- | --- |
+| B 站 | `https://space.bilibili.com/242020511` | 前轮读取「我是影Sir」40 条，全部作为已读基线；后续新隔离会话遇到验证 HTML 或 JSON `-352`，添加弹窗显示「打开验证页面」，没有把拒绝当成零更新。确认风险码归类及验证入口后停止重复请求。 |
+| 抖音 | `https://www.douyin.com/user/MS4wLjABAAAALBQu0odP0MyyGWgDpnvBTsSLhorbHcYxES8uubAVDEitEw3liy-Ytsk6tr_JKgN9` | 读取「天爱Talk」20 条，支持选择视频／图文，初次添加不提醒历史作品。 |
+| YouTube | `https://www.youtube.com/@Fatcat996` | 读取「胖貓堂主」32 条（30 视频、2 Shorts），归一频道 ID `UCHrgWMrjOVCo5VSYcVV8eMg`，再次检查成功。 |
+
+界面与持久化验证：
+
+- 「更新」「管理订阅」实际复用 `TaskListRow`；选择「视频主」后管理列表仅显示该作者。将两条真实基线记录在隔离目录标记为未读，未读页仅显示这两条；这是 UI 状态重放，不是观察到作者新发两条作品。实际窗口无水平溢出，renderer pageerror=0。
+- 「设置 → 订阅」默认间隔为 24 小时，修改为 2 小时并点击保存，主进程确认；重启后间隔与两条未读状态保留。
+- 重复添加按规范账号／已知别名在网络请求前拦截；renderer 订阅状态不含私有 `seen`、分页断点或 cookies。
+- 临时服务探针 4 项通过：安静基线、新作品仅提醒一次及已读／重启恢复；超过 5 页后断点续查；登录失败保留上次成功、读取中删除不恢复记录；非法／伪造主机／带用户名密码链接在请求前拒绝。使用临时注入的页面读取端口验证状态机，不把它当作在线平台验证。
+- 通知重放曾暴露第一页末尾少一个已知条目时继续扫描旧作品的边界问题。修复后临时脚本验证：尾部两个已知条目即可确认重合，边界后无发布时间的历史后缀不提醒；单个置顶旧作品不能提前结束扫描；暂停读取后的迟到结果不产生记录或通知。三项通过，见 `test-results/subscriptions-boundary-report.json`。
+
+系统通知验证单独记录：当前 Windows 开发实例实测 `Notification.isSupported() === false`，原生通知等待探针因此超时；即使设置已安装应用的 AppUserModelID，当前开发进程仍返回 false。已按 Electron 44 文档补上 Windows 应用标识，安装版与 NSIS 的 `com.bhwa233.galaxy-downloader` 一致。该接入不等同于已在安装版看到系统弹窗。
+
+通知路由另用真实 YouTube 作品做受控重放：从隔离存储中移除一条已知作品及其 seen ID，让下一次真实检查重新发现；仅在系统通知可用性／show 边界替换不可用的 OS 通道，检查应用创建的通知内容、点击回调和作者筛选。详细结果保留在 `test-results/subscriptions-notification-report.json`；该验证不能证明 Windows 弹窗实际显示，也没有观察一次新的在线发布。
+
+修复后重放通过：1 条新增对应 1 次通知调用，标题包含作者和数量，点击打开该视频主的未读更新；再做一次真实站点检查，不增加记录或通知调用。暂停／恢复状态及删除订阅后清空该作者更新记录也通过，renderer pageerror=0。
+
+门禁：最终分页边界／通知保护／Windows 标识改动后 `pnpm check` 通过（typecheck、lint、66 项既有单测、完整构建）。现有 `pnpm test:e2e` 原生 Windows 通过，1 项约 1.2 分钟，覆盖本地真实媒体的解析、下载、字节校验、历史恢复、设置与主题、renderer 隔离。中英文文案 key 结构（按各语言复数规则归一）与 `git -c core.whitespace=cr-at-eol diff --check` 通过。
+
+本轮未等待完整的 24 小时周期、未实机休眠／唤醒、未验证 NSIS 安装后的通知显示、未在 macOS／Linux 回归本功能。在线封面受网络影响，截图中存在仍在加载的图片，不声称所有封面均已载入。
+
+证据：`test-results/subscriptions-live-report.json` 保留真实站点／筛选／设置结果及原生通知等待失败；`test-results/subscriptions-notification-report.json` 保留受控通知重放结果；截图在 `test-results/driver/subscriptions-*.png`。一次性探针及隔离目录在验证后清理，公开报告与截图保留在忽略目录。
+
+### 2026-11-01 补充：原生通知通道与真实测试入口
+
+实现增加 Windows 稳定 AppUserModelID／ToastActivatorCLSID，开发版与安装版身份分开；订阅和下载共用 `NativeNotifications`。设置页可发送固定内容的真实系统通知，等待原生 show／failed 结果；主进程保留通知实例及点击事件，失败写入日志与公开状态，不再静默忽略。窗口恢复入口支持重新创建已关闭窗口。
+
+本轮没有替换 `Notification.isSupported`、`show` 或 `click`。真实客户端中「设置 → 订阅 → 发送测试通知」调用实际 API，当前执行环境仍报告 supported=false；界面显示不可用原因，不出现成功提示，lastShownAt 保持为空，renderer pageerror=0。报告 `test-results/native-notifications-ui-report.json`，截图 `test-results/driver/native-notification-settings.png`。
+
+进一步诊断：Windows 11 专业版 build 26300，WpnService／WpnUserService 运行；最小 Electron 44.4.5 程序也返回不支持。默认临时目录曾出现 EPERM，换为可写的工作区临时目录后 API 仍为 false，不能将原因仅归为临时目录。直接 WinRT 查询能创建 ToastNotifier，但不能证明 Electron 的通知 presenter 初始化成功。尝试通过桌面工具启动隔离程序未取得可操作窗口；本轮未确认真实弹窗显示或物理点击。没有修改系统通知开关，也没有将模拟 API 结果记为原生通知成功。
+
+用户桌面实测补充：用户按常用方式启动当前开发版，在「设置 → 订阅」点击「发送测试通知」，于 2026-11-01 明确反馈「能看到系统通知」。因此 Windows 原生弹窗显示已确认通过；前述自动化实例不可用的结果保留为环境差异，不能用来推断日常桌面实例不支持通知。该反馈没有额外确认物理点击回调、NSIS 安装或 macOS／Linux；应用内点击定位逻辑此前已有受控重放记录。
+
+类型检查、Lint、66 项既有单测和完整构建通过；现有 Electron E2E 再次通过（1 项，14.9 秒），覆盖真实本地媒体下载、持久化和 renderer 隔离，输出使用 `test-results/native-notifications-e2e/`，保留先前探针证据。没有新增／修改持久化测试规格。临时程序、复制的 Electron 运行时及隔离用户目录已清理；保留公开诊断报告和用户桌面实测结论。
+
+### 2026-11-01 补充：单实例启动
+
+沿用 Electron `requestSingleInstanceLock`，将加锁提前到数据迁移之前。仅主实例初始化服务；重复启动唤醒已有窗口，启动期间的唤醒请求延迟处理，主窗口创建增加防重复保护。该修改的 typecheck、lint 和 renderer/main/preload 构建通过；未新增／修改测试规格。按用户要求，功能验证交由用户手动完成，本轮不自动执行重复启动、最小化和托盘操作。
+
+启动尝试：当前执行环境启动日常数据目录时，Chromium 报 `Lock file can not be created: 拒绝访问。 (0x5)`，随后退出；桌面启动尝试也未确认目标窗口出现。数据目录 ACL 保持原状。需从用户正常桌面终端在项目根目录运行 `pnpm dev` 后手动确认。启动诊断日志保留在 `test-results/manual-singleton.*.log`。
+
+### 2026-11-01 补充：订阅作者头像修复
+
+原生 Windows / Electron 44.4.5，使用原有 `C:\Users\bhwa233\AppData\Roaming\galaxy-downloader` 数据目录及客户端自己的浏览器分区。此时本机 Electron 完整性标签已修复，真实主窗口和引擎正常启动。未新增／修改测试规格，复用现有客户端驱动验证真实站点。
+
+- B 站 `https://space.bilibili.com/390898500`（一目十影）：原有订阅没有头像字段。点击该作者的「检查更新」后，公开账号卡片返回的头像保存到订阅，管理列表图片 `complete=true`，`naturalWidth=1200`、`naturalHeight=1200`。没有删除或重新添加该订阅。
+- B 站 `https://space.bilibili.com/242020511`（我是影Sir）：添加弹窗通过真实识别显示昵称、最近作品与头像；图片 `complete=true`，原始尺寸 300×300。仅识别，没有添加新的用户订阅。
+- 抖音 `https://www.douyin.com/user/MS4wLjABAAAALBQu0odP0MyyGWgDpnvBTsSLhorbHcYxES8uubAVDEitEw3liy-Ytsk6tr_JKgN9`（天爱Talk）：添加弹窗通过真实识别显示昵称、视频／图文选项、最近作品与头像；图片从 `p3-pc.douyinpic.com` 实际载入，`complete=true`，原始尺寸 100×100。仅识别，未添加订阅。两平台的验证均未捕获 renderer pageerror。
+
+`pnpm check` 通过：类型检查、Lint、66 项既有单测和完整构建。现有 Electron E2E 首次在生成本地媒体夹具时因 FFmpeg 写系统临时目录报 `Permission denied`，尚未执行应用验证；将本次测试进程的 TEMP／TMP 指向工作区内临时目录后，原有 E2E 通过（1 项，13.7 秒），未修改测试用例或系统临时目录设置。输出在 `test-results/avatar-e2e/artifacts/`。上述验证不等同于安装包回归。
+
+截图：`test-results/driver/subscription-avatar-manage.png`、`test-results/driver/subscription-avatar-add-bilibili.png`、`test-results/driver/subscription-avatar-add-douyin.png`。
+
+### 2026-11-01 补充：头像比例与应用内解析导航
+
+原生 Windows / Electron 44.4.5，真实客户端使用原用户目录，复用已有「一目十影」订阅。一次性 Playwright 驱动读取实际窗口和真实站点，没有新增／修改测试规格。密度验证通过真实设置命令切换，结束后恢复原设置。
+
+- 作者列表头像的实际布局尺寸：普通密度 56×56，紧凑密度 48×48。测量作者行的图片容器，确认宽高相等。
+- 作者详情点击「解析作者主页」：详情关闭，应用内「新建任务」页自动填入 `https://space.bilibili.com/390898500`，真实解析返回 40 条投稿。
+- 最近作品标题、更新列表作品标题、封面和「解析」按钮均进入应用内解析页，地址为 `https://www.bilibili.com/video/BV1STAhzfE8y`。真实解析返回单作品／合集结果，本次首页共 90 个条目；没有把解析成功等同于下载完成。
+- 作者详情与最近作品的独立外链按钮，以及更新列表的独立外链按钮，分别向主进程 `shell.openExternal` 传入正确的作者／作品地址，点击后留在订阅界面。本次在真实 Electron 主进程拦截该 OS 调用并记录地址，避免自动拉起外部浏览器；这是外链调用验证，不是外部浏览器窗口的实测。所有内部解析入口均未增加外链调用。
+- 导航与解析前后下载任务 ID 保持一致，未自动入队；renderer pageerror=0。源订阅保留，未新增或移除用户订阅。
+
+门禁：`pnpm check` 通过（类型检查、Lint、66 项既有单测、完整构建）。既有 Electron E2E 通过（1 项，12.9 秒），本次测试进程沿用工作区内 TEMP／TMP，输出在 `test-results/subscription-navigation-e2e/artifacts/`。没有修改系统临时目录或测试用例。
+
+证据：`test-results/subscription-navigation-report.json`；截图 `test-results/driver/subscription-navigation-avatar-comfortable.png`、`subscription-navigation-avatar-compact.png`、`subscription-navigation-details.png`、`subscription-navigation-profile-result.png`、`subscription-navigation-work-result.png`、`subscription-navigation-updates.png`。一次性驱动在验证完成后删除，公开报告和截图保留在忽略目录。
+
+### 2026-11-01 补充：订阅作者的最近作品摘要
+
+管理订阅的作者摘要改为「平台 · 最近作品：作品标题」，复用既有中英文「最近作品」文案。摘要按单行省略显示，悬停提供完整作品标题；暂无作品时保留既有占位文案。
+
+类型检查、Lint 与 Vite 界面／主进程／preload 构建通过，未新增／修改测试用例。通过既有客户端驱动打开原数据目录中的「一目十影」管理行，确认显示「哔哩哔哩 · 最近作品：…」，`title` 属性包含完整作品标题，计算样式为 `white-space: nowrap`、`text-overflow: ellipsis`，renderer pageerror=0。本次窗口足以显示完整摘要，未出现实际截断。截图：`test-results/driver/subscription-recent-work-label.png`。
+
+### 2026-11-01 补充：全局订阅轮询与顶部时间
+
+原生 Windows / Electron 44.4.5，复用原用户目录和真实「一目十影」订阅；界面通过既有客户端驱动直接截图，没有使用 computer-use。旧订阅存储增加全局调度元数据后，原有 1 个作者、40 个作品均保留，缺失作品数与已读标记变化数均为 0。
+
+点击顶部「检查更新」执行一轮真实 B 站读取，返回 40 条投稿，整轮汇总为成功 1 位、失败 0 位。顶部显示上次整轮完成时间、下次全局时间与汇总；作者行仅保留头像、作者、平台／最近作品、状态和操作。随后单独检查「一目十影」，再次成功；核对全局时间和整轮汇总完整对象保持不变，作者自身检查／成功时间正常更新。renderer pageerror=0。截图：`test-results/driver/subscription-global-schedule.png`。
+
+一次性调度探针使用真实 Subscriptions 服务、受控页面读取端口和模拟时钟，7 组场景通过：旧数据迁移与最近到期时间；全局串行检查和单作者刷新隔离；部分失败与下一轮全部作者检查；自动关闭／手动检查和新增订阅安静基线；5 页后补查与重启续查，已完成作者不重复；前台打断后恢复且不计为失败；暂停／删除跳过成员，迟到响应不恢复已删除记录。探针不请求平台、不调用系统通知，不将模拟跨时结果当作等待 24 小时的实测。报告：`test-results/subscription-cycle-report.json`。一次性脚本、构建副本及隔离数据在验证后清理。
+
+门禁：`pnpm check` 通过（类型检查、Lint、66 项既有单测、完整构建）；现有 Electron E2E 通过（1 项，15.2 秒），本次测试进程使用工作区内 TEMP／TMP，输出 `test-results/subscription-cycle-e2e/artifacts/`。中英文订阅文案 key 一致，Git 空白检查通过；未新增／修改持久化测试规格。
+
+### 2026-11-01 补充：0.7.0 发布准备
+
+版本从 0.6.0 升至 0.7.0，新增 `docs/releases/0.7.0.md`，整理作者订阅、统一轮询、原生通知、应用内解析入口及单实例改进。按现有发布工作流核对：一级标题只用于 Release 标题，正文从「新增」开始，不含重复标题或「使用提示」，完整变更链接为 0.6.0 至 0.7.0。
+
+针对最终 0.7.0 代码重新执行 `pnpm check`，类型检查、Lint、66 项既有单测及完整构建通过；现有 Electron E2E 通过（1 项，14.1 秒）。测试进程使用工作区内 TEMP／TMP，输出 `test-results/release-0.7.0-e2e/artifacts/`；未新增／修改测试规格。临时文件、用户订阅数据与截图位于忽略目录，未加入提交。安装包与线上 Release 由现有 main 分支发布流程构建和发布。
+
+### 2026-11-03 补充：订阅独立侧栏模块
+
+「订阅」从工作空间移出为独立分组，复用现有侧栏分隔线、未读徽标与折叠提示。原生 Windows Electron 客户端使用此前真实抖音「天爱Talk」检查建立的隔离数据验证：工作空间仅有三个任务入口，订阅位于独立同级分组；未读徽标与存储中的 0 条未读一致；点击进入订阅页，管理列表能显示已有作者。收起侧栏后，铃铛入口可从全部任务切回订阅，选中状态与悬停提示正常，renderer pageerror=0。本轮没有重新请求站点，也没有添加或修改持久化测试规格；探针通过内联脚本执行。
+
+`pnpm build`（含类型检查）和 `pnpm lint` 通过。公开结果与展开／收起截图保留在忽略目录 `test-results/subscriptions-module/`。
+
+### 2026-11-03 补充：yt-dlp 每周检查更新
+
+自动检查间隔从 24 小时改为 7 天，复用已有自动更新开关、立即检查、校验和回退。检查完成后统一重新调度，手动检查也从本次完成时间计算下次检查；检查过程中关闭开关或退出时，不会重新安排自动检查。中英文设置说明同步为每周检查，普通解析失败可直接前往「工具与更新」。
+
+原生 Windows Electron，使用新建的隔离数据目录验证，没有改用户日常数据。关闭自动更新后，手动从官方 PyPI 获取 2026.10.26 wheel，下载连接首次超时后由原有重试成功；经过 SHA-256 和真实本地引擎兼容检查，版本由 2026.08.19 切换为 2026.10.26。界面点击回退恢复 2026.08.19，重新开启自动更新及英文每周说明也验证通过。真实解析 `https://www.w3schools.com/html/galaxy-weekly-check-missing.mp4` 返回 404，显示内核更新提示，点击正确定位工具与更新页。renderer pageerror=0。
+
+一次性调度探针加载实际服务与本地引擎，真实读取官方元数据；将上次检查时间设为两天前，计时器剩余约 5 天；设为八天前，沿用启动后 30 秒的到期宽限；手动检查完成后，计时器剩余约 7 天。检查途中关闭自动更新，完成后没有重建计时器。另以受控网络异常验证保留已激活内核且下次仍为一周后。该探针验证时间计算和开关边界，没有实际等待一周。
+
+`pnpm check` 通过（类型检查、Lint、66 项既有单测和完整构建）；既有 Electron E2E 通过（1 项，30.4 秒），输出位于 `test-results/kernel-weekly/e2e/`。没有新增或修改测试规格。结果与截图保留在忽略目录 `test-results/kernel-weekly/`。一次性编译探针及新建的隔离用户目录仍位于该忽略目录：递归删除请求被自动审批策略以 `blocked by policy` 拒绝，未重试删除；本轮没有复制或导入登录状态，也未将这些文件加入提交。
+
+### 2026-11-04 补充：链接输入框自动高度
+
+移除新建任务文本域的固定尺寸覆盖，复用 `Textarea` 的原生 `field-sizing: content`，保留 56px 最小高度；为文本域和侧栏内容区域设置可收缩宽度，防止连续长链接撑出窗口。
+
+原生 Windows Electron 44.4.5，通过运行中的 Vite 服务加载最终界面，复用已有隔离资料目录。短链接为 `https://www.bilibili.com/video/BV1kwa86KEmG`，附加无敏感信息的长参数后，1200px 窗口下输入框从 56px 增高至 196px；将窗口缩到 900px 后增高至 276px。多行分享文案增高至 436px；缩短和清空后均恢复 56px。各阶段文本域 `scrollHeight` 与 `clientHeight` 相等，页面宽度未超出视口，解析按钮仍位于输入框下方，renderer pageerror=0。本轮仅验证输入与布局，未发起该链接的在线解析。
+
+`pnpm typecheck` 与 `pnpm lint` 通过，没有新增或修改测试规格；一次性探针通过内联脚本执行，没有生成脚本文件。测量结果与截图保留在忽略目录 `test-results/input-autosize/`。
+
+### 2026-11-04 补充：默认标题与作者名称命名
+
+命名方式改为「仅标题」（默认）、「标题 + 作者名」、「标题 + 作者名 + 发布日期」、自定义。预设使用作者名称，标题在前；旧作者账号预设的全局设置迁移为仅标题，历史任务保留原模板与名称。长标题为作者／日期预留字节空间，过长的作者名称也按文件名长度要求截短。
+
+原生 Windows Electron，复用已有隔离资料目录，对真实 B 站 `https://www.bilibili.com/video/BV13SxN6vEyx` 操作设置页并实际下载。平台返回标题「小松绿打喷嚏」、作者名「小松绿天生就喜欢笑」、账号 495045064，三种预设分别得到：
+
+- `小松绿打喷嚏.mp4`
+- `小松绿打喷嚏_小松绿天生就喜欢笑.mp4`
+- `小松绿打喷嚏_小松绿天生就喜欢笑_2026-10-27.mp4`
+
+三个文件均完成下载且非空，名称预设没有使用账号数字；设置页预览与实际命名相符。已有作者账号设置启动后迁移为 title，既有任务名称保持不变，renderer pageerror=0。一次性命名边界探针另核对缺少发布日期、仅有账号而没有作者名、频道名称回退、自定义和旧模板兼容，以及超长标题／作者名称保留日期且总长不超过 150 字节。
+
+最终 `pnpm check` 通过（类型检查、Lint、66 项既有单测及完整构建），既有 Electron E2E 再次通过（1 项，16.0 秒，输出 `test-results/filename-author-name/e2e-final/`）。没有新增或修改测试规格；探针以内联脚本执行。公开结果与界面截图在忽略目录 `test-results/filename-author-name/`，真实下载文件保存在原有隔离验证目录，没有操作用户日常下载任务或文件。
+
+### 2026-11-04 补充：合集排序缩减为两个选项
+
+移除最新发布／最早发布菜单、查询枚举及发布时间排序分支。原生 Windows Electron，复用原有隔离资料目录，解析真实 B 站 `https://www.bilibili.com/video/BV1Ps421u7ju` 的 3 条合集。实际展开排序菜单，确认仅含「合集原顺序」「合集倒序」；点击倒序后条目 ID 顺序逐项等于原列表反转，切回原顺序后恢复。日期筛选弹窗可正常打开并取消；两种已移除的排序值通过 IPC 发起查询均被参数校验拒绝，renderer pageerror=0。
+
+`pnpm check` 通过，包含类型检查、Lint、66 项既有单测和完整构建；既有 Electron E2E 通过（1 项，约 1.3 分钟），输出 `test-results/collection-order-options/e2e/`。没有新增或修改测试规格，探针以内联脚本运行；结果与菜单截图位于忽略目录 `test-results/collection-order-options/`。
+
+### 2026-11-04 补充：B 站分享链接解析耗时排查
+
+对象为 `https://www.bilibili.com/video/BV1kwa86KEmG?p=1` 及用户提供的同一作品完整分享链接。用户日常客户端 10:37 日志显示：列表适配器读取约 8.1 秒，返回一个单视频和 77 条合集内容；随后另行采样画质，系统 Chrome 登录态因 DPAPI 解密失败耗时约 7.6 秒，自动去掉系统浏览器配置后再运行 yt-dlp 耗时约 19.3 秒，合计约 35.2 秒才取得画质。画质请求此时已使用没有分享追踪参数的 BV 地址，不能将主要等待归因于链接长度。
+
+使用已有隔离客户端和同一官方 2026.10.26 内核复现，没有复制日常浏览器会话或导出凭据。开启隔离实例的详细日志后，完整分享链接的列表约 11.9 秒返回、画质约 82.2 秒就绪；Chrome 解密失败步骤约 30.3 秒，再次引擎提取约 14.6 秒，并观察到两次引擎提取之间约 25.3 秒的额外空档。现有日志不能单独确认该空档的系统原因。按开发版实际选择的 `.venv` Python 路径独立探测同一内核，两个纯版本进程分别约 1.7／1.4 秒结束，不能把整段等待一概解释为固定的启动成本。
+
+同一进程随后解析干净链接，列表约 14.6 秒返回，约 14.7 秒画质就绪；该轮复用了前一轮单作品解析缓存，并已经记住系统 cookie 不可读，因此不能把两轮差值当作去掉分享参数的优化效果。代码路径确认列表和画质串行启动、后者重新通过本地引擎读取网页与画质；系统 cookie 不可读标志只保存在本次 Parser 实例，应用重启后仍会重试一次。
+
+本轮仅诊断，没有修改解析逻辑，也没有新增或修改测试规格。结果和去除 URL 追踪参数的时序日志位于忽略目录 `test-results/bilibili-parse-latency/`；纯启动探针中 `development-engine-startup.json` 对应客户端开发模式的真实路径，`engine-startup.json` 是仓库打包二进制的单独测量，后者返回 2026.08.19，不用于推断当前开发内核的耗时。
+
+后续确认 DPAPI 报错原因：本机 Chrome 155.0.8059.39 的 Default 配置含应用绑定密钥标记 APPB，只读统计的 71 条加密 cookie 均为 v20 格式。实际激活的官方 yt-dlp 2026.10.26 wheel 中，WindowsChromeCookieDecryptor 只专门处理 v10，其余格式按旧式 DPAPI 数据解密，因此 v20 会进入不兼容分支并抛出本次错误。使用同一开发 Python 单独调用 Windows API，Chrome 普通 DPAPI 主密钥解密成功；该结果排除了本次错误必然代表普通主密钥无法解密的推断。仅检查格式、调用结果与错误码，没有输出或持久化 cookie 内容及明文密钥；解析逻辑仍未改动。
+
+### 2026-11-04 补充：移除系统浏览器登录态读取与 0.7.1 发布准备
+
+移除系统浏览器配置扫描、设置及公开状态字段、刷新命令、引擎 profile 参数与解密失败重试；Python 引擎不再配置 `cookiesfrombrowser`。旧设置在加载时移除 browserProfileId，现有应用内分区继续保留。README、中英文文案、需求与 AGENTS.md 同步为仅使用应用内会话认证，没有修改测试规格。
+
+原生 Windows Electron 44.4.5，以已有隔离资料目录和官方内核 2026.10.26 运行最终 0.7.1 客户端：浏览器设置页已无系统浏览器／重新检测入口，打开登录窗口与清除登录态入口存在；实际打开并关闭登录窗口正常。旧配置 ID 从设置与持久化状态移除，公开状态不再返回系统 profiles，原有会话站点保留。
+
+再次使用用户的完整 B 站分享链接，列表约 5.8 秒返回（单视频 1 条、合集 77 条），画质约 10.6 秒就绪，共 4 个画质选项。一次性观察引擎管道仅记录操作、是否包含 profile 及 cookie 数量：全程只有一次 extract，没有系统配置参数，包含来自应用内会话的 17 条 cookie；没有保存或返回其内容。该次日志无系统 cookie 读取或 DPAPI 失败，renderer pageerror=0。该耗时是一次实测，不承诺所有网络环境都有相同速度。结果与截图位于 `test-results/in-app-session-only/`。
+
+版本升至 0.7.1，新增对应中英文发布说明，首行只用于 Release 标题，正文从优化与修复开始。最终 `pnpm check` 通过（类型检查、Lint、66 项既有单测、完整构建）；Python 语法检查通过，既有 Electron E2E 通过（1 项，约 1.4 分钟，输出 `test-results/release-0.7.1-auth/e2e/`）。发布说明 Markdown 检查、中英文文案 key 核对和 Git 空白检查通过。临时验证报告、截图及会话数据在忽略目录，发布流程继续由 main 分支构建三个平台安装包后统一发布。
+
+### 2026-11-04 补充：B 站复用已有会话直接读取接口
+
+原生 Windows Electron 44.4.5，官方 yt-dlp 2026.10.26，沿用前次隔离资料目录中的应用内会话。以用户完整分享链接对应的 BV1kwa86KEmG 测量：列表 421ms、画质 693ms，返回单视频 1 条、合集 77 条及 1080P／720P／480P／360P 四档实际画质。对比此前同环境 5820ms／10635ms，成功路径省去网页加载、页面稳定等待和一次画质提取子进程。随后单独启动的客户端用规范地址测得列表 272ms、画质 876ms。这些是本机样本耗时，不作为网络延迟承诺。
+
+通过一次性主进程观察器只记录接口路径、是否加载平台文档、引擎操作及 Cookie 数量，不记录凭据内容或签名流地址。下表各成功场景均未加载 B 站文档，也未发起引擎 extract：
+
+| 场景 | 地址 | 结果 |
+| --- | --- | --- |
+| 视频及内嵌合集 | `https://www.bilibili.com/video/BV1kwa86KEmG?p=1` | 1 + 77 条，四档画质；倒序及日期筛选正常 |
+| 独立视频 | `https://www.bilibili.com/video/BV1xx411c7mD` | 1 条，无列表，实际视频高度 384 |
+| 多 P | `https://www.bilibili.com/video/BV1bK411W797` | 23 个分 P，720P／480P／360P |
+| 指定分 P | 同上附加 `?p=1`／`?p=3` | 各 1 条，无列表，P3 标题与对应内容正确 |
+| 空间合集 | `https://space.bilibili.com/339087866/lists/4940048?type=season` | 3 条，四档画质 |
+
+对用户视频所属 77 条空间合集验证真实分页：首次加载 30 条；倒序请求携带 `sort_reverse=true`，倒序第 2 页累计 60 条；日期筛选按原顺序扫描 3 页共 77 条，找到首次 30 条中没有的目标作品。全过程未加载平台网页或发起引擎 extract。
+
+实际下载验证：用户视频选择 480P，最终文件 6179449 字节；BV13SxN6vEyx 选择实际返回的最低档 30016，竖屏文件高度 640、312738 字节；独立视频选择 30032，文件高度 384、74870542 字节；短视频独立音轨 30280 得到 230091 字节 M4A。各视频高度与所选接口流一致且包含音频，音频任务无视频流，四个文件均全片解码退出 0。引擎观察仅出现 download，没有为任务格式选择另起 extract，未传入系统浏览器配置。
+
+可控失败仅用于验证回退：单次元数据接口返回无效响应后走原页面路径，仍返回 2 个分 P；单次画质接口失败后沿用预热及本地引擎，返回可用画质且只调用一次 extract。挂起画质请求后取消解析，观察到请求中止且没有引擎回退；再次解析正常返回四档画质。命令行指定 P3 返回单条及画质，格式字段不含流 URL、Cookie、请求头或原始 info。上述客户端 renderer pageerror 均为 0。
+
+当前隔离会话为匿名访问；已登录会员、付费／充电专属、交互视频及番剧未作为本轮真实验收样本。没有新增或修改测试规格；观测结果和截图位于忽略目录 `test-results/bilibili-session-api/`。本轮优化为 0.7.1 发布之后的本地后续改动。
+
+最终 `pnpm check` 通过（类型检查、Lint、66 项既有测试和完整构建）；在最终构建上执行既有 Electron E2E，1 项通过，耗时 11.3 秒，输出位于 `test-results/bilibili-session-api/e2e/`。Windows Git 空白检查通过，`test/` 无改动。日常资料目录下的 Vite 开发客户端已在最后一次实现修改后自动重启，主进程和渲染进程正常运行，未发现运行中或排队的下载任务。
+
+### 2026-11-04 补充：其他平台解析优化
+
+原生 Windows Electron，复用已有隔离资料目录，通过真实客户端操作解析和下载；一次性主进程观察只记录平台接口路径、文档加载次数、引擎操作和 Cookie 数量。会话检查显示当前资料目录没有抖音、YouTube、微博、X、Instagram 的登录标志；下列在线成功结果来自匿名访问，没有导入系统浏览器登录态。
+
+| 场景 | 优化前 | 优化后实测 |
+| --- | --- | --- |
+| YouTube `@Fatcat996` 频道列表 | 20772ms，30 条 | 2502ms，30 条；首屏没有平台文档加载，第二页使用 browse 接口追加为 60 条 |
+| 抖音「天爱Talk」主页 | 7460ms，20 条 | 已有同源页面时 2531ms，20 条，没有重新加载平台文档 |
+| 抖音作品 7677554225094956401 | 6630ms 取得单条与 4 条合集，随后另行采样画质 | 首次签名页加载 7369ms，单条与 4 条合集返回时已有 1080／720／576 三档实际画质，未发起引擎 extract |
+| 同一抖音作品重复解析 | — | 另一轮首次 9377ms，同源页面复用后 4076ms；重复解析未加载文档、未发起引擎 extract |
+| 微信「守桥人」合集 | — | 517ms，8 篇，无文档加载和引擎请求 |
+| 微信「枣法案例」合集 | — | 首次 10 篇，第二页追加为 20 篇；两次均走既有会话接口 |
+
+微信地址沿用本文件「合集（小）」与「合集（翻页）」样本。抖音首次仍需站点页面初始化签名 SDK，耗时受网络、首次加载及请求节奏影响；上述各项为本机样本，不作为固定延迟承诺。YouTube 视频画质继续交给现有本地引擎处理，本轮频道列表耗时不代表视频画质就绪耗时。
+
+真实下载：从该抖音主页选择 25 秒作品 `https://www.douyin.com/video/7670838676674499237`，按接口实际提供的 `dy-20-avc1` 档下载，得到 1256655 字节视频，高度 768 且含音频，全片解码退出 0。引擎只接到带原始流信息的 download，没有另行 extract。微信小合集的首篇文章返回 8 个媒体项，解析阶段没有引擎请求；下载其中一张图片得到 34518 字节文件，解码成功，下载阶段没有再次加载文章或启动引擎，验证了单条解析结果的短期复用。
+
+回退与取消：受控地让一次 YouTube 首屏会话请求返回无效响应后，客户端打开真实频道页面，5878ms 返回 30 条。Instagram 页面加载中取消，取消后约 106ms 完成；随后微信合集仍正常返回 8 条。以上不是 Instagram 登录成功验证。B 站回归仍返回单条与 77 条合集，四档画质可用。各场景 renderer pageerror=0。
+
+微博的会话令牌直调、X／Instagram 登录后的动态查询缓存及小红书单条下载复用已接入；本轮没有这些平台的已登录样本或有效小红书作品链接，因此未记录其登录后的成功耗时，未将静态检查等同于真实服务验收。
+
+最终 `pnpm check` 通过（类型检查、Lint、66 项既有测试、完整构建）；既有 Electron E2E 1 项通过，耗时 10.0 秒。没有新增或修改测试规格，Windows Git 空白检查通过。临时结果位于忽略目录 `test-results/platform-session-api/`，后续改动仍为本地工作区内容。
+
+### 2026-11-04 补充：0.7.2 发布准备
+
+版本从 0.7.1 升至 0.7.2，新增 `docs/releases/0.7.2.md`，整理 B 站接口解析、其他平台的会话与签名页面复用、短期解析缓存和后台画质取消处理。发布说明沿用中文正文、折叠英文摘要与版本对比链接，一级标题只用于 Release 标题。
+
+在最终 0.7.2 代码上执行 `pnpm check`，类型检查、Lint、66 项既有测试及完整构建通过；既有 Electron E2E 1 项通过，耗时 10.8 秒。版本与发布说明结构核对通过，没有修改依赖、锁文件或测试规格。验证输出位于忽略目录 `test-results/release-0.7.2/`。
+
+新发布说明通过 Markdown 检查。历史需求文档与验证文档分别仍有 16、48 条已有 Markdown 格式问题；以 HEAD 中的文档为基线比较规则、内容和上下文，本轮新增诊断为 0。Git 空白检查通过。真实站点验证及登录态样本限制见以上记录，安装包由现有 main 分支工作流构建后统一发布。
+
+### 2026-11-04 补充：应用更新反馈与下载进度
+
+本轮沿用现有 electron-updater、Base UI Progress、Spinner 和大小／时间格式化器，未增加依赖或修改测试规格。应用更新的状态、下载统计和取消继续由主进程管理；界面只接收版本、状态和统计数据。
+
+原生 Windows Electron 44.4.5，使用已有隔离资料目录运行真实窗口。为验证公开更新，将原生更新器的开发版检查开关打开、当前版本模拟为 0.7.1，并把公共更新缓存定向到工作区忽略目录；更新源为官方 GitHub Releases 的 0.7.2。检查和开始下载前各增加 1.2 秒可控等待，以检查连接状态反馈，未替换实际元数据请求和安装包下载。点击检查后约 227ms 可见禁用按钮及实际转圈动画；重复触发只进入一次原生检查。官方检查成功取得 0.7.2，真实下载部分字节后取消成功，随后重新下载得到完整 181216807 字节安装包，通过原生校验并进入就绪。未执行安装，退出自动安装保持关闭。再次检查同一发布仍保持就绪。结果位于 `test-results/update-feedback/official-update.json`。
+
+下载窗口实际显示百分比、已下载／总大小、速度和预计剩余时间。进度指示器使用 scaleX，过渡仅涉及 transform，实际高度 6px；连接阶段有不定进度动画，模拟系统「减少动画」后进度过渡为 0s。真实截图包括 `checking.png`、`connecting.png`、`downloading.png` 和 `ready.png`。
+
+受控异常验证：关闭端口的更新源产生可读的连接失败提示，切回官方源后重试成功；已有公开安装包缓存重新校验后进入就绪。一次真实元数据请求完成后延迟返回 35 秒，界面在 10 秒后提示响应较慢，约 30 秒结束等待，保留已下载更新和安装入口；期间仍能切换设置页。随后重试成功，原先迟到的结果没有覆盖新状态。900px 窗口、浅色和英文界面未横向溢出。结果位于 `negative-update.json`，renderer pageerror=0。
+
+视频进度验证使用真实客户端与本机受控 HTTP 端点，素材为 FFmpeg 生成的 10 秒 MP4（173889 字节）。已知大小响应在传输 64KB 后停顿 6.5 秒，列表和详情显示真实进度与速度，持续无数据后速度归零、预计时间清除并显示等待，恢复后正常完成；文件与原始字节一致且全片解码通过。未知大小响应不发送 Content-Length、不支持 Range，客户端显示已下载量和速度、不定进度且无 aria-valuenow，暂停后隐藏不定进度条，取消正常。结果位于 `video-transfer.json`，这部分为本机传输验证，不等同于新增真实站点验收。
+
+`pnpm check` 通过（类型检查、Lint、66 项既有测试及完整构建）；既有 Electron E2E 1 项通过，耗时 21.3 秒，输出位于 `test-results/update-feedback/e2e/`。新增中英文文案 key 对齐，Git 空白检查通过，测试规格无改动。全部临时资料与公共安装包缓存均位于忽略目录 `test-results/update-feedback/`；本轮为 0.7.2 之后的本地改动。
+
+### 2026-11-04 补充：移除设置测试入口与 0.7.3 发布准备
+
+审查确认系统通知测试区域同时出现在常规与订阅设置。已删除两处入口、仅供测试使用的界面状态、中英文文案、`notifications:test` 命令和公开的 `nativeNotifications` 状态数据；实际下载完成与订阅通知继续共用原生通知服务，保留系统支持检查、错误日志、显示确认超时及实例清理。源码与产品文案扫描未发现其他面向用户的测试通知入口。
+
+使用原生 Windows Electron 运行最终 0.7.3 构建，通过一次性内联探针逐一打开中英文各 7 个下载模式设置页。常规与订阅页的测试按钮及就绪提示均不存在；调用旧测试命令分别返回中文“不支持的操作”和英文“Unsupported operation”。正常下载与订阅通知开关可关闭、保存、重新开启，重启后仍保留。窗口截图已人工查看，renderer pageerror=0。此实例报告系统通知 API 可用，但本轮未将支持判定视为系统弹窗或真实作者新作品通知验收。
+
+版本从 0.7.2 升至 0.7.3，新增中英文发布说明，包含应用更新反馈、真实传输进度及移除设置测试功能。最终 `pnpm check` 通过（类型检查、Lint、66 项既有测试及完整构建）；既有 Electron E2E 1 项通过，耗时 11.7 秒，覆盖真实本机视频解析、下载、文件字节核对、设置保存及重启恢复。发布说明 Markdown 检查通过，未新增或修改测试规格、依赖或锁文件。临时日志、截图与隔离资料位于忽略目录 `test-results/release-0.7.3/`；此前真实更新包下载、取消、重试及超时验证结果见上一节。
+
+### 2026-11-04 补充：设置精简、直接展示配置与默认命令行
+
+原生 Windows Electron 44.4.5 实窗验证：下载模式 6 个设置分类，剪辑模式增加「剪辑与字幕」。低频项全部直接展示，以分组标题区分；详细日志、转录模型、超时等选项均不折叠。平台字幕语言及订阅周期按对应开关显示。中英文、浅色和夜间界面已查看；900px 英文窗口没有横向溢出，最终各开关右侧位置一致，renderer pageerror=0。更新区只显示内核与客户端两行版本及检查按钮，无 FFmpeg 详情、重复版本、检测工具或空闲占位提示。
+
+新资料目录首次进入新建任务，下载、命名、并发等默认值符合需求文档。语言、主题、并发、命名和保存目录的草稿在切换设置分类时保留，只有保存后才应用；无修改或存在非法数字时不能保存。通过一次性原生目录选择器返回值注入验证选目录与取消行为，未把此步骤描述成物理操作系统选择器验收。未由主进程选择器授权的新路径通过 IPC 保存时被拒绝。实际本地引擎解析和下载受控 HTTP MP4 后，文件写入已保存的目录，字节与源文件一致；重启后配置、完成任务和文件保持。真实 B 站 `https://www.bilibili.com/video/BV1kwa86KEmG?p=1` 返回 78 个项目，包含作品与合集分组。
+
+执行 `pnpm engine:build` 重建本机曾过旧的内核产物，再生成 Windows 未安装包目录；使用项目已装的 Electron 发行目录和现有原生依赖，没有增加依赖。真实 `app.isPackaged=true` 客户端通过独立 `--user-data-dir` 与本机命名管道运行，窗口约 2103ms 就绪。默认后台生成 `galaxy.cmd` 并注册当前用户 PATH，调用生成的命令执行 `status --json` 成功连接该客户端并返回 0.7.3。关闭后启动脚本和本次 PATH 条目移除，重启不再安装；同名第三方脚本得到保留并显示配置失败，移除探针制造的冲突文件后可通过重新配置恢复。配置尚未完成时快速保存开启、关闭，最终稳定为关闭。验证结束确认临时 PATH 条目不存在。
+
+实包的客户端版本行通过真实原生更新器读取本机受控元数据，响应延迟 1.5 秒期间立即显示 Spinner、禁用检查按钮，仅请求一次，之后显示最新；未下载或安装更新包。内核按钮向官方稳定版接口检查，最终状态 idle，版本保持 2026.08.19，未伪造更新成功或新的版本。macOS／Linux shell 配置集成未进行对应系统实机验证。
+
+设置实现完成时 `pnpm check` 通过：类型检查、Lint、66 项既有单测、完整构建。既有 Electron E2E 仅将主题入口从已合并的「外观」改为「常规」，1 项通过，耗时 14.8 秒；没有增加测试用例。最后一次开关对齐调整通过本次文件的类型检查、Lint 和全部 Vite 构建，并另行完成真实窗口布局验证。中英文文案 key 核对及 Git 空白检查通过。
+
+
+### 2026-11-04 补充：0.7.4 发布准备
+
+版本从 0.7.3 升至 0.7.4，新增中英文发布说明，整理设置分类精简、低频项直接展示、两行版本区域、统一保存、首次进入新建任务及安装版命令行默认配置。本次提交只包含这组已验证的设置调整；并行开发中的 AI 剪辑代码留在工作区，没有混入发布内容。
+
+从本次 Git 提交内容导出独立副本，复用与锁文件一致的现有依赖，运行完整 pnpm check：类型检查、Lint、66 项单测及全部构建通过。既有 Electron E2E 1 项通过，耗时 9.1 秒。依赖目录通过链接复用，复制位置引起的工作区状态提示设为 warn，未执行依赖安装或清理；依赖与锁文件未修改。发布说明 Markdown 检查、版本与标题核对、Git 空白检查通过。之前的实窗、真实站点、Windows 未安装包及其他系统验证边界见上一节。验证输出位于忽略目录 test-results/release-0.7.4/。

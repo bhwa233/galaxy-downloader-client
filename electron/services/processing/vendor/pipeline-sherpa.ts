@@ -309,16 +309,11 @@ export class SherpaTranscriptionPipeline implements TranscriptionPipeline {
     durationMs: number,
     skipVad: boolean
   ): TimedTurn[] {
-    const base: TimedTurn[] =
-      skipVad || speech.length === 0
-        ? []
-        : speech.map((interval) => ({
-            startMs: interval.startMs,
-            endMs: interval.endMs,
-            speakerKey: 'speaker-1'
-          }))
-    return fillUncoveredTurns(base, durationMs).map((turn) => ({
-      ...turn,
+    // Diarization gaps need speaker labels, but VAD gaps are silence and must
+    // never be inserted into the recognition queue.
+    const intervals = skipVad ? [{ startMs: 0, endMs: durationMs }] : speech
+    return intervals.map((interval) => ({
+      ...interval,
       speakerKey: 'speaker-1'
     }))
   }
