@@ -66,7 +66,7 @@ export const assessDirectoryMembers = (
   members: readonly DirectoryMemberRequirement[],
   withRepairHint = false
 ): DirectoryAssessment => {
-  let dirStats: ReturnType<typeof statSync> | null = null
+  let dirStats: ReturnType<typeof statSync> | null
   try {
     dirStats = existsSync(dir) ? statSync(dir) : null
   } catch {
@@ -114,7 +114,7 @@ export const assessDirectoryMembers = (
   for (const member of members) {
     const path = join(dir, member.name)
     const label = `${folder}/${member.name}`
-    let stats: ReturnType<typeof statSync> | null = null
+    let stats: ReturnType<typeof statSync> | null
     try {
       stats = existsSync(path) ? statSync(path) : null
     } catch {
