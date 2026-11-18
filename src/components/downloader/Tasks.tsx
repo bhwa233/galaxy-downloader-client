@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Download, ExternalLink, FileX, FolderOpen, Image as ImageIcon, Layers, Link as LinkIcon, LogIn, Music, Pause, Play, RotateCcw, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -10,7 +10,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
-import { Progress } from '@/components/ui/progress'
+import { TransferProgress } from './TransferProgress'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MediaCover, MediaStatsRow } from './MediaCard'
@@ -134,39 +134,57 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
     </AlertDialog>
   </>
 }
-function Metrics({ job }: { job: Job }) {
+function JobProgress({ job, detail = false }: { job: Job; detail?: boolean }) {
   const { t } = useTranslation(['tasks', 'common'])
-  return <div className="flex flex-wrap justify-between gap-3 text-xs tabular-nums text-muted-foreground">
-    <span>{job.downloaded !== undefined ? formatBytes(job.downloaded) : '—'}{job.total ? ` / ${formatBytes(job.total)}` : ''}</span>
-    <span>{job.status === 'running' ? job.stage && job.stage !== 'download' ? `${t(`stages.${job.stage}`)}${job.processingProgress !== undefined ? ` ${Math.round(job.processingProgress * 100)}%` : ''}` : job.speed ? `${formatBytes(job.speed)}/s` : t('preparing') : job.status === 'completed' ? job.completedAt ? t('completedAt', { time: localTime(job.completedAt) }) : '' : `${Math.round(job.progress * 100)}%`}</span>
-    {job.status === 'running' && job.eta !== undefined && <span>{t('remaining', { time: formatDuration(job.eta) })}</span>}
-    {job.status === 'running' && job.stage && job.stage !== 'download' && <span>{job.processingEta === undefined ? t('estimating') : t('estimatedRemaining', { time: formatDuration(job.processingEta) })}</span>}
-  </div>
+  const active = job.status === 'running'
+  const processing = job.stage !== 'download' ? job.stage : undefined
+  const finishing = active && !processing && Boolean(job.total && (job.downloaded || 0) >= job.total)
+  const value = processing ? job.processingProgress !== undefined ? job.processingProgress * 100 : null : job.total || job.status === 'completed' ? job.progress * 100 : null
+  const label = active ? processing ? t(`stages.${processing}`) : finishing ? t('common:transfer.finishing') : t('common:transfer.downloading')
+    : job.status === 'completed' && job.completedAt ? t('completedAt', { time: localTime(job.completedAt) }) : t(`common:statuses.${job.status}`)
+  return <>
+    <TransferProgress label={label} value={value} downloaded={job.downloaded} total={job.total} speed={job.speed}
+      eta={processing ? job.processingEta : job.eta} active={active && !finishing} waiting={active && !processing && job.speed === 0 && Boolean(job.downloaded)}
+      showTransfer={!processing || !active} showBar={(detail || job.status !== 'completed') && (active || value !== null)} />
+    {active && processing && job.processingEta === undefined && <span className="text-xs text-muted-foreground">{t('estimating')}</span>}
+  </>
+}
+// Tasks and subscription updates use this same row: cover size, title, metadata and action placement
+// change together. Callers supply their own state and actions rather than fabricating download jobs.
+export function TaskListRow({ title, subtitle, cover, coverShape = 'landscape', status, actions, select, selectLabel, density = 'comfortable', children }: {
+  title: string; subtitle: ReactNode; cover: ReactNode; status?: ReactNode; actions: ReactNode;
+  select: () => void; selectLabel: string; coverShape?: 'square' | 'landscape'; density?: Settings['density']; children?: ReactNode;
+}) {
+  const compact = density === 'compact'
+  return <Item variant="outline" size={compact ? 'sm' : 'default'} className="min-w-0 flex-nowrap items-stretch">
+    <ItemMedia variant="image" className={compact ? 'size-12 group-data-[size=sm]/item:size-12' : coverShape === 'square' ? 'size-14' : 'h-14 w-20'}>
+      <button className="size-full" onClick={select} aria-label={selectLabel}>{cover}</button>
+    </ItemMedia>
+    <ItemContent className="min-w-0 gap-1.5">
+      <ItemTitle className="w-full min-w-0"><button className="min-w-0 truncate text-left" onClick={select} title={title}>{title}</button></ItemTitle>
+      <ItemDescription>{subtitle}</ItemDescription>
+      {children}
+    </ItemContent>
+    <ItemActions className="shrink-0 flex-col items-end justify-between">
+      {status}
+      <div className="flex items-center gap-1">{actions}</div>
+    </ItemActions>
+  </Item>
 }
 export function TaskCard({ job, send, select, density = 'comfortable' }: { job: Job; send: Send; select: () => void; density?: Settings['density'] }) {
   const { t } = useTranslation(['tasks', 'common'])
-  const compact = density === 'compact'
   // The batch is named on every task of it rather than as a header above a group: the list is sorted
   // and filtered by the user, so tasks of one batch are not necessarily next to each other.
   const subtitle = <>{platformLabel(job.platform)} · {localTime(job.createdAt)}{job.batchId ? ` · ${t('batchLabel', { title: job.batchTitle || t('thisParse') })}` : ''}</>
-  return <JobMenu job={job} send={send}><Item variant="outline" size={compact ? 'sm' : 'default'} className="flex-nowrap items-stretch">
-    <ItemMedia variant="image" className={compact ? 'size-12' : 'h-14 w-20'}>
-      <button className="size-full" onClick={select} aria-label={t('viewTask', { title: job.title })}><Cover job={job} /></button>
-    </ItemMedia>
-    <ItemContent className="min-w-0 gap-1.5">
-      <ItemTitle className="w-full min-w-0"><button className="min-w-0 truncate text-left" onClick={select} title={job.title}>{job.title}</button></ItemTitle>
-      <ItemDescription>{subtitle}</ItemDescription>
-      {job.status !== 'completed' && <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} className="h-1.5" />}
-      <Metrics job={job} />
+  return <JobMenu job={job} send={send}><TaskListRow title={job.title} subtitle={subtitle}
+    cover={<Cover job={job} />} select={select} selectLabel={t('viewTask', { title: job.title })} density={density}
+    status={<span className={cn('text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>}
+    actions={<Actions job={job} send={send} />}>
+      <JobProgress job={job} />
       {job.burnRestartRequired && <p className="text-xs text-muted-foreground">{t('burnRestart.hint')}</p>}
       {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
       {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
-    </ItemContent>
-    <ItemActions className="shrink-0 flex-col items-end justify-between">
-      <span className={cn('text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>
-      <div className="flex items-center gap-1"><Actions job={job} send={send} /></div>
-    </ItemActions>
-  </Item></JobMenu>
+  </TaskListRow></JobMenu>
 }
 // What a failure was and what to do about it. A permission wall is known for certain, from the engine's
 // own wording, and its message already says what to do. Anything else is read off the error the way a
@@ -257,11 +275,9 @@ export function TaskInspector({ job, send, close, error, process }: { job?: Job;
               {job.error && <Failure job={job} send={send} />}
               {job.burnRestartRequired && !job.error && <Alert><AlertTitle>{t('burnRestart.title')}</AlertTitle><AlertDescription>{t('burnRestart.hint')}</AlertDescription></Alert>}
               {job.warnings?.map(warning => <Alert key={warning}><AlertTitle>{t('subtitleWarning')}</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
-              <Progress value={(job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100} />
-              {job.status === 'running' && job.stage && job.stage !== 'download' && <p className="text-sm text-muted-foreground">{t(`stages.${job.stage}`)}</p>}
+              <JobProgress job={job} detail />
               {process && job.kind !== 'image' && job.files.length > 0 && <Button variant="outline" onClick={process}>{t('processing:title')}</Button>}
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm [&_dt]:text-muted-foreground">
-                <dt>{t('fields.progress')}</dt><dd className="tabular-nums">{Math.round((job.stage && job.stage !== 'download' ? job.processingProgress ?? 0 : job.progress) * 100)}%</dd>
                 <dt>{t('fields.platformKind')}</dt><dd>{platformLabel(job.platform)} / {t(`common:kinds.${job.kind || 'video'}`)}</dd>
                 {job.workMode === 'edit' && job.kind === 'video' && <>
                   <dt>{t('fields.outputFormat')}</dt><dd>{job.outputFormat && job.outputFormat !== 'original' ? job.outputFormat.toUpperCase() : t('files.originalFormat')}</dd>
@@ -270,15 +286,13 @@ export function TaskInspector({ job, send, close, error, process }: { job?: Job;
                 <dt>{t('fields.method')}</dt><dd>{job.method === 'browser' ? t('methods.browser') : t('methods.local')}</dd>
                 {/* What the platform said about the media when it was parsed; older jobs carry none of it. */}
                 {job.author && <><dt>{t('fields.author')}</dt><dd>{job.author}</dd></>}
+                {job.authorId && <><dt>{t('fields.authorId')}</dt><dd className="break-all">{job.authorId}</dd></>}
+                {job.outputName && <><dt>{t('fields.outputName')}</dt><dd className="break-all">{job.outputName}</dd></>}
                 {job.publishedAt !== undefined && <><dt>{t('fields.publishedAt')}</dt><dd>{formatDate(job.publishedAt)}</dd></>}
                 {job.duration !== undefined && <><dt>{t('fields.duration')}</dt><dd className="tabular-nums">{formatDuration(job.duration)}</dd></>}
                 {(job.views ?? job.danmaku ?? job.comments ?? job.likes) !== undefined && <><dt>{t('fields.stats')}</dt><dd><MediaStatsRow views={job.views} danmaku={job.danmaku} comments={job.comments} likes={job.likes} className="text-sm" /></dd></>}
                 <dt>{t('fields.source')}</dt><dd className="break-all">{job.url}</dd>
                 <dt>{t('fields.directory')}</dt><dd className="break-all">{job.directory}</dd>
-                <dt>{t('fields.downloaded')}</dt><dd className="tabular-nums">{job.downloaded !== undefined ? formatBytes(job.downloaded) : t('noData')}{job.total ? ` / ${formatBytes(job.total)}` : ''}</dd>
-                <dt>{t('fields.speed')}</dt><dd className="tabular-nums">{job.status === 'running' && job.speed ? `${formatBytes(job.speed)}/s` : '—'}</dd>
-                {job.status === 'running' && job.eta !== undefined && <><dt>{t('fields.eta')}</dt><dd className="tabular-nums">{formatDuration(job.eta)}</dd></>}
-                {job.status === 'running' && job.stage && job.stage !== 'download' && <><dt>{t('fields.processingEta')}</dt><dd className="tabular-nums">{job.processingEta === undefined ? t('estimating') : formatDuration(job.processingEta)}</dd></>}
                 {/* Breaks picked up again on their own since the last time it finished or was retried by hand. */}
                 {job.attempts ? <><dt>{t('fields.autoResume')}</dt><dd className="tabular-nums">{t('attempts', { count: job.attempts })}</dd></> : null}
                 <dt>{t('fields.createdAt')}</dt><dd>{localTime(job.createdAt)}</dd>

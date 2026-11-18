@@ -20,6 +20,9 @@ importers:
       opencc-js:
         specifier: ^1.4.2
         version: 1.4.2
+      react-intersection-observer:
+        specifier: 11.0.1
+        version: 11.0.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       sherpa-onnx-node:
         specifier: 1.13.6
         version: 1.13.6
@@ -76,8 +79,8 @@ importers:
         specifier: 5.3.0
         version: 5.3.0
       lucide-react:
-        specifier: ^1.48.0
-        version: 1.48.0(react@19.3.0)
+        specifier: ^1.63.0
+        version: 1.63.0(@types/react@19.3.0)(react@19.3.0)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -2214,10 +2217,14 @@ packages:
     resolution: {integrity: sha512-Jo6dJ04CmSjuznwJSS3pUeWmd/H0ffTlkXXgwZi+eq1UCmqQwCh+eLsYOYCwY991i2Fah4h1BEMCx4qThGbsiA==}
     engines: {node: '>=10'}
 
-  lucide-react@1.48.0:
-    resolution: {integrity: sha512-R0CIKY/fXiC6y9xRBADgsK+VW2p/pcTJOMhLZf1T+uG+vJUvyUR02nGOgmIIC7MPkiNK4Ox8QDnbqF8rJYWPZQ==}
+  lucide-react@1.63.0:
+    resolution: {integrity: sha512-GkBfQG+FUJ41x6y3/lNXiOziVU0Rcqqq0TCzhHS8avsFXHZmOdmfBqsVTvHSaVmbI+wbdGkxHRmhYWhD3N4/yA==}
     peerDependencies:
+      '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -2670,6 +2677,15 @@ packages:
       react-native:
         optional: true
       typescript:
+        optional: true
+
+  react-intersection-observer@11.0.1:
+    resolution: {integrity: sha512-BIZ1M40GPSKDIT1MJbXK7SB0BwBaTKr84QfZCs5asKer7YMOYLzMi+RI1F4VStbZLGHoosJmd+aOQDDipUV1gA==}
+    peerDependencies:
+      react: ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      react-dom:
         optional: true
 
   react@19.3.0:
@@ -5531,9 +5547,11 @@ snapshots:
     dependencies:
       yallist: 4.0.0
 
-  lucide-react@1.48.0(react@19.3.0):
+  lucide-react@1.63.0(@types/react@19.3.0)(react@19.3.0):
     dependencies:
       react: 19.3.0
+    optionalDependencies:
+      '@types/react': 19.3.0
 
   magic-string@0.30.21:
     dependencies:
@@ -5950,6 +5968,12 @@ snapshots:
     optionalDependencies:
       react-dom: 19.3.0(react@19.3.0)
       typescript: 6.0.3
+
+  react-intersection-observer@11.0.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+    dependencies:
+      react: 19.3.0
+    optionalDependencies:
+      react-dom: 19.3.0(react@19.3.0)
 
   react@19.3.0: {}
 

@@ -73,6 +73,8 @@ function resume(key: string, page: number): { from?: Cursor; at: number } {
 
 export const weixin: ProfileAdapter = {
   id: 'weixin',
+  sessionReady: ({ url }) => Boolean(albumOf(url)),
+  reset() { walked = undefined },
   matches(url) { return Boolean(albumOf(url)) || isHomepage(url) },
   entryUrl(url) { return url.href },
   async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
@@ -113,6 +115,6 @@ export const weixin: ProfileAdapter = {
     const title = body.getalbum_resp?.album_info?.title?.trim() || body.getalbum_resp?.base_info?.title?.trim()
     return onePage('articles', title || i18n.t('errors:weixin.collection'), entries, {
       index: page, size: COUNT, hasMore: body.getalbum_resp?.continue_flag === '1',
-    })
+    }, 'uploads')
   },
 }

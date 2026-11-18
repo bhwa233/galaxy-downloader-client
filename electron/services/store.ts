@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { settingsSchema, type HistoryEntry, type Settings, type Job } from '../../shared/contracts'
 
@@ -8,16 +8,20 @@ type StoredState = { version: 1; settings: Settings; jobs: Job[]; history: Histo
 // The app has one main-process writer. Atomic replace is sufficient for this local settings/queue store.
 export class Store {
   data: StoredState
+  readonly firstRun: boolean
   private file: string
   // 'locale' is the language a first start takes, before anything has been saved: the system's.
   constructor(directory: string, downloadDirectory: string, locale: Settings['locale'] = 'zh') {
     mkdirSync(directory, { recursive: true })
     this.file = path.join(directory, 'state.json')
+    this.firstRun = !existsSync(this.file)
     this.data = { version: 1, settings: { ...settingsSchema.parse({}), locale, downloadDirectory }, jobs: [], history: [] }
     try {
       const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StoredState
       if (saved.version !== 1 || !Array.isArray(saved.jobs)) throw new Error('Unsupported saved state')
       this.data.settings = { ...settingsSchema.parse(saved.settings), downloadDirectory: typeof saved.settings.downloadDirectory === 'string' ? saved.settings.downloadDirectory : downloadDirectory }
+      if (['title-id', 'id-title', 'date-title-id'].includes(this.data.settings.filenameTemplate)) this.data.settings.filenameTemplate = this.data.settings.customFilenameTemplate ? 'custom' : 'title'
+      if (['author-title', 'author-date-title'].includes(this.data.settings.filenameTemplate)) this.data.settings.filenameTemplate = 'title'
       this.data.history = Array.isArray(saved.history) ? saved.history.filter(entry => typeof entry?.url === 'string' && typeof entry.title === 'string') : []
       this.data.jobs = saved.jobs.filter(job => typeof job.id === 'string' && typeof job.url === 'string').map(job => {
         // Older profile jobs stored a position in the listing; retain the original post instead.

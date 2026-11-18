@@ -1,20 +1,20 @@
-import { app, dialog, shell, Notification, clipboard, net, type BrowserWindow } from 'electron'
+import { app, dialog, shell, clipboard, net, powerMonitor, type BrowserWindow } from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { commandSchemas, settingsSchema, type ClientState, type Command, type HistoryEntry, type JobFile, type Reply } from '../../shared/contracts'
+import { commandSchemas, settingsSchema, type ClientState, type Command, type HistoryEntry, type Job, type JobFile, type Reply } from '../../shared/contracts'
 import { Store } from '../services/store'
 import { Engine, redact } from '../services/engine'
 import { EmbeddedBrowser } from '../services/browser'
-import { discoverProfiles, publicProfiles, type LocalProfile } from '../services/profiles'
-import { normalizeUrl } from '../services/media'
+import { mediaResult, normalizeUrl } from '../services/media'
 import { Parser, type ParsePlan } from '../services/parser'
 import { previewPage } from '../services/preview'
 import { i18n, localeFor, setLocale } from '../../shared/i18n'
 import { asAccessDenied } from '../services/access'
 import { LoginRequired, VerificationRequired } from '../services/login'
 import { Queue } from '../services/queue'
+import { ListingSearch } from '../services/listing-search'
 import { downloadHttp } from '../services/http-download'
 import { checkCover } from '../services/cover'
 import { Updates } from './update'
@@ -24,6 +24,10 @@ import { CommandLine } from '../services/command-line'
 import { controlAddress } from '../../shared/control'
 import { KernelUpdates } from '../services/kernel'
 import { ProcessingService } from '../services/processing/service'
+import { Subscriptions } from '../services/subscriptions'
+import { CreatorSubscriptionReader } from '../services/subscription-sources'
+import type { SubscriptionCandidate, SubscriptionItem, SubscriptionSource } from '../../shared/subscriptions'
+import { NativeNotifications } from '../services/notifications'
 
 const log = logger('controller')
 
@@ -32,6 +36,7 @@ const log = logger('controller')
 const CONTROLLABLE = new Set(['state:get', 'cli:hello', 'cli:parse', 'media:download', 'jobs:action', 'jobs:batch', 'jobs:remove', 'browser:login', 'tools:check'])
 // How many command-line results are kept to download from.
 const DETACHED = 20
+const filesFor = (job: Job) => job.namingVersion === 2 ? job.files.filter(file => path.dirname(path.resolve(file)) === path.resolve(job.directory)) : job.files
 
 // What a failed parse is reported as. Four refusals are told apart from one another and from an
 // ordinary failure: a sign-in fixes the first, an entitled account the next two, and nothing the last.
@@ -61,23 +66,30 @@ export class Controller {
   private parser = new Parser(this.engine, this.browser, (url, init) => this.browser.fetch(url, init),
     (url, method, signal) => this.browser.redirect(url, method, signal))
   private browserSites = 0
-  private profiles: LocalProfile[] = []
   private plan?: ParsePlan
   private previewing?: ClientState['preview']
   private parsing?: AbortController
+  private querying?: { controller: AbortController; groupId: string; done: Promise<void> }
+  private queryRevision = 0
+  private listings = new ListingSearch((plan, page, groupId, signal, order) => this.parser.parse(plan.result.url, undefined, signal, { page, group: groupId, order }))
   private parseState: ClientState['parse'] = { status: 'idle' }
   // The page a sign-in was offered for, kept until the login window closes so the turn the user asked
   // for can be made again without them asking twice. Only ever set by a refusal a login could lift.
   private pendingPage?: { resultId: string; page: number; groupId?: string }
   private tools: ClientState['tools'] = { engine: { available: false, version: '' }, ffmpeg: { available: false, version: '' } }
+  private nativeNotifications = new NativeNotifications()
   // A job re-resolves the one post it was made from. 'single' says so: its URL can itself be a listing
   // the client would otherwise expand - a 哔哩哔哩 video that turned out to have 分P - and downloading
   // all of them under one job is not what the user picked.
-  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), (job, signal) => this.parser.parse(job.url, this.profile(), signal, { browserOnly: job.method === 'browser', single: job.single || job.itemId === '*' }), () => this.emit(), job => { if (this.store.data.settings.notifications && Notification.isSupported()) new Notification({ title: i18n.t('desktop:notificationCompleted'), body: job.title }).show(); void this.processing.completed(job).catch(error => log.error('Automatic transcription failed', error)) }, file => shell.trashItem(file))
+  private queue = new Queue(this.store, this.engine, (url, init) => this.browser.fetch(url, init), async (job, signal) => {
+    const plan = await this.parser.parse(job.url, undefined, signal, { browserOnly: job.method === 'browser', single: job.single || job.itemId === '*', reuse: true })
+    if (plan.loadFormats) await this.readTiers(plan, signal)
+    return plan
+  }, () => this.emit(), job => { if (this.store.data.settings.notifications) void this.nativeNotifications.show({ title: i18n.t('desktop:notificationCompleted'), body: job.title }, () => this.activateWindow?.()).catch(() => {}); void this.processing.completed(job).catch(error => log.error('Automatic transcription failed', error)) }, file => shell.trashItem(file))
   private processing = new ProcessingService(path.join(app.getPath('userData'), 'processing'), this.engine, app.getAppPath(), () => this.store.data.settings, (url, init) => net.fetch(url instanceof URL ? url.href : url, init), () => this.emit(), async (id, directory, signal) => {
     const job = this.queue.jobs.find(job => job.id === id)
     if (!job || /\.(mp4|mkv|webm|mp3|m4a|wav|flac|m3u8)(?:[?#]|$)/i.test(job.url)) return []
-    const plan = await this.parser.parse(job.url, this.profile(), signal, { single: true, browserOnly: job.method === 'browser' })
+    const plan = await this.parser.parse(job.url, undefined, signal, { single: true, browserOnly: job.method === 'browser' })
     const source = [...plan.sources.values()].find(source => source.kind === 'engine')
     if (source?.kind !== 'engine') return []
     const result = await this.engine.request<{ tracks: { file: string; language: string }[] }>({ ...source.request, operation: 'captions', output: path.join(directory, 'platform.%(ext)s'), captionLanguages: this.store.data.settings.captionLanguages, subtitleAutoGenerated: this.store.data.settings.subtitleAutoGenerated }, signal)
@@ -85,17 +97,32 @@ export class Controller {
   })
   // Results parsed for the command line, apart from the window's own; the newest few are kept.
   private detached = new Map<string, ParsePlan>()
-  private commandLine = new CommandLine(app.getPath('userData'), app.getAppPath(), app.isPackaged)
+  private commandLine = new CommandLine(app.getPath('userData'), app.getAppPath(), app.isPackaged, () => this.emit())
+  private selectedDirectory?: string
+  private controlError?: string
+  private controlSync = Promise.resolve()
+  private stopping = false
   private control = new ControlServer(async (name, input) => {
     if (!CONTROLLABLE.has(name)) return { ok: false, message: i18n.t('desktop:errors.unsupportedCommand') }
     return await this.command(name, input)
   })
   private kernel = new KernelUpdates(path.join(app.getPath('userData'), 'engine-kernels'), this.engine, (url, init) => net.fetch(url, init), () => this.emit())
   private updates = new Updates(() => this.emit(), () => this.queue.jobs.some(job => job.status === 'running' || job.status === 'queued'))
+  private subscriptions = new Subscriptions(app.getPath('userData'), new CreatorSubscriptionReader(this.browser),
+    () => this.store.data.settings, () => this.emit(), (source, items) => this.notifySubscription(source, items), () => Boolean(this.parsing || this.querying))
+  private resumeSubscriptions = () => this.subscriptions.reschedule()
+  private notifySubscription(source: SubscriptionSource, items: SubscriptionItem[]): void {
+    void this.nativeNotifications.show({ title: i18n.t('subscriptions:notificationTitle', { name: source.name, count: items.length }), body: items[0].title }, () => {
+      if (!this.subscriptions.state().sources.some(item => item.id === source.id)) return
+      this.subscriptions.focusSource(source.id)
+      const window = this.window()
+      if (this.activateWindow) this.activateWindow()
+      else if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus() }
+    }).catch(() => {})
+  }
   // What the main process says to the user - errors, a task's log, notifications - is in the window's language.
-  constructor(private window: () => BrowserWindow | null) { setLocale(this.store.data.settings.locale) }
-  private profile() { const profile = this.profiles.find(item => item.id === this.store.data.settings.browserProfileId); return profile ? { browser: profile.browser, path: profile.path } : undefined }
-  state(): ClientState { return { kernel: this.kernel.state, processing: this.processing.state(this.queue.jobs), settings: this.store.data.settings, profiles: publicProfiles(this.profiles), jobs: this.queue.jobs.map(job => ({ ...job, url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: this.commandLine.state() } }
+  constructor(private window: () => BrowserWindow | null, private activateWindow?: () => void) { setLocale(this.store.data.settings.locale) }
+  state(): ClientState { const cli = this.commandLine.state(); return { firstRun: this.store.firstRun, subscriptions: this.subscriptions.state(), kernel: this.kernel.state, processing: this.processing.state(this.queue.jobs), settings: this.store.data.settings, jobs: this.queue.jobs.map(job => ({ ...job, files: filesFor(job), originalFiles: job.originalFiles?.filter(file => filesFor(job).includes(file)), processedFiles: job.processedFiles?.filter(file => filesFor(job).includes(file)), url: redact(job.url), sourceUrl: undefined, logs: job.logs.map(redact), error: job.error ? redact(job.error) : undefined })), tools: this.tools, parse: this.parseState, browser: { sites: this.browserSites }, update: this.updates.state, history: this.store.data.history, preview: this.previewing, commandLine: { ...cli, listening: this.control.listening, error: this.controlError || cli.error } } }
   // A successful parse goes to the top of 解析历史: one entry per address, the newest 50 kept. Only
   // successes - a list of failures would bury the entries worth parsing again.
   private remember(plan: ParsePlan): void {
@@ -104,7 +131,9 @@ export class Controller {
     const entry: HistoryEntry = {
       url: result.url, title: result.title, platform: result.platform,
       listing: result.groups?.some(group => group.id === 'parts') ? 'parts' : result.listing,
-      count: result.groups?.[0]?.pagination?.total ?? result.items.length,
+      // The largest count any tab holds rather than the first tab's: a result can lead with a one-entry
+      // tab now, and its total would otherwise be what the history says the whole thing is.
+      count: result.groups?.length ? Math.max(...result.groups.map(group => group.pagination?.total ?? group.itemIds.length)) : result.items.length,
       thumbnail: result.items.find(item => item.thumbnail && /^https?:/.test(item.thumbnail))?.thumbnail,
       parsedAt: new Date().toISOString(),
     }
@@ -116,7 +145,8 @@ export class Controller {
   // one per entry: reading every entry would be dozens of requests to one platform in a burst. The
   // listing is already on screen; the tiers appear in the quality menu when they arrive.
   private async sampleTiers(plan: ParsePlan): Promise<void> {
-    if (!plan.result.listing) return
+    if (plan.result.formats) return
+    if (!plan.result.listing && !plan.loadFormats) return
     // Only onto the listing it was read for: the user may have parsed something else meanwhile. A
     // listing whose first video offers no tiers still gets an answer - an empty list - so the menu
     // settles on the default instead of reading forever.
@@ -129,28 +159,48 @@ export class Controller {
   }
   // The tiers of a listing's first video, which stand for the whole listing; nothing for a result that
   // is not a listing or has no video with a page of its own.
-  private async readTiers(plan: ParsePlan): Promise<Pick<ParsePlan['result'], 'formats' | 'audioFormats'> | undefined> {
+  private async readTiers(plan: ParsePlan, signal?: AbortSignal): Promise<Pick<ParsePlan['result'], 'formats' | 'audioFormats'> | undefined> {
+    plan.formatController ||= new AbortController()
+    const sampling = signal ? AbortSignal.any([signal, plan.formatController.signal]) : plan.formatController.signal
+    if (plan.loadFormats) {
+      const raw = await plan.loadFormats(sampling)
+      const sample = mediaResult(raw, plan.result.url, plan.result.method).items[0]
+      const item = plan.result.items.find(item => item.id === plan.sampleItemId)
+      if (item && sample) { item.formats = sample.formats; item.audioFormats = sample.audioFormats }
+      return { formats: sample?.formats || [], audioFormats: sample?.audioFormats || [] }
+    }
     if (!plan.result.listing) return undefined
     // Engine playlists already carry per-entry formats when they have been fully extracted. Sampling
     // the first episode again would repeat the same番剧 page request and can trigger Bilibili risk control.
     if (plan.result.groups?.some(group => group.id === 'playlist')) return undefined
     const first = plan.result.items.find(item => item.kind === 'video' && !item.wall && item.url)
     if (!first?.url) return undefined
-    const sample = await this.parser.parse(first.url, this.profile(), new AbortController().signal, { single: true })
+    const sample = await this.parser.parse(first.url, undefined, sampling, { single: true })
     return { formats: sample.result.items[0]?.formats, audioFormats: sample.result.items[0]?.audioFormats }
   }
   private emit(): void { const win = this.window(); if (win && !win.isDestroyed()) win.webContents.send('desktop:state', this.state()) }
   async initialize(): Promise<void> {
+    void this.syncControl()
+    // Only installed builds own the user's shell integration. Development must not replace it.
+    if (app.isPackaged) void this.commandLine.configure(this.store.data.settings.allowControl)
+    this.subscriptions.start()
+    powerMonitor.on('resume', this.resumeSubscriptions)
     setVerbose(this.store.data.settings.verboseLogging); await this.kernel.initialize().catch(error => log.warn('Kernel initialization failed', error)); this.kernel.schedule(this.store.data.settings.kernelAutoUpdate); await this.refresh(); await this.checkTools(); this.queue.pump(); this.processing.refresh()
-    await this.commandLine.refresh().catch(error => log.warn('命令行工具刷新失败', error))
-    await this.syncControl()
   }
   // Listening only while the setting allows it. A second client already answering on the address - a
   // development build beside an installed one - leaves this one without a channel, which is logged.
-  private async syncControl(): Promise<void> {
-    const wanted = this.store.data.settings.allowControl
-    if (wanted && !this.control.listening) await this.control.start(controlAddress(!app.isPackaged)).catch(() => {})
-    else if (!wanted && this.control.listening) this.control.stop()
+  private syncControl(): Promise<void> {
+    this.controlSync = this.controlSync.then(async () => {
+      if (this.stopping) return
+      this.controlError = undefined
+      if (this.store.data.settings.allowControl && !this.control.listening) {
+        try { await this.control.start(controlAddress(!app.isPackaged)) }
+        catch { this.controlError = i18n.t('settings:tools.commandLine.channelFailed') }
+      }
+      if (this.stopping || !this.store.data.settings.allowControl) this.control.stop()
+      this.emit()
+    })
+    return this.controlSync
   }
   // The command line asks by result id; a result is the window's or one it parsed itself.
   private planFor(resultId: string): ParsePlan {
@@ -163,21 +213,20 @@ export class Controller {
   // reports whatever it is given this time - including the same refusal, if the window was closed
   // without signing in. Cleared first, so a second close does not turn the page a second time.
   private async afterLogin(): Promise<void> {
+    this.parser.invalidate()
     this.browserSites = await this.browser.sites()
     const pending = this.pendingPage
     this.pendingPage = undefined
+    const search = this.plan?.result.groups?.find(group => group.search?.status === 'interrupted')
+    if (search?.search) {
+      await this.command('media:query', { resultId: this.plan!.result.id, groupId: search.id, query: search.search.query })
+      return
+    }
     if (!pending) { this.emit(); return }
     await this.command('media:page', pending)
   }
   private async refresh(): Promise<void> {
-    this.profiles = await discoverProfiles()
     this.browserSites = await this.browser.sites()
-    // Zero-configuration default: use the first available Profile; the user can change it in Settings.
-    if (!this.store.data.settings.browserProfileId || !this.profiles.some(profile => profile.id === this.store.data.settings.browserProfileId)) {
-      const preferred = this.profiles.find(profile => profile.available && profile.browser === 'chrome') || this.profiles.find(profile => profile.available)
-      this.store.data.settings.browserProfileId = preferred?.id || null
-      this.store.save()
-    }
     this.emit()
   }
   private async checkTools(): Promise<void> {
@@ -188,6 +237,7 @@ export class Controller {
     this.emit()
   }
   async command(name: unknown, raw: unknown): Promise<Reply> {
+    let subscriptionCandidate: SubscriptionCandidate | undefined
     let document: import('../../shared/processing').ProcessingDocument | undefined
     let added: number | undefined
     let files: JobFile[] | undefined
@@ -198,9 +248,42 @@ export class Controller {
     try {
       if (typeof name !== 'string' || !Object.hasOwn(commandSchemas, name)) throw new Error(i18n.t('desktop:errors.unsupportedCommand'))
       const command = name as Command
+      if (this.stopping && !['state:get', 'processing:get', 'clipboard:read'].includes(command)) throw new Error(i18n.t('desktop:errors.quitting'))
       const input = commandSchemas[command].parse(raw)
       if ((command.startsWith('processing:') || command.startsWith('models:')) && this.store.data.settings.workMode !== 'edit') throw new Error(this.store.data.settings.locale === 'zh' ? '请在设置中切换到剪辑模式' : 'Switch to editing mode in Settings')
       switch (command) {
+        case 'subscriptions:resolve': subscriptionCandidate = await this.subscriptions.resolve(commandSchemas[command].parse(input).url); break
+        case 'subscriptions:add': {
+          const value = commandSchemas[command].parse(input)
+          this.subscriptions.add(value.token, value.types, value.notify); break
+        }
+        case 'subscriptions:update': {
+          const { id, ...patch } = commandSchemas[command].parse(input)
+          this.subscriptions.update(id, patch); break
+        }
+        case 'subscriptions:remove': this.subscriptions.remove(commandSchemas[command].parse(input).id); break
+        case 'subscriptions:check': this.subscriptions.check(commandSchemas[command].parse(input).id); break
+        case 'subscriptions:read': { const value = commandSchemas[command].parse(input); this.subscriptions.read(value.ids, value.read); break }
+        case 'subscriptions:open': {
+          const value = commandSchemas[command].parse(input)
+          if (value.action === 'login') {
+            const source = this.subscriptions.sourceFor(value.id)
+            this.browser.openLogin(source.url, () => {
+              void this.afterLogin()
+              if (this.subscriptions.state().sources.some(item => item.id === source.id && item.enabled)) this.subscriptions.check(source.id)
+            })
+          } else if (value.action === 'author') await shell.openExternal(this.subscriptions.sourceFor(value.id).url)
+          else {
+            const item = this.subscriptions.item(value.id)
+            await shell.openExternal(item.url); this.subscriptions.read([item.id], true)
+          }
+          break
+        }
+        case 'subscriptions:parse': {
+          const item = this.subscriptions.item(commandSchemas[command].parse(input).id)
+          this.subscriptions.read([item.id], true)
+          return await this.command('media:parse', { url: item.url })
+        }
         case 'processing:import': {
           const selected = await dialog.showOpenDialog(this.window()!, { properties: ['openFile'], filters: [{ name: 'Video / Audio', extensions: ['mp4', 'mkv', 'webm', 'mov', 'avi', 'm4v', 'mp3', 'm4a', 'wav', 'flac', 'ogg', 'opus', 'aac', 'ts'] }] })
           if (!selected.canceled && selected.filePaths[0]) document = await this.processing.importFile(selected.filePaths[0])
@@ -248,7 +331,6 @@ export class Controller {
         case 'kernel:rollback': await this.kernel.rollback(); await this.checkTools(); break
         case 'state:get': break
         case 'clipboard:read': return { ok: true, state: this.state(), clipboardText: (await clipboard.readText()).slice(0, 8192) }
-        case 'browser:refresh': await this.refresh(); break
         case 'browser:login': {
           // The visible window shares its partition with the hidden one that parses, so the user
           // logs in once and the next parse carries it.
@@ -256,17 +338,22 @@ export class Controller {
           break
         }
         case 'browser:clear':
-          this.parsing?.abort(); this.plan = undefined; this.parseState = { status: 'idle' }
+          this.parser.invalidate()
+          this.subscriptions.interrupt()
+          this.queryRevision += 1; this.querying?.controller.abort()
+          this.parsing?.abort(); this.plan?.formatController?.abort(); this.plan = undefined; this.parseState = { status: 'idle' }
           for (const job of this.queue.jobs) if (['running', 'queued'].includes(job.status)) this.queue.action(job.id, 'pause')
-          this.store.data.settings.browserProfileId = null; this.store.save()
           await this.browser.clear(); this.browserSites = 0; break
-        case 'media:cancel': this.parsing?.abort(); this.parsing = undefined; this.parseState = { status: 'idle' }; break
+        case 'media:cancel': this.queryRevision += 1; this.parsing?.abort(); this.querying?.controller.abort(); this.parsing = undefined; this.plan?.formatController?.abort(); this.plan = undefined; this.parseState = { status: 'idle' }; break
         case 'media:parse': {
+          this.subscriptions.interrupt()
+          this.queryRevision += 1
           const { url } = commandSchemas['media:parse'].parse(input)
+          this.querying?.controller.abort()
           this.parsing?.abort(); const controller = new AbortController(); this.parsing = controller
-          this.plan = undefined; this.parseState = { status: 'parsing' }; this.emit()
+          this.plan?.formatController?.abort(); this.plan = undefined; this.parseState = { status: 'parsing' }; this.emit()
           try {
-            const plan = await this.parser.parse(url, this.profile(), controller.signal)
+            const plan = await this.parser.parse(url, undefined, controller.signal)
             controller.signal.throwIfAborted(); this.plan = plan; this.parseState = { status: 'idle', result: plan.result }
             this.browserSites = await this.browser.sites()
             this.remember(plan)
@@ -284,26 +371,20 @@ export class Controller {
           break
         }
         case 'media:page': {
+          this.subscriptions.interrupt()
+          const revision = ++this.queryRevision
           const { resultId, page, groupId } = commandSchemas['media:page'].parse(input)
           const current = this.plan
           if (!current || current.result.id !== resultId) throw new Error(i18n.t('desktop:errors.parseExpired'))
+          this.querying?.controller.abort(); await this.querying?.done
+          if (this.plan !== current || revision !== this.queryRevision) break
           this.parsing?.abort(); const controller = new AbortController(); this.parsing = controller
           try {
-            const next = await this.parser.parse(current.result.url, this.profile(), controller.signal, { page, group: groupId })
+            await this.listings.page(current, page, groupId || current.result.groups?.[0]?.id || '', controller.signal)
             controller.signal.throwIfAborted()
             // 加载更多: the next page is added to what is on screen rather than replacing it, so every
             // post read so far stays listed, stays ticked and still downloads. Each tab grows on its own;
             // a post a later page repeats is kept once, where it first appeared.
-            for (const [id, source] of next.sources) current.sources.set(id, source)
-            for (const [id, item] of next.catalog) current.catalog.set(id, item)
-            const known = new Set(current.result.items.map(item => item.id))
-            const items = [...current.result.items, ...next.result.items.filter(item => !known.has(item.id))]
-            const groups = next.result.groups?.map(found => {
-              const before = current.result.groups?.find(existing => existing.id === found.id)
-              if (!before || found.id !== (groupId || current.result.groups?.[0]?.id)) return before || found
-              return { ...found, itemIds: [...before.itemIds, ...found.itemIds.filter(id => !before.itemIds.includes(id))] }
-            })
-            current.result = { ...next.result, id: current.result.id, title: current.result.title, items, groups, formats: current.result.formats, audioFormats: current.result.audioFormats }
             this.parseState = { status: 'idle', result: current.result }
             this.pendingPage = undefined
           }
@@ -318,6 +399,36 @@ export class Controller {
             }
           }
           finally { if (this.parsing === controller) this.parsing = undefined }
+          break
+        }
+        case 'media:query-stop': {
+          const { resultId, groupId } = commandSchemas[command].parse(input)
+          if (this.plan?.result.id === resultId && this.querying?.groupId === groupId) { this.queryRevision += 1; this.querying.controller.abort() }
+          break
+        }
+        case 'media:query': {
+          this.subscriptions.interrupt()
+          const revision = ++this.queryRevision
+          const { resultId, groupId, query, scan } = commandSchemas[command].parse(input)
+          const current = this.planFor(resultId)
+          if (current !== this.plan) throw new Error(i18n.t('desktop:errors.parseExpired'))
+          this.parsing?.abort()
+          const previous = this.querying
+          previous?.controller.abort(); await previous?.done
+          if (this.plan !== current || revision !== this.queryRevision) break
+          const controller = new AbortController()
+          const publish = () => {
+            if (this.plan !== current) return
+            this.parseState = { status: 'idle', result: current.result }
+            this.emit()
+          }
+          const task = this.listings.run(current, groupId, query, controller.signal, publish, scan)
+          const held = { controller, groupId, done: task.catch(() => {}) }
+          this.querying = held
+          try { await task }
+          catch (error) {
+            if (!controller.signal.aborted && this.plan === current) this.parseState = { ...refusal(error, current.result.url), result: current.result }
+          } finally { if (this.querying === held) this.querying = undefined }
           break
         }
         case 'media:download': {
@@ -354,7 +465,7 @@ export class Controller {
           for (const item of whole) {
             const source = plan.sources.get(item.id)
             if (source?.kind !== 'collection') continue
-            const expanded = await this.parser.expand(source.url, this.profile(), new AbortController().signal)
+            const expanded = await this.parser.expand(source.url, new AbortController().signal)
             enqueue(expanded, expanded.result.items)
           }
           added = jobIds.length
@@ -364,10 +475,10 @@ export class Controller {
         case 'cli:parse': {
           const { url, page } = commandSchemas['cli:parse'].parse(input)
           try {
-            const plan = await this.parser.parse(url, this.profile(), AbortSignal.timeout(300_000), page > 1 ? { page } : {})
+            const plan = await this.parser.parse(url, undefined, AbortSignal.timeout(300_000), page > 1 ? { page } : {})
             // The window reads a listing's tiers in the background once the listing is on screen; the
             // command line has no screen to fill in later, so it waits for them before it answers.
-            if (!plan.result.formats && plan.result.listing) Object.assign(plan.result, await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined }) || { formats: [], audioFormats: [] })
+            if (!plan.result.formats && (plan.result.listing || plan.loadFormats)) Object.assign(plan.result, await this.readTiers(plan).catch(error => { log.warn('读取清晰度样本失败', error); return undefined }) || { formats: [], audioFormats: [] })
             this.detached.set(plan.result.id, plan)
             for (const id of [...this.detached.keys()].slice(0, -DETACHED)) this.detached.delete(id)
             return { ok: true, state: this.state(), result: plan.result }
@@ -377,8 +488,12 @@ export class Controller {
             return { ok: false, message: refused.message || String(error), wall: refused.wall, verify: refused.verify, loginUrl: refused.loginUrl }
           }
         }
-        case 'cli:install': await this.commandLine.install(); break
-        case 'cli:uninstall': await this.commandLine.uninstall(); break
+        case 'cli:install':
+          if (!this.store.data.settings.allowControl) throw new Error(i18n.t('settings:tools.commandLine.enableFirst'))
+          await this.syncControl(); await this.commandLine.configure(true); break
+        case 'cli:uninstall':
+          this.store.data.settings.allowControl = false; this.store.save()
+          await this.syncControl(); await this.commandLine.configure(false); break
         case 'media:preview': {
           const { resultId, itemId } = commandSchemas['media:preview'].parse(input)
           if (!this.plan || this.plan.result.id !== resultId) throw new Error(i18n.t('desktop:errors.parseExpired'))
@@ -393,14 +508,22 @@ export class Controller {
         case 'preview:place': this.browser.placePreview(commandSchemas['preview:place'].parse(input)); return { ok: true, state: this.state() }
         case 'preview:close': this.browser.closePreview(); break
         case 'settings:save': {
-          const settings = { ...settingsSchema.parse(input), browserProfileId: this.store.data.settings.browserProfileId }
-          if (settings.browserProfileId && !this.profiles.some(profile => profile.id === settings.browserProfileId)) throw new Error(i18n.t('desktop:errors.profileChanged'))
+          const selected = commandSchemas['settings:save'].parse(input).downloadDirectory
+          const downloadDirectory = selected || this.store.data.settings.downloadDirectory
+          if (downloadDirectory !== this.store.data.settings.downloadDirectory && downloadDirectory !== this.selectedDirectory) throw new Error(i18n.t('settings:general.chooseDirectory'))
+          const settings = settingsSchema.parse(input)
           const reschedule = settings.concurrency !== this.store.data.settings.concurrency || settings.speedLimit !== this.store.data.settings.speedLimit
-          this.store.data.settings = { ...settings, downloadDirectory: this.store.data.settings.downloadDirectory }; this.store.save(); setVerbose(settings.verboseLogging); setLocale(settings.locale); await this.syncControl(); if (reschedule) this.queue.restartActive(); else this.queue.pump(); this.processing.refresh(); this.kernel.schedule(settings.kernelAutoUpdate); break
+          const controlChanged = settings.allowControl !== this.store.data.settings.allowControl
+          queueMicrotask(() => this.subscriptions.reschedule())
+          this.store.data.settings = { ...settings, downloadDirectory }; this.store.save(); this.selectedDirectory = undefined
+          setVerbose(settings.verboseLogging); setLocale(settings.locale); await this.syncControl()
+          if (app.isPackaged && (controlChanged || settings.allowControl && !this.commandLine.state().installed)) void this.commandLine.configure(settings.allowControl)
+          if (reschedule) this.queue.restartActive(); else this.queue.pump(); this.processing.refresh(); this.kernel.schedule(settings.kernelAutoUpdate); break
         }
         case 'settings:directory': {
           const result = await dialog.showOpenDialog(this.window()!, { properties: ['openDirectory', 'createDirectory'], defaultPath: this.store.data.settings.downloadDirectory })
-          if (!result.canceled && result.filePaths[0]) { this.store.data.settings.downloadDirectory = result.filePaths[0]; this.store.save() }; break
+          if (!result.canceled && result.filePaths[0]) this.selectedDirectory = result.filePaths[0]
+          return { ok: true, state: this.state(), directory: result.canceled ? undefined : this.selectedDirectory }
         }
         case 'jobs:action': {
           const { id, action } = commandSchemas['jobs:action'].parse(input)
@@ -455,7 +578,7 @@ export class Controller {
         case 'jobs:file': {
           const { id, index, action } = commandSchemas['jobs:file'].parse(input)
           const job = this.queue.jobs.find(item => item.id === id)
-          const file = job?.files[index]
+          const file = job ? filesFor(job)[index] : undefined
           if (!job || !file || path.dirname(path.resolve(file)) !== path.resolve(job.directory) || !(await stat(file)).isFile()) throw new Error(i18n.t('desktop:errors.noCompletedFile'))
           if (action === 'reveal') shell.showItemInFolder(file)
           else {
@@ -467,7 +590,7 @@ export class Controller {
         case 'jobs:files': {
           const job = this.queue.jobs.find(item => item.id === commandSchemas['jobs:files'].parse(input).id)
           if (!job) throw new Error(i18n.t('queue:errors.jobNotFound'))
-          files = await Promise.all(job.files.map(async file => {
+          files = await Promise.all(filesFor(job).map(async file => {
             const found = await stat(file).catch(() => undefined)
             return { path: file, exists: Boolean(found?.isFile()), size: found?.isFile() ? found.size : undefined }
           }))
@@ -491,10 +614,11 @@ export class Controller {
         case 'tools:check': await this.checkTools(); break
         case 'update:check': await this.updates.check(); break
         case 'update:download': await this.updates.download(); break
+        case 'update:cancel': await this.updates.cancel(); break
         case 'update:install': this.updates.install(); break
       }
       if (!quiet) log.debug(`${command} ${Date.now() - started}ms`)
-      this.emit(); return { ok: true, state: this.state(), document, added, files, jobIds }
+      this.emit(); return { ok: true, state: this.state(), subscriptionCandidate, document, added, files, jobIds }
     } catch (error) {
       const message = redact(error instanceof Error ? error.message : String(error))
       // The renderer shows this to the user, and until now that was the only place it went: a failure
@@ -505,5 +629,14 @@ export class Controller {
     }
   }
   processingMedia(id: string): string { return this.processing.media(id) }
-  stop(): void { this.parsing?.abort(); this.queue.stop(); this.processing.stop(); this.kernel.stop(); this.browser.close(); this.control.stop() }
+  async stop(): Promise<void> {
+    this.stopping = true; this.updates.stop(); this.subscriptions.stop(); this.nativeNotifications.stop()
+    powerMonitor.removeListener('resume', this.resumeSubscriptions)
+    this.parsing?.abort(); this.plan?.formatController?.abort()
+    for (const plan of this.detached.values()) plan.formatController?.abort()
+    this.querying?.controller.abort()
+    const drained = [this.queue.stop().catch(error => log.warn('Queue shutdown failed', error)), this.processing.stop()]
+    this.kernel.stop(); this.browser.close(); this.control.stop()
+    await Promise.allSettled(drained)
+  }
 }

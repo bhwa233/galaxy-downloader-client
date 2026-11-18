@@ -27,6 +27,9 @@ export type MediaCardProps = MediaStats & {
   // What the item is called on screen where its kind alone would say the wrong thing: a video shown
   // as its cover is a '封面', not a '图片'.
   label?: string
+  // A word the listing put on the one entry it is pointing at - the 合集's copy of the video the user
+  // pasted - already worded by the listing. It is not a kind, and is shown ahead of one.
+  mark?: string
   className?: string
 }
 
@@ -81,7 +84,7 @@ export function MediaStatsRow({ views, danmaku, comments, likes, className }: Me
   return <span className={cn('inline-flex items-center gap-2 overflow-hidden text-[11px] whitespace-nowrap tabular-nums', className)}>{stats}</span>
 }
 
-export function MediaCard({ title, kind, thumbnail, duration, selected, onSelectedChange, trailing, className, locked, onLocked, size, onPreview, label, ...stats }: MediaCardProps) {
+export function MediaCard({ title, kind, thumbnail, duration, selected, onSelectedChange, trailing, className, locked, onLocked, size, onPreview, label, mark, ...stats }: MediaCardProps) {
   const { t } = useTranslation(['result', 'common'])
   const hasOverlay = duration !== undefined || [stats.views, stats.danmaku, stats.comments, stats.likes].some(value => value !== undefined)
   // No author on a card: a listing is one creator's, and the result's title already says whose.
@@ -93,9 +96,11 @@ export function MediaCard({ title, kind, thumbnail, duration, selected, onSelect
         checked={selected && !locked} disabled={Boolean(locked)} onCheckedChange={checked => onSelectedChange(checked === true)} aria-label={t('card.select', { title })}
       />
       {/* What the file is, on every card: a listing mixes pictures and clips, and the cover alone does
-          not say which. A locked card's reason sits beside it. */}
+          not say which. A locked card's reason sits beside it, and the mark a listing put on this one
+          ahead of it, so the eye lands on it first in a 合集 of sixty. */}
       <span className="absolute top-2 right-2 z-10 flex gap-1 text-[11px] text-white">
         {locked && <span className="rounded-md bg-black/65 px-1.5 py-0.5">{locked}</span>}
+        {mark && <span className="rounded-md bg-selection px-1.5 py-0.5 text-selection-foreground">{mark}</span>}
         <span className="rounded-md bg-black/65 px-1.5 py-0.5">{label ?? t(`common:kinds.${kind === 'image' ? 'picture' : kind}`)}</span>
       </span>
       {onPreview && <button
@@ -119,7 +124,7 @@ export function MediaCard({ title, kind, thumbnail, duration, selected, onSelect
   </label>
 }
 
-export function MediaRow({ title, kind, thumbnail, duration, selected, onSelectedChange, trailing, className, locked, onLocked, size, onPreview, label, ...stats }: MediaCardProps) {
+export function MediaRow({ title, kind, thumbnail, duration, selected, onSelectedChange, trailing, className, locked, onLocked, size, onPreview, label, mark, ...stats }: MediaCardProps) {
   const { t } = useTranslation(['result', 'common'])
   const meta = [duration !== undefined ? formatDuration(duration) : label || t(`common:kinds.${kind}`), size, stats.publishedAt ? formatDate(stats.publishedAt) : ''].filter(Boolean).join(' · ')
   return <label aria-disabled={locked ? true : undefined} onClick={lockedClick(locked, onLocked)} className={cn('flex cursor-pointer items-center gap-3 rounded-lg p-3', cardOutline(selected), selected && 'bg-selection/5', !selected && !locked && 'hover:bg-muted/50', locked && 'cursor-not-allowed opacity-60 hover:ring-border-strong', className)}>
@@ -132,6 +137,7 @@ export function MediaRow({ title, kind, thumbnail, duration, selected, onSelecte
       <span className="line-clamp-2 text-sm">{title}</span>
       <span className="flex items-center gap-2 text-xs text-muted-foreground">
         <span className="truncate">{meta}</span>
+        {mark && <span className="shrink-0 rounded bg-selection px-1 py-0.5 text-[10px] text-selection-foreground">{mark}</span>}
         <MediaStatsRow {...stats} />
       </span>
     </span>

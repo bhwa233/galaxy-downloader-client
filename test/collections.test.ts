@@ -65,7 +65,7 @@ test('a collection is listed a page at a time, and a series asks the endpoint of
   expect(new URL(called[0]).searchParams.get('series_id')).toBe('4940048')
 })
 
-test('a video page lists its parts, its collection, or neither - and says so by standing down', async () => {
+test('a video page leads with its parts or the pasted video before its collection', async () => {
   const pages = [{ page: 1, part: ' 开场 ', duration: 61 }, { page: 2, part: '正片', duration: 4000 }]
   const season = { id: 4940048, title: '少女乐队', mid: 339087866 }
   const answer = (body: unknown) => (url: string) => reply(url.includes('/x/web-interface/wbi/view') ? body : archives(3, 0))
@@ -86,10 +86,13 @@ test('a video page lists its parts, its collection, or neither - and says so by 
   expect([both.groups[0].directory, both.groups[1].directory]).toEqual(['少女乐队 第一话', '少女乐队'])
   // One part and no collection is one video, which the engine already handles: the adapter stands down.
   expect(await bilibiliVideo.fetchPage!(ask(1, 'https://www.bilibili.com/video/BV1xx411c7mD', answer(view({ pages: [pages[0]] }))))).toBeUndefined()
-  // A collection with no parts is a single tab, and it is the one the page number belongs to.
+  // A pasted single-part video used to disappear behind its collection's first item, so downloading
+  // the default selection could save the wrong video. Its own tab must lead; only the collection turns.
   const alone = (await bilibiliVideo.fetchPage!(ask(2, 'https://www.bilibili.com/video/BV1Ps421u7ju', answer(view({ pages: [pages[0]], ugc_season: season })))))!
-  expect(alone.groups.map(group => group.id)).toEqual(['collection'])
-  expect(alone.groups[0].pagination.index).toBe(2)
+  expect(alone.groups.map(group => group.id)).toEqual(['work', 'collection'])
+  expect(alone.groups[0].entries.map(entry => entry.url)).toEqual(['https://www.bilibili.com/video/BV1Ps421u7ju'])
+  expect(alone.groups[0].pagination).toMatchObject({ index: 1, hasMore: false })
+  expect(alone.groups[1].pagination.index).toBe(2)
 })
 
 test('turning one tab leaves the other where it was', async () => {

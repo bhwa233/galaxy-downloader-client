@@ -78,6 +78,8 @@
     "platformKind": "Platform / type",
     "method": "Parsed with",
     "author": "Author",
+    "authorId": "Author ID",
+    "outputName": "Saved name",
     "publishedAt": "Published",
     "duration": "Duration",
     "stats": "Views / danmaku / comments / likes",

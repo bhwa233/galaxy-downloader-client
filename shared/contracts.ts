@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { i18n } from './i18n'
 import { modelId, speakerCount, captionLanguages, captionPatch, type ProcessingState, type ProcessingDocument } from './processing'
+import { subscriptionType, type SubscriptionCandidate, type SubscriptionState } from './subscriptions'
 
 export const settingsSchema = z.object({
   kernelAutoUpdate: z.boolean().default(true),
@@ -18,11 +19,13 @@ export const settingsSchema = z.object({
   organizeByChannel: z.boolean().default(false),
   embedMetadata: z.boolean().default(false),
   embedChapters: z.boolean().default(false),
-  customFilenameTemplate: z.string().trim().max(300).refine(value => !/[\\/]/.test(value) && ![...value].some(char => char.charCodeAt(0) < 32) && !value.includes('..') && !value.replace(/\{(?:title|id|channel|artist|date)\}/g, '').match(/[{}]/)).default(''),
-  browserProfileId: z.string().max(200).nullable().default(null),
+  customFilenameTemplate: z.string().trim().max(300).refine(value => !/[\\/]/.test(value) && ![...value].some(char => char.charCodeAt(0) < 32) && !value.includes('..') && !value.replace(/\{(?:title|id|authorId|author|channel|artist|date)\}/g, '').match(/[{}]/)).default(''),
   concurrency: z.number().int().min(1).max(4).default(2),
   resumeOnStart: z.boolean().default(false),
   notifications: z.boolean().default(true),
+  subscriptionAutomatic: z.boolean().default(true),
+  subscriptionIntervalHours: z.number().int().min(1).max(720).default(24),
+  subscriptionNotifications: z.boolean().default(true),
   minimizeToTray: z.boolean().default(false),
   speedLimit: z.number().int().min(0).max(1048576).default(0),
   taskSpeedLimit: z.number().int().min(0).max(1048576).default(0),
@@ -32,7 +35,8 @@ export const settingsSchema = z.object({
   // hundreds of posts, which is rarely what is meant. The result area says when the cap applied.
   batchLimit: z.number().int().min(0).max(500).default(20),
   timeout: z.number().int().min(5).max(300).default(30),
-  filenameTemplate: z.enum(['title-id', 'id-title', 'date-title-id']).default('title-id'),
+  // Old values still describe saved jobs; new jobs use the clean naming presets.
+  filenameTemplate: z.enum(['title', 'title-author', 'title-author-date', 'custom', 'author-title', 'author-date-title', 'title-id', 'id-title', 'date-title-id']).default('title'),
   organizeByPlatform: z.boolean().default(false),
   // A collection or a multi-part video is one thing split into files, so its parts are kept together
   // under a directory named after it. On by default: a 87-part 合集 dropped into the download folder
@@ -75,7 +79,6 @@ export const settingsSchema = z.object({
 // There is no proxy setting: every request follows whatever proxy the system itself is configured with,
 // which is where a user who runs one has already set it.
 export type Settings = z.infer<typeof settingsSchema> & { downloadDirectory: string }
-export type BrowserProfile = { id: string; browser: 'chrome' | 'edge' | 'firefox'; label: string; available: boolean }
 // 'size' is the whole download at this tier in bytes - the video stream plus the best audio it is
 // merged with - as the platform states it, or bitrate times duration where it only states a bitrate.
 // 'bitrate' is that same total in kbit/s, which is what lets a listing's sampled tier be estimated for
@@ -86,21 +89,43 @@ export type BrowserProfile = { id: string; browser: 'chrome' | 'edge' | 'firefox
 export type Format = { id: string; label: string; height?: number; audioOnly: boolean; extension: string; size?: number; bitrate?: number; preferredSize?: number; preferredBitrate?: number; audioLanguage?: string; audioLanguageLabel?: string; audioOriginal?: boolean }
 // Counts, author and publish time are what the platform happened to include in its listing: every one of
 // them is missing somewhere, so a card shows whichever it was given and leaves no gap for the rest.
-export type MediaStats = { views?: number; danmaku?: number; comments?: number; likes?: number; author?: string; artist?: string; channel?: string; publishedAt?: number }
+export type MediaStats = { views?: number; danmaku?: number; comments?: number; likes?: number; author?: string; authorId?: string; artist?: string; channel?: string; publishedAt?: number }
 // 'url' is the post's own page, which only a listing has: every item of a single parse belongs to the
 // one page the result already names. It travels so the window can offer the link without asking again.
 // 'wall' marks an item the platform says this account cannot have as it stands - a paid 短剧 episode -
 // known before anything is downloaded. Such an item is shown but cannot be picked.
-export type MediaItem = MediaStats & { id: string; title: string; url?: string; duration?: number; thumbnail?: string; kind: 'video' | 'audio' | 'image'; formats: Format[]; audioFormats?: Format[]; wall?: AccessWall }
+// 'mark' is a word the listing put on the one entry it is pointing at - the 合集's copy of the video the
+// user pasted, whose tab is otherwise a list of sixty titles - already worded by the listing itself.
+export type MediaItem = MediaStats & { id: string; mediaId?: string; title: string; url?: string; duration?: number; thumbnail?: string; kind: 'video' | 'audio' | 'image'; formats: Format[]; audioFormats?: Format[]; mark?: string; wall?: AccessWall }
 // A creator profile is served one page at a time; the next page is fetched only when the user asks for it.
 export type Pagination = { index: number; size: number; total?: number; hasMore: boolean }
 // What kind of listing produced a result. Both kinds are made of separate posts with pages of their
 // own, which is what decides how a download names itself; only a collection is saved to a directory.
 export type ListingKind = 'profile' | 'collection'
+// How a tab names itself: by what kind of list it holds, never by the list's own name, so a 哔哩哔哩
+// 合集 and a YouTube playlist read the same way in every language. The list's name still travels in
+// the group's 'title', where the tab shows it on hover instead of in the tab strip. A group without
+// a kind keeps showing its title, which is how a single-group listing still says where it came from.
+export type GroupKind = 'work' | 'parts' | 'collection' | 'files' | 'uploads' | 'shorts' | 'streams' | 'shows'
 // One tab of a result. A listing is usually a single group, so no tab is shown; a 哔哩哔哩 video that is
 // both multi-part and part of a collection is two, and each turns its pages on its own.
 // 'directory' is the name this group's downloads are filed under, which only a collection has.
-export type MediaGroup = { id: string; title: string; directory?: string; itemIds: string[]; pagination?: Pagination }
+// 'position' is where the work being looked at sits inside this group's list - the 5th of 72 episodes -
+// so the tab can say 5/72 instead of only how many there are. Only the group that holds the work has it.
+export const listingQuerySchema = z.object({
+  keyword: z.string().trim().max(200).default(''),
+  sort: z.enum(['original', 'reverse']).default('original'),
+  since: z.number().finite().nonnegative().optional(), before: z.number().finite().positive().optional(),
+  kind: z.enum(['all', 'video', 'image']).default('all'),
+  durationMin: z.number().finite().nonnegative().optional(), durationMax: z.number().finite().nonnegative().optional(),
+}).refine(value => value.since === undefined || value.before === undefined || value.since < value.before)
+  .refine(value => value.durationMin === undefined || value.durationMax === undefined || value.durationMin <= value.durationMax)
+export type ListingQuery = z.infer<typeof listingQuerySchema>
+export type ListingSearchState = {
+  query: ListingQuery; status: 'ready' | 'running' | 'stopped' | 'completed' | 'interrupted' | 'limited'
+  scanned: number; matched: number; missingDates: number; total?: number; nativeOrder?: boolean
+}
+export type MediaGroup = { id: string; title: string; kind?: GroupKind; directory?: string; itemIds: string[]; allItemIds?: string[]; pagination?: Pagination; position?: { index: number; total: number }; search?: ListingSearchState }
 // 'truncated' is set where the engine stopped short of the whole playlist rather than reaching its end,
 // so the window can say how many were listed instead of presenting a cut-off list as the complete one.
 // 'formats' is a listing's quality tiers, read off its first video after the listing arrives - a
@@ -116,6 +141,8 @@ export type JobStatus = 'queued' | 'running' | 'paused' | 'completed' | 'cancell
 // detail is the only place left that can say who published it and when.
 // single survives splitting and restarts: a numeric file id still belongs to one work.
 export type Job = MediaStats & {
+  // New jobs reserve a clean basename and download in a private per-job directory. Absent on legacy jobs.
+  outputName?: string; namingVersion?: 2; namingStarted?: boolean;
   workMode?: Settings['workMode']; outputFormat?: Settings['outputFormat']; outputResolution?: Settings['outputResolution'];
   originalFiles?: string[]; processedFiles?: string[];
   includeSubtitles?: boolean; captionLanguages?: string[]; autoTranscribe?: boolean; deferProcessing?: boolean;
@@ -157,9 +184,11 @@ export type HistoryEntry = {
   thumbnail?: string; parsedAt: string
 }
 export type ClientState = {
+  firstRun?: boolean;
+  subscriptions?: SubscriptionState;
   kernel?: import('./processing').KernelState;
   processing?: ProcessingState;
-  settings: Settings; profiles: BrowserProfile[]; jobs: Job[]; history: HistoryEntry[];
+  settings: Settings; jobs: Job[]; history: HistoryEntry[];
   tools: { engine: ToolInfo; ffmpeg: ToolInfo };
   // 'wall' says which permission wall a failure ran into, where it named one. Signing in fixes the
   // first; the other three are the account's own entitlement, and the client works around none of them.
@@ -168,13 +197,17 @@ export type ClientState = {
   parse: { status: 'idle' | 'parsing' | 'needs-login' | 'error'; message?: string; result?: MediaResult; loginUrl?: string; wall?: AccessWall; verify?: boolean };
   // Login state the client holds itself, in its own browser partition.
   browser: { sites: number };
-  update: { status: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'; version?: string; progress?: number; message?: string };
+  update: {
+    status: 'idle' | 'checking' | 'available' | 'connecting' | 'downloading' | 'verifying' | 'cancelling' | 'ready' | 'error';
+    currentVersion?: string; version?: string; progress?: number; downloaded?: number; total?: number; speed?: number; eta?: number;
+    waiting?: boolean; slow?: boolean; external?: boolean; failedOperation?: 'check' | 'download'; message?: string;
+  };
   // The item whose page is open in the preview dialog. Held here rather than in the window, because
   // the page itself can close it too: Esc pressed inside it never reaches the window.
   preview?: { title: string };
   // The `galaxy` command: whether its launcher is installed, where, and whether that directory is
   // already on the PATH a new terminal gets.
-  commandLine: { installed: boolean; launcher: string; onPath: boolean };
+  commandLine: { installed: boolean; launcher: string; onPath: boolean; listening?: boolean; configuring?: boolean; error?: string };
 }
 export const parseInput = z.object({ url: z.string().trim().min(1).max(8192) })
 // What to download of each item, any combination: the media itself at 'format', its audio alone (a
@@ -191,6 +224,14 @@ export const downloadInput = z.object({ resultId: z.string().uuid(), itemIds: z.
 // audio only. Both add to what is on disk and never touch the job they were asked on.
 export const jobActionInput = z.object({ id: z.string().uuid(), action: z.enum(['pause', 'resume', 'retry', 'cancel', 'open', 'reveal', 'copy-link', 'open-page', 'copy-path', 'thumbnail', 'audio', 'login']) })
 export const commandSchemas = {
+  'subscriptions:resolve': parseInput,
+  'subscriptions:add': z.object({ token: z.string().uuid(), types: z.array(subscriptionType).min(1).max(3), notify: z.boolean().default(true) }),
+  'subscriptions:update': z.object({ id: z.string().uuid(), enabled: z.boolean().optional(), notify: z.boolean().optional() }),
+  'subscriptions:remove': z.object({ id: z.string().uuid() }),
+  'subscriptions:check': z.object({ id: z.string().uuid().optional() }),
+  'subscriptions:read': z.object({ ids: z.array(z.string().uuid()).max(10000), read: z.boolean().default(true) }),
+  'subscriptions:open': z.object({ id: z.string().uuid(), action: z.enum(['work', 'author', 'login']) }),
+  'subscriptions:parse': z.object({ id: z.string().uuid() }),
   'processing:import': z.null(),
   'processing:from-job': z.object({ id: z.string().uuid() }),
   'processing:get': z.object({ id: z.string().uuid() }),
@@ -206,7 +247,7 @@ export const commandSchemas = {
   'models:download': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
   'models:cancel': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
   'models:remove': z.object({ id: z.union([modelId, z.literal('speaker')]) }),
-  'state:get': z.null(), 'clipboard:read': z.null(), 'browser:refresh': z.null(), 'browser:clear': z.null(),
+  'state:get': z.null(), 'clipboard:read': z.null(), 'browser:clear': z.null(),
   'clipboard:write': z.object({ text: z.string().max(8192) }),
   // Hands an address to whatever the system opens links with. Only ever http(s): a renderer that could
   // name any scheme could ask the host to open a file or run a handler, which is not what a link is.
@@ -215,13 +256,16 @@ export const commandSchemas = {
   'media:parse': parseInput, 'media:cancel': z.null(), 'media:download': downloadInput,
   // 'groupId' names the tab being turned; a result with one group leaves it off and gets that one.
   'media:page': z.object({ resultId: z.string().uuid(), page: z.number().int().min(1).max(500), groupId: z.string().min(1).max(100).optional() }),
+  'media:query': z.object({ resultId: z.string().uuid(), groupId: z.string().min(1).max(100), query: listingQuerySchema, scan: z.boolean().default(true) }),
+  'media:query-stop': z.object({ resultId: z.string().uuid(), groupId: z.string().min(1).max(100) }),
   // Watching one item before downloading it. Named by id, like a download: the main process decides
   // what to open, so the window never hands it an address to load.
   'media:preview': z.object({ resultId: z.string().uuid(), itemId: z.string().min(1).max(500) }),
   // Where the preview dialog's page area is, in the window's CSS pixels, each time it moves or resizes.
   'preview:place': z.object({ x: z.number().int().min(0).max(100000), y: z.number().int().min(0).max(100000), width: z.number().int().min(0).max(100000), height: z.number().int().min(0).max(100000) }),
   'preview:close': z.null(),
-  'settings:save': settingsSchema, 'settings:directory': z.null(),
+  // A directory is accepted only if it is the current one or was selected by the native dialog.
+  'settings:save': settingsSchema.extend({ downloadDirectory: z.string().min(1).max(32768).optional() }), 'settings:directory': z.null(),
   'jobs:action': jobActionInput,
   // The renderer selects a recorded file by index, never an arbitrary filesystem path.
   'jobs:file': z.object({ id: z.string().uuid(), index: z.number().int().min(0).max(10000), action: z.enum(['open', 'reveal']) }),
@@ -244,7 +288,7 @@ export const commandSchemas = {
   'cli:install': z.null(), 'cli:uninstall': z.null(),
   'logs:export': z.null(), 'logs:open': z.null(),
   'kernel:check': z.null(), 'kernel:rollback': z.null(),
-  'tools:check': z.null(), 'update:check': z.null(), 'update:download': z.null(), 'update:install': z.null(),
+  'tools:check': z.null(), 'update:check': z.null(), 'update:download': z.null(), 'update:cancel': z.null(), 'update:install': z.null(),
 } as const
 export type Command = keyof typeof commandSchemas
 export type CommandInput<C extends Command> = z.input<(typeof commandSchemas)[C]>
@@ -254,7 +298,7 @@ export type CommandInput<C extends Command> = z.input<(typeof commandSchemas)[C]
 export type JobFile = { path: string; exists: boolean; size?: number }
 // 'result', 'jobIds' and 'version' answer the command line; a refusal says which wall it hit, or that a
 // verification is wanted, so the command line can tell a sign-in apart from a failure.
-export type Reply = { ok: true; state: ClientState; document?: ProcessingDocument; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
+export type Reply = { ok: true; state: ClientState; directory?: string; subscriptionCandidate?: SubscriptionCandidate; document?: ProcessingDocument; clipboardText?: string; added?: number; files?: JobFile[]; result?: MediaResult; jobIds?: string[]; version?: string }
   | { ok: false; message: string; wall?: AccessWall; verify?: boolean; loginUrl?: string }
 export interface DesktopApi {
   command<C extends Command>(command: C, input: CommandInput<C>): Promise<Reply>

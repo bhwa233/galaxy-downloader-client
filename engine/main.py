@@ -79,7 +79,6 @@ def main():
                        thumbnailFormat='original', outputFormat='original', outputResolution='original')
         request['embedThumbnail'] = embed_cover
     editing = request.get('workMode') == 'edit' and (not request.get('deferProcessing') or request.get('embedMetadata') or request.get('embedChapters') or embed_cover)
-    profile = request.get('profile')
     logger = Logger()
     options = {
         'logger': logger, 'quiet': True, 'no_warnings': False,
@@ -102,8 +101,6 @@ def main():
         options['extract_flat'] = 'in_playlist'
     if request.get('headers'):
         options['http_headers'] = request['headers']
-    if profile:
-        options['cookiesfrombrowser'] = (profile['browser'], profile['path'], None, None)
     def postprocessor_progress(event):
         stage = {'ExtractAudio': 'convert', 'EmbedThumbnail': 'embed', 'ThumbnailsConvertor': 'convert'}.get(event.get('postprocessor'))
         if stage and request.get('workMode') != 'download':
@@ -185,11 +182,10 @@ def main():
     def downloader(anonymous=False):
         configured = dict(options)
         if anonymous:
-            configured.pop('cookiesfrombrowser', None)
             configured['http_headers'] = {key: value for key, value in (options.get('http_headers') or {}).items() if key.lower() != 'cookie'}
         ydl = SubtitleDownloader(configured, request.get('captionLanguages') or (request.get('subtitleLanguage') if operation in ('download', 'process') else None))
         # Credentials remain in this process; the fallback gets a fresh cookie jar
-        # without changing the client's persist:media session or browser profile.
+        # without changing the client's persist:media session.
         for item in [] if anonymous else request.get('cookies', []):
             domain = item['domain']
             ydl.cookiejar.set_cookie(Cookie(0, item['name'], item['value'], None, False,
@@ -300,7 +296,7 @@ def main():
             authenticated = any(cookie.name in auth_names and cookie.domain.lstrip('.') in {'youtube.com', 'google.com'} for cookie in ydl.cookiejar)
             authorization = any(key.lower() == 'authorization' for key in request.get('headers', {}))
             denied_media = 'unable to download video data' in str(error) and 'HTTP Error 403' in str(error)
-            if operation != 'download' or not youtube or not denied_media or authenticated or authorization or not (request.get('cookies') or profile):
+            if operation != 'download' or not youtube or not denied_media or authenticated or authorization or not request.get('cookies'):
                 raise
             emit('log', message='YouTube 媒体请求返回 403，使用匿名会话重新解析并重试。' if request.get('locale') == 'zh' else 'YouTube media returned 403; re-extracting and retrying with an anonymous session.')
             with downloader(anonymous=True) as fallback:

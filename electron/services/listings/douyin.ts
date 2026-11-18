@@ -5,7 +5,8 @@
 // answers status_code 0 with a full page of posts. This is the route the client already takes.
 import { i18n } from '../../../shared/i18n'
 import { LoginRequired, VerificationRequired } from '../login'
-import { isRecord, onePage, type ListingEntry, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
+import type { RawInfo } from '../media'
+import { isRecord, onePage, type ListingEntry, type ListingGroup, type ListingPage, type PageRequest, type ProfileAdapter } from './types'
 
 // What the page asks for. It is answered with a few more than it asked, so the page size is never
 // assumed: every reply reports the length it actually held.
@@ -28,12 +29,13 @@ const LISTING = {
 } as const
 
 type Image = { url_list?: string[] }
+type Address = Image & { height?: number; width?: number; data_size?: number }
 type Post = {
   aweme_id?: string; desc?: string; create_time?: number; media_type?: number
-  video?: { cover?: { url_list?: string[] }; duration?: number }
+  video?: { cover?: Image; duration?: number; height?: number; width?: number; is_h265?: number; play_addr?: Address; bit_rate?: { gear_name?: string; quality_type?: number; is_h265?: number; is_bytevc1?: number; bit_rate?: number; FPS?: number; play_addr?: Address }[] }
   images?: Image[] | null
-  author?: { nickname?: string }
-  mix_info?: { mix_name?: string }
+  author?: { nickname?: string; unique_id?: string; short_id?: string; uid?: string; avatar_thumb?: Image; avatar_medium?: Image; avatar_larger?: Image }
+  mix_info?: { mix_id?: string; mix_name?: string }
   // 'play_count' is always zero on the web listing, so it is never read: a card saying 0 plays for a
   // post with four hundred thousand likes would be worse than a card saying nothing.
   statistics?: { digg_count?: number; comment_count?: number }
@@ -43,6 +45,32 @@ type Post = {
   series_paid_info?: { series_paid_status?: number }
 }
 type PostsResponse = { status_code?: number; status_msg?: string; aweme_list?: Post[]; has_more?: number; max_cursor?: number }
+
+// The detail endpoint already carries playable variants. Reuse that response and the existing
+// media normalizer/engine; only muxed variants are accepted here. Split video tracks retain the
+// established browser capture path unless their matching audio is known.
+function mediaOf(post: Post | undefined): RawInfo | undefined {
+  if (!post?.aweme_id || post.images?.length || !post.video || post.entertainment_video_paid_way?.paid_type) return undefined
+  const video = post.video
+  const formats: NonNullable<RawInfo['formats']> = []
+  const seen = new Set<string>()
+  for (const [index, rate] of (video.bit_rate?.length ? video.bit_rate : [{ play_addr: video.play_addr, is_h265: video.is_h265 }]).entries()) {
+    const stream = rate.play_addr
+    const address = stream?.url_list?.find(value => /^https?:\/\//.test(value) && !/\/media-(video|audio)-|\/play\/dash\//.test(value))
+    if (!address || !stream?.height || seen.has(address)) continue
+    seen.add(address)
+    const codec = rate.is_h265 || ('is_bytevc1' in rate && rate.is_bytevc1) ? 'hvc1' : 'avc1'
+    formats.push({ format_id: `dy-${'quality_type' in rate ? rate.quality_type ?? index : index}-${codec}`, url: address,
+      ext: 'mp4', height: stream.height, vcodec: codec, filesize: stream.data_size,
+      tbr: 'bit_rate' in rate && rate.bit_rate ? rate.bit_rate / 1000 : undefined, fps: 'FPS' in rate ? rate.FPS : undefined })
+  }
+  if (!formats.length) return undefined
+  formats.sort((a, b) => (a.height || 0) - (b.height || 0) || (a.tbr || 0) - (b.tbr || 0))
+  return { id: post.aweme_id, title: post.desc?.trim() || i18n.t('errors:douyin.post', { id: post.aweme_id }), webpage_url: `${HOST}/video/${post.aweme_id}`,
+    thumbnail: video.cover?.url_list?.[0], duration: video.duration ? video.duration / 1000 : undefined,
+    uploader: post.author?.nickname, uploader_id: post.author?.uid, timestamp: post.create_time,
+    comment_count: post.statistics?.comment_count, extractor: 'douyin-session', extractor_key: 'Generic', formats }
+}
 
 function secUserIdOf(url: URL): string {
   return /\/user\/([^/?#]+)/.exec(url.pathname)?.[1] || ''
@@ -101,6 +129,7 @@ export function entryOf(post: Post): ListingEntry | undefined {
     likes: count(post.statistics?.digg_count),
     comments: count(post.statistics?.comment_count),
     author: post.author?.nickname?.trim() || undefined,
+    authorId: post.author?.unique_id?.trim() || (post.author?.short_id && post.author.short_id !== '0' ? post.author.short_id : undefined) || post.author?.uid,
     wall: post.entertainment_video_paid_way?.paid_type === 1 && !post.series_paid_info?.series_paid_status ? 'purchase' : undefined,
     publishedAt: post.create_time || undefined,
   }
@@ -119,6 +148,8 @@ async function ownId(fetch: PageRequest['fetch'], signal: AbortSignal): Promise<
 
 export const douyin: ProfileAdapter = {
   id: 'douyin',
+  reusePage: 'origin',
+  reset() { walked = undefined },
   matches(url) {
     return /(^|\.)douyin\.com$/.test(url.hostname) && Boolean(secUserIdOf(url))
   },
@@ -173,10 +204,13 @@ export const douyin: ProfileAdapter = {
       cursor = body.max_cursor
     }
     const entries = (body.aweme_list || []).map(entryOf).filter((entry): entry is ListingEntry => Boolean(entry))
-    const author = (body.aweme_list || []).find(post => post.author?.nickname)?.author?.nickname
+    const account = (body.aweme_list || []).find(post => post.author?.nickname)?.author
+    const author = account?.nickname
+    const avatar = (account?.avatar_medium?.url_list?.[0] || account?.avatar_larger?.url_list?.[0] || account?.avatar_thumb?.url_list?.[0] || '').replace(/^http:\/\//, 'https://').replace(/^\/\//, 'https://')
     // The reply holds a few more than were asked for, so the page reports what it actually carried.
     const named = ({ post: 'errors:douyin.posts', like: 'errors:douyin.likes', recommend: 'errors:douyin.recommended' } as const)[tab]
-    return onePage('posts', author ? i18n.t(named, { author }) : undefined, entries, { index: page, size: entries.length, hasMore: Boolean(body.has_more && body.max_cursor) })
+    return { ...onePage('posts', author ? i18n.t(named, { author }) : undefined, entries, { index: page, size: entries.length, hasMore: Boolean(body.has_more && body.max_cursor) }, 'uploads'),
+      owner: author ? { id: sec, name: author, avatar: avatar.startsWith('https://') ? avatar : undefined } : undefined }
   },
 }
 
@@ -220,11 +254,12 @@ async function mixPage(fetch: PageRequest['fetch'], mix: string, page: number, s
   const named = (body.aweme_list || []).find(post => post.mix_info?.mix_name?.trim())?.mix_info?.mix_name?.trim()
   const author = (body.aweme_list || []).find(post => post.author?.nickname)?.author?.nickname
   const title = named || (author ? i18n.t('errors:douyin.authorCollection', { author }) : i18n.t('errors:douyin.collection'))
-  return { title, kind: 'collection', groups: [{ id: 'collection', title, directory: title, entries, pagination: { index: page, size: entries.length, hasMore: Boolean(body.has_more) } }] }
+  return { title, kind: 'collection', groups: [{ id: 'collection', kind: 'collection', title, directory: title, entries, pagination: { index: page, size: entries.length, hasMore: Boolean(body.has_more) } }] }
 }
 
 export const douyinCollection: ProfileAdapter = {
   id: 'douyin-collection',
+  reusePage: 'origin',
   matches(url) { return Boolean(mixIdOf(url)) },
   entryUrl(url) { return url.href },
   async fetchPage({ url, page, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
@@ -236,27 +271,64 @@ export const douyinCollection: ProfileAdapter = {
 
 // A work's own page. Like the 哔哩哔哩 one beside it, this claims more than it lists: only the work can
 // say whether a 合集 is behind it, so it reads the work and stands down when there is not - which is
-// every ordinary 抖音 video, and is the engine's job.
+// every ordinary 抖音 video, and is the engine's job. Where there is one, the work leads as its own tab
+// and the 合集 follows, the same shape a 哔哩哔哩 video in a 合集 gets.
 function awemeIdOf(url: URL): string {
   if (!/(^|\.)douyin\.com$/.test(url.hostname)) return ''
   return /^\/(?:video|note)\/(\d+)/.exec(url.pathname)?.[1] || ''
 }
 
+// The pasted work as its own tab, ahead of the 合集 it belongs to. Its id has to differ from the 合集
+// entry's, which is the same work: both would otherwise be keyed by one aweme id and share a selection.
+function workGroup(entry: ListingEntry): ListingGroup {
+  return {
+    // Labelled 单视频 by its kind, like the 哔哩哔哩 one; the work's own words are the hover hint.
+    id: 'work', kind: 'work', title: entry.title, entries: [{ ...entry, id: `${entry.id}-work` }],
+    // One entry, and nothing behind it: a tab that cannot grow has no page to turn.
+    pagination: { index: 1, size: 1, hasMore: false },
+  }
+}
+
 export const douyinVideo: ProfileAdapter = {
   id: 'douyin-video',
+  reusePage: 'origin',
+  work: true,
   matches(url) { return Boolean(awemeIdOf(url)) },
   entryUrl(url) { return url.href },
-  async fetchPage({ url, page, group, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
+  async fetchPage({ url, page, group, fetch, signal, single }: PageRequest): Promise<ListingPage | undefined> {
     const aweme = awemeIdOf(url)
     if (!aweme) throw new Error(i18n.t('errors:listing.noWorkId'))
     const query = new URLSearchParams({ ...CLIENT, aweme_id: aweme })
     const response = await fetch(`${HOST}/aweme/v1/web/aweme/detail/?${query}`, { signal })
-    const body = await response.json().catch(() => undefined) as { aweme_detail?: { mix_info?: { mix_id?: string } } } | undefined
+    const body = await response.json().catch(() => undefined) as { aweme_detail?: Post } | undefined
     // No detail, no mix field, or no mix: one work, which the engine downloads on its own. Standing
     // down here is the common case, not the exception.
-    const mix = isRecord(body) ? body.aweme_detail?.mix_info?.mix_id : undefined
-    if (response.status >= 400 || !mix) return undefined
-    return await mixPage(fetch, String(mix), group === 'collection' ? page : 1, signal)
+    const detail = isRecord(body) ? body.aweme_detail : undefined
+    const mix = detail?.mix_info?.mix_id
+    if (response.status >= 400) return undefined
+    const info = mediaOf(detail)
+    if (info && (single || !mix)) return { title: info.title, kind: 'work', groups: [], sample: { id: '1', info } }
+    if (!mix) return undefined
+    const listing = await mixPage(fetch, String(mix), group === 'collection' ? page : 1, signal)
+    if (!listing) return undefined
+    // The work is one of the 合集's own entries; mark that copy, so the collection tab answers which one
+    // it is instead of leaving sixty cards to be read through. Its tab also says where it sits - but
+    // only a 合集 that ended on this page can: a cursor reports no total, so a page that still has more
+    // behind it cannot say which of them this is.
+    const marked = listing.groups.map(found => {
+      const index = found.entries.findIndex(entry => entry.id === aweme)
+      const total = found.pagination.total ?? (found.pagination.hasMore ? undefined : found.entries.length)
+      return {
+        ...found,
+        position: index >= 0 && total !== undefined ? { index: index + 1, total } : undefined,
+        entries: found.entries.map(entry => entry.id === aweme ? { ...entry, mark: i18n.t('errors:douyin.original') } : entry),
+      }
+    })
+    const own = detail ? entryOf(detail) : undefined
+    // A detail reply that could not be read as a work still lists the 合集; there is simply no tab in
+    // front of it then.
+    return { title: listing.title, kind: 'collection', groups: own ? [workGroup(own), ...marked] : marked,
+      ...(own && info ? { sample: { id: `${own.id}-work`, info } } : {}) }
   },
 }
 
@@ -271,6 +343,7 @@ const SHOWS = 16
 
 export const douyinSeries: ProfileAdapter = {
   id: 'douyin-series',
+  reusePage: 'origin',
   matches(url) { return /(^|\.)douyin\.com$/.test(url.hostname) && /^\/series\/?$/.test(url.pathname) && !url.searchParams.get('modal_id') },
   entryUrl(url) { return url.href },
   async fetchPage({ page, fetch, signal }: PageRequest): Promise<ListingPage | undefined> {
@@ -288,6 +361,6 @@ export const douyinSeries: ProfileAdapter = {
       }
     })
     if (!entries.length && page === 1) throw new LoginRequired(i18n.t('errors:douyin.showsEmpty'))
-    return onePage('shows', i18n.t('errors:douyin.shows'), entries, { index: page, size: SHOWS, hasMore: Boolean(body.has_more) })
+    return onePage('shows', i18n.t('errors:douyin.shows'), entries, { index: page, size: SHOWS, hasMore: Boolean(body.has_more) }, 'shows')
   },
 }
