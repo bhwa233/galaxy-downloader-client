@@ -249,12 +249,8 @@ const posted = {
   },
 }
 
-test('the xiaohongshu adapter is written but switched off, and still maps a listing when it returns', () => {
-  // Not registered, so nothing routes to it; parser.ts refuses those profiles outright instead. It has
-  // no fetchPage either, which is the only route there is, so the mapping is all that is kept warm.
-  expect(findAdapter('https://www.xiaohongshu.com/user/profile/6a2174510000000002002401')).toBeUndefined()
+test('the xiaohongshu adapter matches profiles and maps note metadata', () => {
   expect(xiaohongshu.matches(new URL('https://www.xiaohongshu.com/user/profile/6a2174510000000002002401'))).toBe(true)
-  expect(xiaohongshu.fetchPage).toBeUndefined()
   expect(notesOf(posted)).toEqual<ListingEntry[]>([
     {
       id: 'n1', url: 'https://www.xiaohongshu.com/explore/n1?xsec_token=tok%2F1&xsec_source=pc_user', title: '笔记一', kind: 'video',

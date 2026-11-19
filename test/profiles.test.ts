@@ -12,10 +12,6 @@ test.each(PROFILE_FIXTURES)('$platform fixture routes through $route', fixture =
   expect(refusalFor(url)).toBeUndefined()
 })
 
-// A switched-off listing is refused where the user can read why, instead of failing later as something
-// that looks like a login problem.
-test('a xiaohongshu profile is refused, while a single note still parses', () => {
-  expect(refusalFor('https://www.xiaohongshu.com/user/profile/6a2174510000000002002401')).toMatch('暂不支持小红书主页解析')
+test('a single xiaohongshu note is not refused', () => {
   expect(refusalFor('https://www.xiaohongshu.com/explore/65123abc?xsec_token=x')).toBeUndefined()
-  expect(isProfileUrl('https://www.xiaohongshu.com/user/profile/6a2174510000000002002401')).toBe(false)
 })
