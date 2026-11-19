@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import type { MediaGroup, MediaItem, MediaResult } from '../../shared/contracts'
 import { Engine, type Cookie, type EngineRequest } from './engine'
-import type { EmbeddedBrowser } from './browser'
+import type { EmbeddedBrowser, Listing } from './browser'
 import { findAdapter } from './listings'
 import { LoginRequired, VerificationRequired } from './login'
 import { logger } from './log'
 import { i18n } from '../../shared/i18n'
 import { BilibiliApi } from './listings/bilibili-api'
+import { checkXiaohongshuPage, xiaohongshuNoteId, xiaohongshuVideo } from './listings/xiaohongshu'
 import { ARTICLE_HOSTS, SHORTENERS, flattenEntries, mediaResult, needsBrowser, normalizeUrl, platformOf, type RawInfo } from './media'
 
 const log = logger('parser')
@@ -27,10 +28,6 @@ export type ParseOptions = { browserOnly?: boolean; page?: number; group?: strin
 // How many items of a listing are kept. A collection of several hundred still fits; the cap is there so
 // one parse cannot fill the window with more rows than anyone picks from.
 
-// Creator home pages are listings of posts, so they take the browser listing route instead of yt-dlp.
-// Only where an adapter knows the platform's listing API: that route asks the API from inside a page
-// and has nothing else to offer, so a platform without one is better served by yt-dlp than by a route
-// that would open a window and find nothing to call. 抖音 is the one that lands there today.
 export function isProfileUrl(url: string): boolean {
   return Boolean(findAdapter(url))
 }
@@ -40,7 +37,7 @@ export function isProfileUrl(url: string): boolean {
 // Home and feed pages are the other half of that: no extractor takes them, the page route reads no
 // media from them, and the sign-in hint that follows is about the wrong thing.
 const REFUSED: { host: RegExp; path: RegExp; message: () => string }[] = [
-  { host: /(^|\.)xiaohongshu\.com$/, path: /\/user\/profile\//, message: () => i18n.t('errors:parse.xiaohongshuProfile') },
+  { host: /(^|\.)xiaohongshu\.com$/, path: /^\/$|^\/explore\/?$|^\/search_result\/?$/, message: () => i18n.t('errors:parse.notAResource') },
   { host: /(^|\.)bilibili\.com$/, path: /^\/$|^\/v(\/|$)|^\/video\/?$|^\/bangumi\/?$|^\/anime\/?$|^\/dynamic|^\/feed/, message: () => i18n.t('errors:parse.notAResource') },
   { host: /(^|\.)douyin\.com$/, path: /^\/$|^\/discover|^\/hot|^\/search/, message: () => i18n.t('errors:parse.notAResource') },
   { host: /(^|\.)youtube\.com$/, path: /^\/$|^\/feed\/|^\/results/, message: () => i18n.t('errors:parse.notAResource') },
@@ -220,9 +217,38 @@ export class Parser {
     return plan
   }
 
+  private async readXiaohongshuVideo(url: string, id: string, signal: AbortSignal): Promise<ParsePlan> {
+    const media = await this.browser.inspect(url, signal)
+    const landed = new URL(media.url)
+    if (media.verification) throw new VerificationRequired(i18n.t('errors:parse.challenge'))
+    checkXiaohongshuPage(landed)
+    if (xiaohongshuNoteId(landed) !== id) throw new Error(i18n.t('errors:xiaohongshu.unavailable'))
+    const info = xiaohongshuVideo(media.note, url, id, media.title)
+    const request: EngineRequest = { operation: 'extract', url, info, cookies: media.cookies, headers: { Referer: media.url, 'User-Agent': media.userAgent } }
+    if (info) {
+      info.thumbnail ||= media.thumbnail
+      const plan = this.fromEngine(await this.extract(request, signal), request, 'browser')
+      plan.result.session = media.session || 'unknown'
+      return plan
+    }
+    const noteUrl = new URL(`/explore/${id}`, landed.origin)
+    noteUrl.search = landed.search || new URL(url).search
+    try {
+      const fallback = await this.extract({ ...request, url: noteUrl.href }, signal)
+      if (fallback.id === id && fallback.formats?.some(format => format.vcodec !== 'none')) {
+        const plan = this.fromEngine(fallback, { ...request, url: noteUrl.href }, 'browser')
+        plan.result.session = media.session === 'guest' ? 'guest' : 'unknown'
+        return plan
+      }
+    } catch (error) { signal.throwIfAborted(); log.debug('小红书引擎提取失败', error) }
+    throw new Error(i18n.t('errors:xiaohongshu.unavailable'))
+  }
+
   private async read(url: string, signal: AbortSignal, { browserOnly = false, page = 1, group, order, single = false }: ParseOptions): Promise<ParsePlan> {
     const refusal = refusalFor(url)
     if (refusal) throw new Error(refusal)
+    const noteId = xiaohongshuNoteId(new URL(url))
+    if (noteId) return this.readXiaohongshuVideo(url, noteId, signal)
     // An adapter can claim an address and then stand down once it has read it - a 哔哩哔哩 video with no
     // parts and no collection is one video - in which case this falls through to the ordinary route.
     // A job re-resolving its post skips the listing adapters - expanding a listing again would queue
@@ -249,7 +275,7 @@ export class Parser {
       if (!single) { plan.loadFormats = loadFormats; plan.sampleItemId = plan.result.items[0]?.id }
       return plan
     }
-    const listing = direct?.listing ? { ...direct.listing, title: direct.listing.title || i18n.t('errors:parse.group'), kind: direct.listing.kind || 'collection' as const, cookies: direct.cookies, userAgent: direct.userAgent }
+    const listing: Listing | undefined = direct?.listing ? { ...direct.listing, title: direct.listing.title || i18n.t('errors:parse.group'), kind: direct.listing.kind || 'collection' as const, cookies: direct.cookies, userAgent: direct.userAgent }
       : adapter && (!single || adapter.post || adapter.work) ? await this.browser.inspectProfile(url, page, group, signal, order, single) : undefined
     if (listing?.kind === 'work' && listing.sample) {
       const info = listing.sample.info
@@ -292,14 +318,14 @@ export class Parser {
         }
       }
       if (!items.length && page === 1) throw new LoginRequired(i18n.t(listing.kind === 'collection' ? 'errors:parse.listingCollectionEmpty' : 'errors:parse.listingProfileEmpty'))
-      const result: MediaResult = { id: randomUUID(), url, title: listing.title, platform: platformOf(url), method: 'browser', listing: listing.kind, groups, items }
+      const result: MediaResult = { id: randomUUID(), url, title: listing.title, platform: platformOf(url), method: 'browser', listing: listing.kind, groups, items, truncated: listing.truncated, ...(listing.session ? { session: listing.session } : {}) }
       if (listing.sample) {
         const info = listing.sample.info
         const sampleUrl = info.webpage_url || url
         const samplePlan = this.fromEngine(info, { operation: 'extract', url: sampleUrl, info, cookies: listing.cookies, headers: { Referer: sampleUrl, 'User-Agent': listing.userAgent } }, 'browser')
         const sample = samplePlan.result.items[0]
         const item = items.find(item => item.id === listing.sample!.id)
-        if (item && sample) { item.formats = sample.formats; item.audioFormats = sample.audioFormats }
+        if (item && sample) { item.formats = sample.formats; item.audioFormats = sample.audioFormats; item.subtitleTracks = sample.subtitleTracks }
         result.formats = sample.formats; result.audioFormats = sample.audioFormats
         this.rememberWork(sampleUrl, samplePlan)
       }
@@ -368,7 +394,7 @@ export class Parser {
             extractor: 'browser', extractor_key: 'Generic', formats: [
               { format_id: 'browser-audio', url: audio.url, ext: 'm4a', vcodec: 'none', acodec: audio.codec },
               { format_id: 'browser-video', url: video.url, ext: 'mp4', acodec: 'none',
-                vcodec: video.codec === 'hvc1' ? 'hevc' : video.codec === 'av01' ? 'av1' : 'h264', height: media.player?.height },
+                vcodec: video.codec === 'hvc1' ? 'hevc' : video.codec === 'av01' ? 'av1' : 'h264', width: media.player?.width, height: media.player?.height },
             ] },
         }
         return this.fromEngine(await this.extract(request, signal), request, 'browser')

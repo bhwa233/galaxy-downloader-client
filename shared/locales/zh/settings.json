@@ -87,9 +87,9 @@
       "hint": "将合集或分 P 保存到各自的文件夹。"
     },
     "videoQuality": {
-      "label": "默认视频质量",
-      "best": "最佳可用画质",
-      "upTo": "最高 {{height}}p"
+      "label": "默认选档",
+      "best": "最高画质",
+      "lowest": "最低画质"
     },
     "audioFormat": {
       "label": "音频格式",

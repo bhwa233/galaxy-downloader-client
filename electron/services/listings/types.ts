@@ -21,7 +21,7 @@ export type ListingGroup = { id: string; title?: string; kind?: GroupKind; direc
 export type ListingOwner = { id: string; name: string; avatar?: string }
 // 'sample' is private extraction data already supplied by the list/detail response. Parser consumes
 // it in main and returns only normalized metadata and tiers, never these signed URLs.
-export type ListingPage = { title?: string; kind?: ListingKind | 'post' | 'work'; groups: ListingGroup[]; owner?: ListingOwner; sample?: { id: string; info: RawInfo } }
+export type ListingPage = { title?: string; kind?: ListingKind | 'post' | 'work'; groups: ListingGroup[]; owner?: ListingOwner; sample?: { id: string; info: RawInfo }; truncated?: { shown: number } }
 // Most adapters serve one group; this is the shape they all had before a second one was possible.
 export function onePage(id: string, title: string | undefined, entries: ListingEntry[], pagination: Pagination, kind?: GroupKind): ListingPage {
   return { title, groups: [{ id, title, kind, entries, pagination }] }
@@ -40,15 +40,14 @@ export type Fingerprint = { glVersion: string; glRenderer: string; glVendor: str
 // Reads a value out of the open page. Some platforms keep what a request to them needs in the page
 // rather than in storage - X puts its CSRF token in a cookie the page can read and its GraphQL
 // operation ids in its own script bundle - and there is no way to ask for it from out here.
-// Deliberately read-only in spirit: this is for finding out what the page already knows, not for
-// driving it. Scrolling a listing is still the thing this client does not do.
 export type Evaluate = <T>(expression: string) => Promise<T>
+export type PageResponse = { status: number; payload?: unknown }
 // A reply is only this adapter's to read when the field it expects is an object. A string or an array
 // where a record should be is the endpoint having moved, not the platform refusing, and the two get
 // opposite answers: one stands down, the other is reported.
 export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 // 'group' names which tab the page number belongs to; the others keep whatever page they were on.
-export type PageRequest = { url: URL; page: number; group?: string; order?: 'reverse'; single?: boolean; fetch: Fetcher; evaluate?: Evaluate; userAgent: string; locale: Settings['locale']; fingerprint?: Fingerprint; storage?: Record<string, string>; cookies?: Readonly<Record<string, string>>; signal: AbortSignal }
+export type PageRequest = { url: URL; page: number; group?: string; order?: 'reverse'; single?: boolean; fetch: Fetcher; evaluate?: Evaluate; responses?: readonly PageResponse[]; userAgent: string; locale: Settings['locale']; fingerprint?: Fingerprint; storage?: Record<string, string>; cookies?: Readonly<Record<string, string>>; signal: AbortSignal }
 
 export interface ProfileAdapter {
   readonly id: string
@@ -61,8 +60,8 @@ export interface ProfileAdapter {
   matches(url: URL): boolean
   // Where the listing actually lives: a bare space URL lands on a feed that renders too late to read.
   entryUrl(url: URL): string
-  // The platform's listing API, through its own session or a page that supplies its signing SDK.
-  // There is no grid-walking behind it; pagination stays with each platform's existing adapter.
+  observeResponse?(response: URL, profile: URL): boolean
+  // Pagination stays with the platform adapter, whether it calls an API or reads the open page.
   //
   // 'undefined' is the adapter standing down: it claimed the address, read it, and found nothing of its
   // own to list - a 哔哩哔哩 video page that is neither multi-part nor part of a collection is one video

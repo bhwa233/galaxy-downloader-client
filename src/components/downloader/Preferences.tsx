@@ -9,6 +9,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemSeparat
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Choice } from './Choice'
 import { FilenameSettings } from './FilenameSettings'
@@ -122,7 +123,13 @@ export function Preferences({ state, send, initialSection = 'general' }: { state
               </Field>
               <FilenameSettings settings={draft} example={state.parse.result?.items[0]} patch={patch} />
               {toggle('organizeByCollection', t('files.organizeByCollection.label'), t('files.organizeByCollection.hint'))}
-              <Choice label={t('files.videoQuality.label')} value={draft.videoQuality} onChange={value => patch({ videoQuality: value as Settings['videoQuality'] })} options={[{ value: 'best', label: t('files.videoQuality.best') }, ...['1080', '720', '480'].map(value => ({ value, label: t('files.videoQuality.upTo', { height: value }) }))]} />
+              <FieldSet>
+                <FieldLegend variant="label">{t('files.videoQuality.label')}</FieldLegend>
+                <ToggleGroup spacing={0} variant="outline" aria-label={t('files.videoQuality.label')} value={[draft.videoQuality]} onValueChange={([value]) => { if (value === 'best' || value === 'lowest') patch({ videoQuality: value }) }}>
+                  <ToggleGroupItem value="best">{t('files.videoQuality.best')}</ToggleGroupItem>
+                  <ToggleGroupItem value="lowest">{t('files.videoQuality.lowest')}</ToggleGroupItem>
+                </ToggleGroup>
+              </FieldSet>
               <Choice label={t('files.audioFormat.label')} value={draft.audioFormat} onChange={value => patch({ audioFormat: value as Settings['audioFormat'] })} options={[{ value: 'best', label: t('files.audioFormat.best') }, ...(['mp3', 'm4a', 'flac'] as const).map(value => ({ value, label: t('files.audioFormat.convert', { format: value.toUpperCase() }) }))]} />
               <SettingsSection title={t('files.cover.legend')}>
                 {toggle('saveThumbnail', t('files.cover.save.label'), t('files.cover.save.hint'))}

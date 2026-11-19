@@ -5,6 +5,8 @@
   "estimating": "正在估算剩余时间…",
   "revealFile": "打开文件位置",
   "open": "打开",
+  "openFile": "打开文件",
+  "moreActions": "更多操作",
   "copyPath": "复制文件路径",
   "downloadCover": "下载封面",
   "downloadAudio": "下载音频",
@@ -46,6 +48,7 @@
     "expired": { "title": "媒体地址失效或被拒绝", "hint": "重试会重新解析作品、换一个新的地址。反复出现时，可能需要在应用内浏览器重新登录。" },
     "network": { "title": "网络连接出错", "hint": "检查网络或系统代理后重试；网络慢时可以在设置中加长连接超时。" },
     "convert": { "title": "合并或转换失败", "hint": "在设置 → 工具与更新里检查 FFmpeg 是否可用，然后重试。" },
+    "quality": { "title": "所选画质不可用", "hint": "重新解析链接后，选择当前可用的画质并新建任务。" },
     "generic": { "title": "下载失败", "hint": "可以直接重试；反复失败时，导出诊断日志便于排查。" }
   },
   "files": {
@@ -78,6 +81,7 @@
     "stats": "播放 / 弹幕 / 评论 / 点赞",
     "source": "来源",
     "directory": "保存目录",
+    "batch": "批次",
     "downloaded": "已下载",
     "speed": "当前速度",
     "eta": "剩余时间",

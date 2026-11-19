@@ -1,5 +1,5 @@
 import { BrowserWindow, WebContentsView, net, session, type Rectangle, type Session, type WebContents } from 'electron'
-import type { ListingKind, Settings } from '../../shared/contracts'
+import type { ListingKind, ParseSession, Settings } from '../../shared/contracts'
 import type { Cookie } from './engine'
 import { acceptLanguageFor, chromeUserAgent, clientHints, fetchMetadata, relatedTo } from './identity'
 import { adapters, findAdapter } from './listings'
@@ -8,18 +8,19 @@ import { LoginRequired, VerificationRequired } from './login'
 import { head, logger } from './log'
 import { i18n } from '../../shared/i18n'
 import { ARTICLE_HOSTS } from './media'
-import type { Fetcher, Fingerprint, ListingGroup, ListingPage, PageRequest, ProfileAdapter } from './listings/types'
+import type { Fetcher, Fingerprint, ListingGroup, ListingPage, PageRequest, PageResponse, ProfileAdapter } from './listings/types'
+import { xiaohongshuNoteId, xiaohongshuPageSession } from './listings/xiaohongshu'
 
 // 'article' says the page is prose with media in it rather than a player page, which decides whether
 // pictures and video are two kinds of the same result or two candidates for one.
 // A player on the page as the page shows it: its poster, and - when it sits inside a card linking to a
 // post - that post's address and text. What a stream caught off the network is matched against.
 export type Poster = { poster: string; link?: string; text?: string }
-export type BrowserMedia = { player?: { width: number; height: number; duration?: number }; verification?: boolean; manifests?: string[]; title: string; url: string; videos: string[]; images: string[]; posters: Poster[]; article: boolean; thumbnail?: string; cookies: Cookie[]; userAgent: string }
+export type BrowserMedia = { player?: { width: number; height: number; duration?: number }; verification?: boolean; manifests?: string[]; title: string; url: string; videos: string[]; images: string[]; posters: Poster[]; article: boolean; thumbnail?: string; note?: unknown; session?: ParseSession; cookies: Cookie[]; userAgent: string }
 // 'area' is where the window's preview dialog wants the page; 'host' is the window it is shown in,
 // left off while the preview is closed.
 type PreviewView = { view: WebContentsView; host?: BrowserWindow; area: Rectangle; fullscreen: boolean; onClosed?: () => void }
-export type Listing = { title: string; kind: ListingKind | 'post' | 'work'; groups: ListingGroup[]; cookies: Cookie[]; userAgent: string; owner?: import('./listings/types').ListingOwner; sample?: ListingPage['sample'] }
+export type Listing = { title: string; kind: ListingKind | 'post' | 'work'; groups: ListingGroup[]; cookies: Cookie[]; userAgent: string; owner?: import('./listings/types').ListingOwner; sample?: ListingPage['sample']; truncated?: ListingPage['truncated']; session?: ParseSession }
 export type { ListingEntry, ListingGroup, Pagination } from './listings/types'
 
 const log = logger('browser')
@@ -46,8 +47,9 @@ function toCookies(cookies: Electron.Cookie[]): Cookie[] {
   }))
 }
 
-type Watcher = { json?: { matches: (url: string) => boolean; consume: (payload: unknown) => void }; response?: (url: string, mimeType: string, status: number) => void }
+type Watcher = { json?: { matches: (url: string) => boolean; consume: (response: PageResponse) => void }; response?: (url: string, mimeType: string, status: number) => void }
 type Attached = { evaluate: <T>(expression: string) => Promise<T>; settle: () => Promise<void> }
+const XIAOHONGSHU_SESSION = `(${xiaohongshuPageSession})()`
 
 // Response bodies and player requests are only observable through the protocol, and a per-page
 // debugger keeps concurrent parses independent - a session-wide webRequest listener would not.
@@ -55,18 +57,30 @@ type Attached = { evaluate: <T>(expression: string) => Promise<T>; settle: () =>
 // does not: a site that forbids 'unsafe-eval' - bilibili does - rejects every script sent that way.
 function watch(contents: WebContents, watcher: Watcher): Attached {
   const pending = new Set<Promise<void>>()
+  const bodies = new Map<unknown, number>()
   const viaPage = async <T>(expression: string) => await contents.executeJavaScript(expression, true) as T
   try { contents.debugger.attach('1.3') } catch { return { evaluate: viaPage, settle: async () => {} } }
   const onMessage = (_event: Electron.Event, method: string, params: Record<string, unknown>) => {
-    if (method !== 'Network.responseReceived') return
-    const response = params.response as { url?: string; mimeType?: string; status?: number } | undefined
-    if (!response?.url) return
-    watcher.response?.(response.url, response.mimeType || '', response.status ?? 0)
-    if (!watcher.json?.matches(response.url)) return
+    if (method === 'Network.responseReceived') {
+      const response = params.response as { url?: string; mimeType?: string; status?: number } | undefined
+      if (!response?.url) return
+      const status = response.status ?? 0
+      watcher.response?.(response.url, response.mimeType || '', status)
+      if (watcher.json?.matches(response.url)) {
+        if (status >= 400) watcher.json.consume({ status })
+        else bodies.set(params.requestId, status)
+      }
+      return
+    }
+    const status = bodies.get(params.requestId)
+    if (status === undefined) return
+    if (method === 'Network.loadingFailed') { bodies.delete(params.requestId); return }
+    if (method !== 'Network.loadingFinished') return
+    bodies.delete(params.requestId)
     const task = (async () => {
       try {
         const { body, base64Encoded } = await contents.debugger.sendCommand('Network.getResponseBody', { requestId: params.requestId }) as { body: string; base64Encoded: boolean }
-        watcher.json!.consume(JSON.parse(base64Encoded ? Buffer.from(body, 'base64').toString('utf8') : body))
+        watcher.json!.consume({ status, payload: JSON.parse(base64Encoded ? Buffer.from(body, 'base64').toString('utf8') : body) })
       } catch { /* Some responses are empty or already evicted; the DOM remains a metadata fallback. */ }
     })().finally(() => pending.delete(task))
     pending.add(task)
@@ -93,6 +107,7 @@ function watch(contents: WebContents, watcher: Watcher): Attached {
 
 export class EmbeddedBrowser {
   private loginWindow: BrowserWindow | null = null
+  private loginCompletion?: { callback: (session?: ParseSession) => void; confirmSession: boolean }
   private preview?: PreviewView
   private prepared = false
   // When each host was last visited for its own sake, so a walk that starts cold pays for one visit
@@ -108,7 +123,7 @@ export class EmbeddedBrowser {
   // How often this client talks to each platform, held across every walk rather than per walk: see Pace.
   private pace = new Pace()
   // The window a listing was last read in, kept for the next page of the same listing.
-  private open?: { address: string; window: BrowserWindow; page: Attached; timer: NodeJS.Timeout }
+  private open?: { address: string; window: BrowserWindow; page: Attached; timer: NodeJS.Timeout; responses?: PageResponse[] }
 
   constructor(private locale: () => Settings['locale'] = () => 'zh') {}
 
@@ -187,10 +202,11 @@ export class EmbeddedBrowser {
 
   // The visible counterpart of the hidden parsing window: the same partition, so a login completed
   // here is the login the next parse uses.
-  openLogin(url: string, onClosed: () => void = () => {}): void {
+  openLogin(url: string, onClosed: (session?: ParseSession) => void = () => {}, confirmSession = false): void {
+    this.loginCompletion = { callback: onClosed, confirmSession }
     if (this.loginWindow && !this.loginWindow.isDestroyed()) {
       this.loginWindow.show(); this.loginWindow.focus()
-      if (url) void this.loginWindow.loadURL(url)
+      if (url && this.loginWindow.webContents.getURL() !== url) void this.loginWindow.loadURL(url).catch(() => {})
       return
     }
     const window = new BrowserWindow({
@@ -203,9 +219,28 @@ export class EmbeddedBrowser {
       return { action: 'deny' }
     })
     // The login only becomes visible to the client once the user is done with the window.
-    window.on('closed', () => { this.loginWindow = null; this.release(); for (const adapter of adapters) adapter.reset?.(); this.warmed.clear(); onClosed() })
+    let closing = false
+    let confirmed: ParseSession | undefined
+    window.on('close', event => {
+      if (!this.loginCompletion?.confirmSession || closing && confirmed !== undefined) return
+      event.preventDefault()
+      if (closing) return
+      closing = true
+      const check = window.webContents.executeJavaScript(XIAOHONGSHU_SESSION).catch(() => 'unknown' as const)
+      const timeout = AbortSignal.timeout(900)
+      void Promise.race([check, new Promise(resolve => timeout.addEventListener('abort', () => resolve('unknown'), { once: true }))]).then(value => {
+        confirmed = value === 'signedIn' ? 'signedIn' : value === 'guest' ? 'guest' : 'unknown'
+        if (!window.isDestroyed()) window.close()
+      })
+    })
+    window.on('closed', () => {
+      const completion = this.loginCompletion
+      this.loginCompletion = undefined; this.loginWindow = null; this.release()
+      for (const adapter of adapters) adapter.reset?.()
+      this.warmed.clear(); completion?.callback(confirmed)
+    })
     this.loginWindow = window
-    void window.loadURL(url || 'about:blank')
+    void window.loadURL(url || 'about:blank').catch(() => {})
   }
 
   // An item's own page, shown inside the client's window where its preview dialog is: a view laid
@@ -378,12 +413,6 @@ export class EmbeddedBrowser {
 
   // Page 1 unless asked otherwise: a listing is only read further when the user turns the page.
   //
-  // One route, not a ladder. The platform's own listing API is called from inside a page of its site,
-  // so the cookies, the Origin, the Referer, the client hints and the TLS handshake are supplied by the
-  // browser and are true rather than asserted. There is no grid-walking behind it: scrolling a listing
-  // is the behaviour risk control watches for, and a refusal is worth more to the caller reported as a
-  // refusal than dressed up as a profile with fewer posts than it has.
-  //
   // 'undefined' is the adapter standing down after reading the address - see ProfileAdapter.fetchPage -
   // and means this route has nothing to offer, not that it failed.
   // One read at a time. There is one listing window, and a second read arriving while the first is
@@ -437,9 +466,9 @@ export class EmbeddedBrowser {
     return Boolean(this.open && !this.open.window.isDestroyed() && this.open.window.webContents.getURL().startsWith(`${new URL(address).origin}/`) && (this.open.address === address || adapter.reusePage === 'origin' && new URL(this.open.address).origin === new URL(address).origin))
   }
 
-  private async listingResult(listing: ListingPage, address: string): Promise<Listing> {
+  private async listingResult(listing: ListingPage, address: string, session?: ParseSession): Promise<Listing> {
     const entries = listing.groups.flatMap(group => group.entries)
-    return { title: listing.title || i18n.t('errors:browser.profileTitle'), kind: listing.kind || 'profile', groups: listing.groups, owner: listing.owner, sample: listing.sample, userAgent: this.userAgent,
+    return { title: listing.title || i18n.t('errors:browser.profileTitle'), kind: listing.kind || 'profile', groups: listing.groups, owner: listing.owner, sample: listing.sample, truncated: listing.truncated, userAgent: this.userAgent, session,
       cookies: await this.cookiesFor([address, ...relatedTo(address), ...entries.map(entry => entry.url)]) }
   }
 
@@ -466,11 +495,16 @@ export class EmbeddedBrowser {
       if (adapter.id === 'bilibili') await this.warm(url, signal)
       warmed = Date.now()
       const window = this.hidden()
-      // Nothing to listen for, but the protocol is what evaluates out of the page's own CSP.
-      const page = watch(window.webContents, {})
-      this.open = { address, window, page, timer: setTimeout(() => this.release(), REUSE_FOR) }
+      const responses = adapter.observeResponse ? [] as PageResponse[] : undefined
+      const profile = new URL(url)
+      const page = watch(window.webContents, { json: responses ? {
+        matches: response => adapter.observeResponse!(new URL(response), profile),
+        consume: response => { if (responses.length < 100) responses.push(response) },
+      } : undefined })
+      this.open = { address, window, page, responses, timer: setTimeout(() => this.release(), REUSE_FOR) }
       try {
-        await this.load(window, address, signal)
+        const loading = adapter.observeResponse ? AbortSignal.any([signal, AbortSignal.timeout(25_000)]) : signal
+        await this.load(window, address, loading)
         loaded = Date.now()
         this.warmed.set(new URL(url).hostname, loaded)
         // A page is looked at before it is asked anything.
@@ -490,7 +524,7 @@ export class EmbeddedBrowser {
     try { listing = await adapter.fetchPage!({
       // Paced by the browser's own Pace, which counts every request this client makes to the host
       // rather than only the ones belonging to this walk.
-      url: new URL(url), page: index, group, order, single, fetch: this.pace.wrap(pageFetch(held.page.evaluate)), evaluate: held.page.evaluate, userAgent: this.userAgent,
+      url: new URL(url), page: index, group, order, single, fetch: this.pace.wrap(pageFetch(held.page.evaluate)), evaluate: held.page.evaluate, responses: held.responses, userAgent: this.userAgent,
       locale: this.locale(), fingerprint: adapter.id === 'bilibili' ? await this.fingerprint(signal) : undefined,
       // Read off the page that is open rather than from the warm-up's record of an earlier visit.
       storage: adapter.id === 'bilibili' ? await held.page.evaluate<Record<string, string>>(STORAGE).catch(() => undefined) : undefined, signal,
@@ -503,7 +537,9 @@ export class EmbeddedBrowser {
     }
     const entries = listing.groups.flatMap(group => group.entries)
     log.info(`[listing ${adapter.id} 第 ${index} 页] 预热 ${warmed - opened}ms · 加载 ${loaded - warmed}ms · 停顿 ${settled - loaded}ms · 取数 ${asked - settled}ms · 合计 ${asked - opened}ms · ${entries.length} 条`)
-    return await this.listingResult(listing, held.window.webContents.getURL())
+    const session = adapter.id === 'xiaohongshu' ? await held.page.evaluate<ParseSession>(XIAOHONGSHU_SESSION).catch(() => 'unknown' as const) : undefined
+    signal.throwIfAborted()
+    return await this.listingResult(listing, held.window.webContents.getURL(), session)
   }
 
   // Pages whose media is prose rather than a player: the pictures are laid out in the article body and
@@ -531,6 +567,7 @@ export class EmbeddedBrowser {
 
   async inspect(url: string, signal: AbortSignal): Promise<BrowserMedia> {
     signal.throwIfAborted()
+    const noteId = xiaohongshuNoteId(new URL(url))
     const window = this.hidden()
     const videos = new Set<string>()
     const manifests = new Set<string>()
@@ -543,24 +580,25 @@ export class EmbeddedBrowser {
         && (/mpegurl|dash\+xml|video\/mp4|audio\/mpeg/.test(mimeType) || /\.(m3u8|mpd)(\?|$)/i.test(address))) videos.add(address)
     } })
     try {
-      await this.load(window, url, signal)
+      await this.load(window, url, noteId ? AbortSignal.any([signal, AbortSignal.timeout(25_000)]) : signal)
       // Long enough for a player to ask for its manifest, and never the same length twice.
       await pause(signal, PACE.media)
       signal.throwIfAborted()
       const article = ARTICLE_HOSTS.test(new URL(url).hostname)
-      const data = await page.evaluate<{ player?: BrowserMedia['player']; verification?: boolean; title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string }>(`(${mediaScript})(${article})`)
+      const data = await page.evaluate<{ player?: BrowserMedia['player']; verification?: boolean; title: string; images: string[]; media: string[]; posters: Poster[]; thumbnail: string; userAgent: string; note?: unknown }>(`(${mediaScript})(${article}, ${JSON.stringify(noteId || '')})`)
       // A 微信公众号 music card is an iframe: the article names the song and the player, and the audio
       // address is only inside that frame. Asked of every frame rather than of that one - a page's
       // media living in a frame is not special to one platform - and best-effort, because a frame
       // from another origin, or one whose CSP refuses the script, simply answers nothing.
       for (const found of await this.framesMedia(window, signal)) data.media.push(found)
+      const session = noteId ? await page.evaluate<ParseSession>(XIAOHONGSHU_SESSION).catch(() => 'unknown' as const) : undefined
       await page.settle()
       const address = window.webContents.getURL()
       // The counterpart of the listing log: when a page answers with nothing, this is what says
       // whether the page never arrived or arrived and held nothing.
       log.info(`[inspect] ${address} · 标题「${data.title.slice(0, 40)}」· 视频 ${data.media.length} · 图片 ${data.images.length} · 响应里的媒体 ${videos.size}${article ? ' · 按文章处理' : ''}`)
       for (const found of data.media) videos.add(new URL(found, address).href)
-      return { player: data.player, verification: data.verification, manifests: [...new Set([...manifests, ...videos].filter(found => manifests.has(found) || /\.m3u8(?:[?#]|$)/i.test(found)))], title: data.title, url: address, videos: [...videos], images: data.images, posters: data.posters, article, thumbnail: data.thumbnail, userAgent: data.userAgent, cookies: await this.cookiesFor([address, ...relatedTo(address), ...videos, ...data.images]) }
+      return { player: data.player, verification: data.verification, note: data.note, session, manifests: [...new Set([...manifests, ...videos].filter(found => manifests.has(found) || /\.m3u8(?:[?#]|$)/i.test(found)))], title: data.title, url: address, videos: [...videos], images: data.images, posters: data.posters, article, thumbnail: data.thumbnail, userAgent: data.userAgent, cookies: await this.cookiesFor([address, ...relatedTo(address), ...videos, ...data.images]) }
     } finally { await page.settle().catch(() => {}); if (!window.isDestroyed()) window.destroy() }
   }
 }
@@ -646,9 +684,10 @@ const frameMediaScript = function () {
 // 'article' asks for the pictures laid out in the prose as well. Only where the caller knows the page
 // is an article: on an ordinary media page the same sweep would pick up thumbnails and chrome, and a
 // page that answers with pictures never gets the engine attempt that would have found its video.
-const mediaScript = function (article: boolean) {
+const mediaScript = function (article: boolean, noteId: string) {
   const meta = (name: string) => document.querySelector<HTMLMetaElement>(`meta[property="${name}"],meta[name="${name}"]`)?.content || ''
-  const images = new Set<string>(); const media = new Set<string>(); const state = (window as unknown as { __INITIAL_STATE__?: unknown }).__INITIAL_STATE__; let title = meta('og:title') || document.title
+  const images = new Set<string>(); const media = new Set<string>(); const title = meta('og:title') || document.title
+  const state = (window as unknown as { __INITIAL_STATE__?: { note?: { noteDetailMap?: Record<string, { note?: unknown }> } } }).__INITIAL_STATE__
   // An article is pictures in prose rather than a gallery with a data model behind it: 微信公众号 keeps
   // them in the document as lazy <img data-src>, which is the address, while 'src' is a placeholder
   // until the reader scrolls. Only pictures big enough to be the article's own: avatars, qr codes and
@@ -674,13 +713,7 @@ const mediaScript = function (article: boolean) {
       try { images.add(new URL(address, location.href).href.replace(/^http:\/\//, 'https://')) } catch { /* A relative address the page built wrong. */ }
     }
   }
-  const visited = new WeakSet<object>()
-  const findMap = (value: unknown): Record<string, { note?: Record<string, unknown> }> | undefined => {
-    if (!value || typeof value !== 'object') return undefined; const object = value as object; if (visited.has(object)) return undefined; visited.add(object)
-    try { const record = value as Record<string, unknown>; const map = record.noteDetailMap; if (map && typeof map === 'object') return map as Record<string, { note?: Record<string, unknown> }>; for (const key of Object.keys(record)) { let child: unknown; try { child = record[key] } catch { continue }; const found = findMap(child); if (found) return found } } catch { /* reactive proxy */ }; return undefined
-  }
-  const noteMap = findMap(state); const note = noteMap && Object.values(noteMap)[0]?.note
-  if (note) { title = typeof note.title === 'string' ? note.title : title; const list = Array.isArray(note.imageList) ? note.imageList as { urlDefault?: string; url?: string }[] : []; for (const image of list) if (image.urlDefault || image.url) images.add(image.urlDefault || image.url!); const video = note.video as { media?: { stream?: Record<string, { masterUrl?: string }[]> } } | undefined; for (const variants of Object.values(video?.media?.stream || {})) for (const variant of variants) if (variant.masterUrl) media.add(variant.masterUrl) }
+  const note = noteId ? state?.note?.noteDetailMap?.[noteId]?.note : undefined
   for (const element of document.querySelectorAll<HTMLMediaElement>('video, audio')) { const address = element.currentSrc || element.src; if (/^https?:/.test(address)) media.add(address) }
   for (const resource of performance.getEntriesByType('resource')) if (/^https?:/.test(resource.name) && /\.m3u8(?:[?#]|$)/i.test(resource.name)) media.add(resource.name)
   for (const element of document.querySelectorAll<HTMLSourceElement>('video source, audio source')) if (element.src) media.add(element.src)
@@ -701,5 +734,5 @@ const mediaScript = function (article: boolean) {
     && /just a moment|请稍候|请稍等|security verification|checking your browser/i.test(document.title + ' ' + (document.body?.innerText || '').slice(0, 1500))
   const player = [...document.querySelectorAll<HTMLVideoElement>('video')].find(video => video.videoWidth && video.videoHeight)
   return { verification, player: player ? { width: player.videoWidth, height: player.videoHeight, duration: Number.isFinite(player.duration) ? player.duration : undefined } : undefined,
-    title, images: [...images], media: [...media], posters, thumbnail: meta('og:image'), userAgent: navigator.userAgent }
+    title, note, images: [...images], media: [...media], posters, thumbnail: meta('og:image'), userAgent: navigator.userAgent }
 }

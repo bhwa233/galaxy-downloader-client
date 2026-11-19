@@ -1,7 +1,6 @@
 {
   "parse": {
     "incompleteTracks": "未能读取完整的音视频，请重新解析。",
-    "xiaohongshuProfile": "暂不支持小红书主页解析，请改用单篇笔记链接。",
     "notAResource": "暂不支持解析这个链接：它是平台首页或信息流，不是作品页或列表页。请粘贴具体的视频、合集或作者主页链接。",
     "collectionEmpty": "这部合集里没有可下载的内容：没有读到任何一集，或者每一集都需要单独购买",
     "listingCollectionEmpty": "这个合集里没有读到任何内容。请打开登录窗口完成登录或验证后重试。",
@@ -115,7 +114,11 @@
     "media": "{{handle}} 的媒体"
   },
   "xiaohongshu": {
-    "note": "小红书笔记 {{id}}"
+    "note": "小红书笔记 {{id}}",
+    "videoOnly": "小红书目前只支持视频笔记，暂不支持图文笔记。",
+    "noVideos": "此小红书主页没有可读取的视频笔记。",
+    "unavailable": "这条小红书链接没有返回可用内容。请在应用内浏览器确认能打开原链接，再重新解析。",
+    "profileIncomplete": "小红书未返回更多主页笔记，无法确认列表已读完。请稍后重试。"
   },
   "youtube": {
     "video": "YouTube 视频 {{id}}",

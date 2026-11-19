@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { commandSchemas, settingsSchema, type ClientState, type Command, type HistoryEntry, type Job, type JobFile, type Reply } from '../../shared/contracts'
+import { commandSchemas, settingsSchema, type ClientState, type Command, type HistoryEntry, type Job, type JobFile, type MediaResult, type ParseSession, type Reply } from '../../shared/contracts'
 import { Store } from '../services/store'
 import { Engine, redact } from '../services/engine'
 import { EmbeddedBrowser } from '../services/browser'
@@ -11,6 +11,7 @@ import { mediaResult, normalizeUrl } from '../services/media'
 import { Parser, type ParsePlan } from '../services/parser'
 import { previewPage } from '../services/preview'
 import { i18n, localeFor, setLocale } from '../../shared/i18n'
+import { videoTierKey, videoTierOf } from '../../shared/video-quality'
 import { asAccessDenied } from '../services/access'
 import { LoginRequired, VerificationRequired } from '../services/login'
 import { Queue } from '../services/queue'
@@ -36,6 +37,7 @@ const CONTROLLABLE = new Set(['state:get', 'cli:hello', 'cli:parse', 'media:down
 // How many command-line results are kept to download from.
 const DETACHED = 20
 const filesFor = (job: Job) => job.namingVersion === 2 ? job.files.filter(file => path.dirname(path.resolve(file)) === path.resolve(job.directory)) : job.files
+const videoTiers = (result: MediaResult) => new Set([...(result.formats || []), ...result.items.flatMap(item => item.formats)].map(tier => tier.label || tier.id))
 
 // What a failed parse is reported as. Four refusals are told apart from one another and from an
 // ordinary failure: a sign-in fixes the first, an entitled account the next two, and nothing the last.
@@ -156,7 +158,7 @@ export class Controller {
       const raw = await plan.loadFormats(sampling)
       const sample = mediaResult(raw, plan.result.url, plan.result.method).items[0]
       const item = plan.result.items.find(item => item.id === plan.sampleItemId)
-      if (item && sample) { item.formats = sample.formats; item.audioFormats = sample.audioFormats }
+      if (item && sample) { item.formats = sample.formats; item.audioFormats = sample.audioFormats; item.subtitleTracks = sample.subtitleTracks }
       return { formats: sample?.formats || [], audioFormats: sample?.audioFormats || [] }
     }
     if (!plan.result.listing) return undefined
@@ -166,7 +168,9 @@ export class Controller {
     const first = plan.result.items.find(item => item.kind === 'video' && !item.wall && item.url)
     if (!first?.url) return undefined
     const sample = await this.parser.parse(first.url, undefined, sampling, { single: true })
-    return { formats: sample.result.items[0]?.formats, audioFormats: sample.result.items[0]?.audioFormats }
+    const sampled = sample.result.items[0]
+    first.subtitleTracks = sampled?.subtitleTracks
+    return { formats: sampled?.formats, audioFormats: sampled?.audioFormats }
   }
   private emit(): void { const win = this.window(); if (win && !win.isDestroyed()) win.webContents.send('desktop:state', this.state()) }
   async initialize(): Promise<void> {
@@ -202,9 +206,14 @@ export class Controller {
   // succeeded is not knowable from here. So the page that asked for it is simply asked for again, and
   // reports whatever it is given this time - including the same refusal, if the window was closed
   // without signing in. Cleared first, so a second close does not turn the page a second time.
-  private async afterLogin(): Promise<void> {
+  private async afterLogin(refresh?: { plan: ParsePlan; session?: ParseSession }): Promise<void> {
     this.parser.invalidate()
     this.browserSites = await this.browser.sites()
+    if (refresh) {
+      if (refresh.session === 'signedIn') await this.refreshAfterLogin(refresh.plan)
+      this.emit()
+      return
+    }
     const pending = this.pendingPage
     this.pendingPage = undefined
     const search = this.plan?.result.groups?.find(group => group.search?.status === 'interrupted')
@@ -214,6 +223,44 @@ export class Controller {
     }
     if (!pending) { this.emit(); return }
     await this.command('media:page', pending)
+  }
+
+  private async refreshAfterLogin(current: ParsePlan): Promise<void> {
+    if (this.stopping || this.plan !== current || this.parsing) return
+    const revision = ++this.queryRevision
+    this.subscriptions.interrupt()
+    this.querying?.controller.abort()
+    await this.querying?.done
+    if (this.stopping || this.plan !== current || this.parsing || revision !== this.queryRevision) return
+    const previous = this.parseState
+    const before = videoTiers(current.result)
+    const controller = new AbortController()
+    this.parsing = controller
+    this.parseState = { ...previous, qualityRefresh: { status: 'refreshing' } }
+    this.emit()
+    try {
+      const next = await this.parser.parse(current.result.url, undefined, controller.signal)
+      controller.signal.throwIfAborted()
+      if (next.result.session !== 'signedIn') throw new Error('Refreshed result did not confirm a signed-in session')
+      if (!next.result.formats && next.result.listing) {
+        const tiers = await this.readTiers(next, controller.signal)
+        Object.assign(next.result, { formats: [], audioFormats: [], ...tiers })
+      }
+      controller.signal.throwIfAborted()
+      if (this.plan !== current || this.parsing !== controller) return
+      const after = videoTiers(next.result)
+      const added = [...after].filter(tier => !before.has(tier)).length
+      current.formatController?.abort()
+      this.plan = next
+      this.pendingPage = undefined
+      this.parseState = { status: 'idle', result: next.result, qualityRefresh: { status: 'done', added, total: after.size } }
+      this.remember(next)
+    } catch (error) {
+      if (!controller.signal.aborted && this.plan === current && this.parsing === controller) {
+        log.warn('Could not refresh the result after signing in', error)
+        this.parseState = { ...previous, result: current.result, qualityRefresh: { status: 'failed' } }
+      }
+    } finally { if (this.parsing === controller) this.parsing = undefined }
   }
   private async refresh(): Promise<void> {
     this.browserSites = await this.browser.sites()
@@ -280,6 +327,15 @@ export class Controller {
           // The visible window shares its partition with the hidden one that parses, so the user
           // logs in once and the next parse carries it.
           this.browser.openLogin(commandSchemas['browser:login'].parse(input).url || this.parseState.loginUrl || '', () => void this.afterLogin())
+          break
+        }
+        case 'media:quality-login': {
+          const { resultId } = commandSchemas[command].parse(input)
+          const plan = this.plan
+          if (!plan || plan.result.id !== resultId || !plan.result.session || plan.result.session === 'signedIn') throw new Error(i18n.t('desktop:errors.parseExpired'))
+          this.browser.openLogin('https://www.xiaohongshu.com/explore', session => {
+            void this.afterLogin({ plan, session }).catch(error => log.warn('Could not refresh after closing the login window', error))
+          }, true)
           break
         }
         case 'browser:clear':
@@ -377,17 +433,27 @@ export class Controller {
           break
         }
         case 'media:download': {
-          const { resultId, itemIds, format, audioFormatId, audioLanguage, kinds, includeSubtitles } = commandSchemas['media:download'].parse(input)
+          const { resultId, itemIds, format, videoTier, audioFormatId, audioLanguage, kinds, includeSubtitles } = commandSchemas['media:download'].parse(input)
           const plan = this.planFor(resultId)
           const items = [...new Set(itemIds)].map(id => plan.catalog.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item))
           if (items.length !== new Set(itemIds).size) throw new Error(i18n.t('desktop:errors.selectionMissing'))
           // The window keeps these from being picked; this keeps them from being queued however asked.
           if (items.some(item => item.wall === 'purchase')) throw new Error(i18n.t('desktop:errors.needsPurchase'))
-          // A tier is either one of the item's own, or on a listing one of the tiers read off its first
-          // video - which a later video may lack, and is then downloaded at its best. Only the media
-          // itself has a tier; audio and covers ignore it.
-          const offered = (item: typeof items[number]) => item.formats.some(entry => entry.id === format) || Boolean(plan.result.listing && plan.result.formats?.some(entry => entry.id === format))
-          if (kinds.includes('video') && format !== 'best' && items.some(item => item.kind !== 'image' && !offered(item))) throw new Error(i18n.t('desktop:errors.qualityExpired'))
+          const videos = items.filter(item => item.kind === 'video')
+          const available = [...(plan.result.formats || []), ...Array.from(plan.catalog.values()).flatMap(item => item.formats)]
+          const exact = videos.length === 1 && videos[0].formats.find(entry => entry.id === format)
+          let target = videoTier
+          if (kinds.includes('video') && videos.length) {
+            if (!target && format !== 'best' && !exact) {
+              const sampled = available.find(entry => entry.id === format)
+              target = (videos.length > 1 || !videos[0].formats.length) && sampled ? videoTierOf(sampled) : undefined
+              if (!target) throw new Error(i18n.t('desktop:errors.qualityExpired'))
+            }
+            if (videoTier && (format !== 'best' || !available.some(entry => {
+              const tier = videoTierOf(entry)
+              return tier && videoTierKey(tier) === videoTierKey(videoTier)
+            }))) throw new Error(i18n.t('desktop:errors.qualityExpired'))
+          }
           const audioOffered = (item: typeof items[number]) => [ ...(item.audioFormats || []), ...(plan.result.listing ? plan.result.audioFormats || [] : []) ].some(entry => entry.id === audioFormatId && (!audioLanguage || entry.audioLanguage === audioLanguage))
           if (kinds.includes('audio') && audioFormatId !== 'best' && items.some(item => item.kind !== 'image' && !audioOffered(item))) throw new Error(i18n.t('desktop:errors.qualityExpired'))
           if (kinds.includes('audio') && audioLanguage && items.some(item => item.kind !== 'image' && ![...(item.audioFormats || []), ...(plan.result.audioFormats || [])].some(track => track.audioLanguage === audioLanguage))) throw new Error(i18n.t('desktop:errors.qualityExpired'))
@@ -396,7 +462,7 @@ export class Controller {
           const enqueue = (from: ParsePlan, picked: typeof items) => {
             for (const kind of kinds) {
               const applicable = kind === 'audio' ? picked.filter(item => item.kind !== 'image') : picked
-              if (applicable.length) this.queue.enqueue(from, applicable, kind === 'video' ? format : kind === 'audio' ? audioFormatId : 'best', kind === 'audio', kind === 'cover', jobIds, { includeSubtitles, audioLanguage: kind === 'audio' ? audioLanguage : undefined })
+              if (applicable.length) this.queue.enqueue(from, applicable, kind === 'video' && exact && !target ? format : kind === 'audio' ? audioFormatId : 'best', kind === 'audio', kind === 'cover', jobIds, { includeSubtitles, videoTier: kind === 'video' ? target : undefined, audioLanguage: kind === 'audio' ? audioLanguage : undefined })
             }
           }
           // A whole collection picked from a catalogue (a 短剧 from the 短剧 list) is not a file: it is

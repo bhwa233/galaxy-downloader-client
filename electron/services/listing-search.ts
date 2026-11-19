@@ -42,10 +42,12 @@ export class ListingSearch {
     const items = new Map(plan.result.items.map(item => [item.id, item]))
     for (const item of next.result.items) items.set(item.id, item)
     plan.result.items = [...items.values()]
+    if (plan.result.session && next.result.session !== plan.result.session) plan.result.session = 'unknown'
     held.ids.push(...fresh)
     held.pagination = group.pagination ? { ...group.pagination, total: group.pagination.total ?? held.pagination?.total } : undefined
     // A repeated page, missing continuation, or an explicit truncation is partial, never success.
     held.limited ||= Boolean(next.result.truncated) || Boolean(group.pagination?.hasMore && (!fresh.length || group.pagination.index < page)) || Boolean(held.pagination && !held.pagination.hasMore && held.pagination.total !== undefined && held.ids.length < held.pagination.total)
+    if (next.result.truncated) plan.result.truncated = { ...next.result.truncated, shown: held.ids.length }
     this.present(plan, groupId)
   }
 

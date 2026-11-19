@@ -61,7 +61,7 @@ function mediaOf(post: Post | undefined): RawInfo | undefined {
     seen.add(address)
     const codec = rate.is_h265 || ('is_bytevc1' in rate && rate.is_bytevc1) ? 'hvc1' : 'avc1'
     formats.push({ format_id: `dy-${'quality_type' in rate ? rate.quality_type ?? index : index}-${codec}`, url: address,
-      ext: 'mp4', height: stream.height, vcodec: codec, filesize: stream.data_size,
+      ext: 'mp4', width: stream.width, height: stream.height, vcodec: codec, filesize: stream.data_size,
       tbr: 'bit_rate' in rate && rate.bit_rate ? rate.bit_rate / 1000 : undefined, fps: 'FPS' in rate ? rate.FPS : undefined })
   }
   if (!formats.length) return undefined

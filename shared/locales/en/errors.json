@@ -1,7 +1,6 @@
 {
   "parse": {
     "incompleteTracks": "Couldn't read the complete video and audio. Parse the link again.",
-    "xiaohongshuProfile": "Xiaohongshu profiles can't be parsed yet. Use a link to a single note instead.",
     "notAResource": "This link can't be parsed: it is a platform home or feed page, not a work or a listing. Paste a link to a specific video, collection, or author page.",
     "collectionEmpty": "Nothing in this collection can be downloaded: no episodes were read, or every episode must be bought separately",
     "listingCollectionEmpty": "Nothing was read from this collection. Open the sign-in window, sign in or complete verification, then try again.",
@@ -116,7 +115,11 @@
     "media": "{{handle}}'s media"
   },
   "xiaohongshu": {
-    "note": "Xiaohongshu note {{id}}"
+    "note": "Xiaohongshu note {{id}}",
+    "videoOnly": "Only video notes are supported on Xiaohongshu. Photo notes aren't supported yet.",
+    "noVideos": "No video notes were found on this Xiaohongshu profile.",
+    "unavailable": "This Xiaohongshu link didn't return usable content. Check that the original link opens in the in-app browser, then try again.",
+    "profileIncomplete": "Xiaohongshu didn't return more notes, so the listing could not be confirmed as complete. Try again later."
   },
   "youtube": {
     "video": "YouTube video {{id}}",

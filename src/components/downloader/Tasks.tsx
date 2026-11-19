@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Copy, Download, ExternalLink, FileX, FolderOpen, Image as ImageIcon, Layers, Link as LinkIcon, LogIn, Music, Pause, Play, RotateCcw, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
+import { Menu } from '@base-ui/react/menu'
+import { Copy, Download, Ellipsis, ExternalLink, FileX, FolderOpen, Image as ImageIcon, Info, Layers, Link as LinkIcon, LogIn, Music, Pause, Play, RotateCcw, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
@@ -9,9 +10,11 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
+import { Progress } from '@/components/ui/progress'
 import { TransferProgress } from './TransferProgress'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { MediaCover, MediaStatsRow } from './MediaCard'
 import { fixableBySignIn, wallTitle } from './walls'
 import { cn, formatBytes, formatDate, formatDuration, platformLabel } from '@/lib/utils'
@@ -30,23 +33,51 @@ function Cover({ job, className }: { job: Job; className?: string }) {
     <span className="absolute right-0.5 bottom-0.5 rounded bg-background/80 px-1 text-[10px] leading-4">{t(`common:kinds.${job.kind || 'video'}`)}</span>
   </MediaCover>
 }
-function Actions({ job, send }: { job: Job; send: Send }) {
+function TaskButton({ label, children, onClick, disabled, className, destructive }: { label: string; children: ReactNode; onClick: () => void; disabled?: boolean; className?: string; destructive?: boolean }) {
+  return <Tooltip>
+    <TooltipTrigger render={<Button type="button" variant={destructive ? 'destructive' : 'ghost'} size="icon-sm" aria-label={label} disabled={disabled} className={className} onClick={onClick} />}>{children}</TooltipTrigger>
+    <TooltipContent>{label}</TooltipContent>
+  </Tooltip>
+}
+function Actions({ job, send, row }: { job: Job; send: Send; row?: { select: () => void; remove: () => void } }) {
   const { t } = useTranslation(['tasks', 'common'])
   const [busy, setBusy] = useState(false)
   const run = (action: JobAction) => { setBusy(true); void send('jobs:action', { id: job.id, action }).finally(() => setBusy(false)) }
-  if (job.status === 'running' || job.status === 'queued') return <>
-    <Button variant="ghost" size="icon" title={t('pause')} aria-label={t('pause')} disabled={busy} onClick={() => run('pause')}><Pause /></Button>
-    <Button variant="ghost" size="icon" title={t('common:cancel')} aria-label={t('common:cancel')} disabled={busy} onClick={() => run('cancel')}><X /></Button>
-  </>
-  if (job.status === 'completed') return <Button variant="ghost" size="icon" title={t('revealFile')} aria-label={t('revealFile')} disabled={busy} onClick={() => run('reveal')}><FolderOpen /></Button>
+  const active = job.status === 'running' || job.status === 'queued'
+  const completed = job.status === 'completed'
+  const hasFile = completed && job.files.length > 0
   const resume = job.status === 'paused'
-  const label = resume ? t('resume') : t('common:retry')
-  return <Button variant="ghost" size="icon" title={label} aria-label={label} disabled={busy} onClick={() => run(resume ? 'resume' : 'retry')}>{resume ? <Play /> : <RotateCcw />}</Button>
+  const reveal = t('revealFile')
+  return <>
+    {active && <>
+      <TaskButton label={t('pause')} disabled={busy} onClick={() => run('pause')}><Pause /></TaskButton>
+      <TaskButton label={t('common:cancel')} disabled={busy} onClick={() => run('cancel')}><X /></TaskButton>
+    </>}
+    {!active && !completed && <TaskButton label={resume ? t('resume') : t('common:retry')} disabled={busy} onClick={() => run(resume ? 'resume' : 'retry')}>{resume ? <Play /> : <RotateCcw />}</TaskButton>}
+    {hasFile && (row ? <>
+      <TaskButton label={t('openFile')} disabled={busy} onClick={() => run('open')}><SquareArrowOutUpRight /></TaskButton>
+      <TaskButton className="hidden @min-[40rem]/task-row:inline-flex" label={reveal} disabled={busy} onClick={() => run('reveal')}><FolderOpen /></TaskButton>
+      <Menu.Root>
+        <Tooltip>
+          <TooltipTrigger render={<Menu.Trigger render={<Button variant="ghost" size="icon-sm" className="@min-[40rem]/task-row:hidden" aria-label={t('moreActions')} />} />}><Ellipsis /></TooltipTrigger>
+          <TooltipContent>{t('moreActions')}</TooltipContent>
+        </Tooltip>
+        <Menu.Portal>
+          <Menu.Positioner align="end" sideOffset={4} className="z-50">
+            <Menu.Popup className="min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none">
+              <Menu.Item disabled={busy} onClick={() => run('reveal')} className="flex cursor-default items-center gap-2 rounded-md px-2 py-1 text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-50"><FolderOpen className="size-4" />{reveal}</Menu.Item>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
+    </> : <TaskButton label={reveal} disabled={busy} onClick={() => run('reveal')}><FolderOpen /></TaskButton>)}
+    {row && <>
+      <TaskButton label={t('inspector.title')} onClick={row.select}><Info /></TaskButton>
+      {!active && <TaskButton label={t('removeDialog.confirm')} destructive onClick={row.remove}><Trash2 /></TaskButton>}
+    </>}
+  </>
 }
-// Right-clicking a task. The row already carries the one action its state calls for; this is where the
-// rest of them live, including the ones that had nowhere else to be: the link it came from, the page
-// behind it, the path it was written to, and removing this single record.
-function JobMenu({ job, send, children }: { job: Job; send: Send; children: React.ReactNode }) {
+function JobMenu({ job, send, children }: { job: Job; send: Send; children: (remove: () => void) => ReactNode }) {
   const { t } = useTranslation(['tasks', 'common'])
   const [removing, setRemoving] = useState(false)
   const [removingBatch, setRemovingBatch] = useState(false)
@@ -56,9 +87,10 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
   const working = job.status === 'running' || job.status === 'queued'
   const done = job.status === 'completed'
   const batchTitle = job.batchTitle || t('thisParse')
+  const remove = () => { setWithFiles(false); setRemoving(true) }
   return <>
     <ContextMenu>
-      <ContextMenuTrigger render={<div className="contents" />}>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger render={<div className="contents" />}>{children(remove)}</ContextMenuTrigger>
       <ContextMenuContent className="w-52">
         <ContextMenuItem onClick={() => run('copy-link')}><LinkIcon />{t('common:copyLink')}</ContextMenuItem>
         <ContextMenuItem onClick={() => run('open-page')}><ExternalLink />{t('common:openPage')}</ContextMenuItem>
@@ -79,7 +111,7 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
         </>}
         {job.status === 'paused' && <ContextMenuItem onClick={() => run('resume')}><Play />{t('resume')}</ContextMenuItem>}
         {(job.status === 'failed' || job.status === 'cancelled') && <ContextMenuItem onClick={() => run('retry')}><RotateCcw />{t('common:retry')}</ContextMenuItem>}
-        <ContextMenuItem variant="destructive" onClick={() => { setWithFiles(false); setRemoving(true) }}><Trash2 />{t('removeRecordMenu')}</ContextMenuItem>
+        <ContextMenuItem variant="destructive" onClick={remove}><Trash2 />{t('removeRecordMenu')}</ContextMenuItem>
         {/* The batch this task was queued with. Everything above stays available on the task itself:
             acting on the batch is doing the same thing to each of them, not taking their controls away. */}
         {job.batchId && <>
@@ -110,7 +142,7 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
         </Field>
         <AlertDialogFooter>
           <AlertDialogCancel render={<Button variant="outline" />}>{t('keep')}</AlertDialogCancel>
-          <AlertDialogAction render={<Button variant="destructive" onClick={() => void send('jobs:remove', { id: job.id, deleteFiles: withFiles }).then(ok => { if (ok) setRemoving(false) })} />}>{t('removeDialog.confirm')}</AlertDialogAction>
+          <AlertDialogAction variant="destructive" onClick={() => void send('jobs:remove', { id: job.id, deleteFiles: withFiles }).then(ok => { if (ok) setRemoving(false) })}>{t('removeDialog.confirm')}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -127,13 +159,13 @@ function JobMenu({ job, send, children }: { job: Job; send: Send; children: Reac
         </Field>
         <AlertDialogFooter>
           <AlertDialogCancel render={<Button variant="outline" />}>{t('keep')}</AlertDialogCancel>
-          <AlertDialogAction render={<Button variant="destructive" onClick={() => void send('jobs:batch', { action: 'remove', batchId: job.batchId, deleteFiles: withFiles }).then(ok => { if (ok) setRemovingBatch(false) })} />}>{t('batch.remove')}</AlertDialogAction>
+          <AlertDialogAction variant="destructive" onClick={() => void send('jobs:batch', { action: 'remove', batchId: job.batchId, deleteFiles: withFiles }).then(ok => { if (ok) setRemovingBatch(false) })}>{t('batch.remove')}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </>
 }
-function JobProgress({ job, detail = false }: { job: Job; detail?: boolean }) {
+function JobProgress({ job }: { job: Job }) {
   const { t } = useTranslation(['tasks', 'common'])
   const active = job.status === 'running'
   const processing = job.stage !== 'download' ? job.stage : undefined
@@ -144,62 +176,80 @@ function JobProgress({ job, detail = false }: { job: Job; detail?: boolean }) {
   return <>
     <TransferProgress label={label} value={value} downloaded={job.downloaded} total={job.total} speed={job.speed}
       eta={processing ? job.processingEta : job.eta} active={active && !finishing} waiting={active && !processing && job.speed === 0 && Boolean(job.downloaded)}
-      showTransfer={!processing || !active} showBar={(detail || job.status !== 'completed') && (active || value !== null)} />
+      showTransfer={!processing || !active} showBar={active || value !== null} />
     {active && processing && job.processingEta === undefined && <span className="text-xs text-muted-foreground">{t('estimating')}</span>}
   </>
 }
 // Tasks and subscription updates use this same row: cover size, title, metadata and action placement
 // change together. Callers supply their own state and actions rather than fabricating download jobs.
-export function TaskListRow({ title, subtitle, cover, coverShape = 'landscape', status, actions, select, selectLabel, density = 'comfortable', children }: {
+export function TaskListRow({ title, subtitle, cover, coverShape = 'landscape', status, actions, select, selectLabel, density = 'comfortable', layout = 'stacked', children }: {
   title: string; subtitle: ReactNode; cover: ReactNode; status?: ReactNode; actions: ReactNode;
-  select: () => void; selectLabel: string; coverShape?: 'square' | 'landscape'; density?: Settings['density']; children?: ReactNode;
+  select: () => void; selectLabel: string; coverShape?: 'square' | 'landscape'; density?: Settings['density']; layout?: 'stacked' | 'columns'; children?: ReactNode;
 }) {
   const compact = density === 'compact'
-  return <Item variant="outline" size={compact ? 'sm' : 'default'} className="min-w-0 flex-nowrap items-stretch">
-    <ItemMedia variant="image" className={compact ? 'size-12 group-data-[size=sm]/item:size-12' : coverShape === 'square' ? 'size-14' : 'h-14 w-20'}>
+  const columns = layout === 'columns'
+  return <Item variant="outline" size={compact ? 'sm' : 'default'} className={cn('min-w-0 flex-nowrap', columns ? '@container/task-row items-center' : 'items-stretch')}>
+    <ItemMedia variant="image" className={cn(columns && 'self-center', compact ? 'size-12 group-data-[size=sm]/item:size-12' : coverShape === 'square' ? 'size-14' : 'h-14 w-20')}>
       <button className="size-full" onClick={select} aria-label={selectLabel}>{cover}</button>
     </ItemMedia>
-    <ItemContent className="min-w-0 gap-1.5">
+    <ItemContent className={cn('min-w-0', columns ? 'gap-1' : 'gap-1.5')}>
       <ItemTitle className="w-full min-w-0"><button className="min-w-0 truncate text-left" onClick={select} title={title}>{title}</button></ItemTitle>
-      <ItemDescription>{subtitle}</ItemDescription>
+      <ItemDescription className={cn(columns && 'block truncate text-xs')} title={columns && typeof subtitle === 'string' ? subtitle : undefined}>{subtitle}</ItemDescription>
       {children}
     </ItemContent>
-    <ItemActions className="shrink-0 flex-col items-end justify-between">
-      {status}
+    {columns && status && <div className="w-24 shrink-0 @min-[40rem]/task-row:w-32">{status}</div>}
+    <ItemActions className={cn('shrink-0', columns ? 'w-32 justify-end' : 'flex-col items-end justify-between')}>
+      {!columns && status}
       <div className="flex items-center gap-1">{actions}</div>
     </ItemActions>
   </Item>
 }
-export function TaskCard({ job, send, select, density = 'comfortable' }: { job: Job; send: Send; select: () => void; density?: Settings['density'] }) {
+function TaskStatus({ job }: { job: Job }) {
   const { t } = useTranslation(['tasks', 'common'])
-  // The batch is named on every task of it rather than as a header above a group: the list is sorted
-  // and filtered by the user, so tasks of one batch are not necessarily next to each other.
-  const subtitle = <>{platformLabel(job.platform)} · {localTime(job.createdAt)}{job.batchId ? ` · ${t('batchLabel', { title: job.batchTitle || t('thisParse') })}` : ''}</>
-  return <JobMenu job={job} send={send}><TaskListRow title={job.title} subtitle={subtitle}
+  const running = job.status === 'running'
+  const processing = running && job.stage && job.stage !== 'download' ? job.stage : undefined
+  const value = processing ? job.processingProgress : job.total ? job.progress : undefined
+  const percent = value === undefined ? null : Math.floor(Math.min(1, Math.max(0, value)) * 100)
+  const speed = running && !processing && job.speed && job.speed > 0 ? `${formatBytes(job.speed)}/s` : undefined
+  const label = processing ? t(`stages.${processing}`) : t(`common:statuses.${job.status}`)
+  return <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex items-center justify-between gap-1 text-xs tabular-nums">
+      <span className={cn('truncate', statusTone[job.status])} title={label}>{label}</span>
+      {running && percent !== null && <span className="shrink-0">{percent}%</span>}
+    </div>
+    {running && <Progress value={percent} aria-label={label} />}
+    {speed && <span className="truncate text-xs text-muted-foreground tabular-nums">{speed}</span>}
+  </div>
+}
+export function TaskCard({ job, send, select, density = 'comfortable' }: { job: Job; send: Send; select: () => void; density?: Settings['density'] }) {
+  const { t } = useTranslation('tasks')
+  const timestamp = new Date(job.createdAt).toLocaleString(i18n.language === 'en' ? 'en-US' : 'zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  const size = job.status === 'completed' ? job.downloaded ?? job.total : undefined
+  const issue = job.status === 'failed' ? failureKind(job.error) : undefined
+  const reason = job.status === 'failed' && job.wall ? wallTitle(job.wall) : issue && issue !== 'generic' ? t(`failures.${issue}.title`) : undefined
+  const subtitle = [platformLabel(job.platform), size !== undefined && formatBytes(size), reason || timestamp].filter(Boolean).join(' · ')
+  return <JobMenu job={job} send={send}>{remove => <TaskListRow layout="columns" title={job.title} subtitle={subtitle}
     cover={<Cover job={job} />} select={select} selectLabel={t('viewTask', { title: job.title })} density={density}
-    status={<span className={cn('text-[11px]', statusTone[job.status])}>{t(`common:statuses.${job.status}`)}</span>}
-    actions={<Actions job={job} send={send} />}>
-      <JobProgress job={job} />
-      {job.warnings?.map(warning => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
-      {job.error && <p className="line-clamp-2 text-xs text-destructive" title={job.error}>{job.error}</p>}
-  </TaskListRow></JobMenu>
+    status={<TaskStatus job={job} />} actions={<Actions job={job} send={send} row={{ select, remove }} />} />}</JobMenu>
 }
 // What a failure was and what to do about it. A permission wall is known for certain, from the engine's
 // own wording, and its message already says what to do. Anything else is read off the error the way a
 // user would read it; where nothing matches, the error is shown as it is with the general advice.
-type FailureKind = 'resuming' | 'noSpace' | 'permission' | 'expired' | 'network' | 'convert'
+type FailureKind = 'resuming' | 'noSpace' | 'permission' | 'expired' | 'network' | 'convert' | 'quality'
 const FAILURES: { pattern: RegExp; kind: FailureKind }[] = [
   { pattern: /自动续传|resuming automatically/i, kind: 'resuming' },
   { pattern: /ENOSPC|no space|not enough (disk )?space|insufficient (disk )?space|disk full|磁盘空间/i, kind: 'noSpace' },
   { pattern: /EACCES|EPERM|EROFS|permission denied|access (is )?denied|read-only file system|not writable|拒绝访问/i, kind: 'permission' },
+  { pattern: /所选画质已不可用|没有符合所选画质|请求的视频画质已不可用|no stream matches the selected quality|(?:selected|requested)(?: video)? quality is no longer available/i, kind: 'quality' },
   { pattern: /HTTP Error 40[34]|HTTP Error 410|\b40[34] Forbidden|\b410\b|expired|no longer valid|已过期|已失效/i, kind: 'expired' },
   { pattern: /timed? ?out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|getaddrinfo|socket hang up|network|网络|超时/i, kind: 'network' },
   { pattern: /ffmpeg|postprocess|merg(e|ing)|conver(t|sion)|合并|转换失败/i, kind: 'convert' },
 ]
+const failureKind = (error?: string) => FAILURES.find(entry => entry.pattern.test(error || ''))?.kind ?? 'generic'
 // The failure, said at the top of the detail with what can be done about it right there.
 function Failure({ job, send }: { job: Job; send: Send }) {
   const { t } = useTranslation(['tasks', 'common'])
-  const kind = FAILURES.find(entry => entry.pattern.test(job.error || ''))?.kind ?? 'generic'
+  const kind = failureKind(job.error)
   const title = job.wall ? wallTitle(job.wall) : t(`failures.${kind}.title`)
   const hint = job.wall ? undefined : t(`failures.${kind}.hint`)
   const login = job.wall ? fixableBySignIn(job.wall) : false
@@ -269,7 +319,7 @@ export function TaskInspector({ job, send, close, error }: { job?: Job; send: Se
             <TabsContent value="overview" className="flex flex-col gap-4">
               {job.error && <Failure job={job} send={send} />}
               {job.warnings?.map(warning => <Alert key={warning}><AlertTitle>{t('subtitleWarning')}</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
-              <JobProgress job={job} detail />
+              <JobProgress job={job} />
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm [&_dt]:text-muted-foreground">
                 <dt>{t('fields.platformKind')}</dt><dd>{platformLabel(job.platform)} / {t(`common:kinds.${job.kind || 'video'}`)}</dd>
                 <dt>{t('fields.method')}</dt><dd>{job.method === 'browser' ? t('methods.browser') : t('methods.local')}</dd>
@@ -282,6 +332,7 @@ export function TaskInspector({ job, send, close, error }: { job?: Job; send: Se
                 {(job.views ?? job.danmaku ?? job.comments ?? job.likes) !== undefined && <><dt>{t('fields.stats')}</dt><dd><MediaStatsRow views={job.views} danmaku={job.danmaku} comments={job.comments} likes={job.likes} className="text-sm" /></dd></>}
                 <dt>{t('fields.source')}</dt><dd className="break-all">{job.url}</dd>
                 <dt>{t('fields.directory')}</dt><dd className="break-all">{job.directory}</dd>
+                {job.batchId && <><dt>{t('fields.batch')}</dt><dd className="break-all">{job.batchTitle || t('thisParse')}</dd></>}
                 {/* Breaks picked up again on their own since the last time it finished or was retried by hand. */}
                 {job.attempts ? <><dt>{t('fields.autoResume')}</dt><dd className="tabular-nums">{t('attempts', { count: job.attempts })}</dd></> : null}
                 <dt>{t('fields.createdAt')}</dt><dd>{localTime(job.createdAt)}</dd>

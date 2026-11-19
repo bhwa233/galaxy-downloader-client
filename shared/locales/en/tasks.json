@@ -5,6 +5,8 @@
   "estimating": "Estimating time left…",
   "revealFile": "Show in folder",
   "open": "Open",
+  "openFile": "Open file",
+  "moreActions": "More actions",
   "copyPath": "Copy file path",
   "downloadCover": "Download cover",
   "downloadAudio": "Download audio",
@@ -46,6 +48,7 @@
     "expired": { "title": "Media link expired or refused", "hint": "Retrying parses the post again to get a fresh link. If it keeps happening, sign in again in the in-app browser." },
     "network": { "title": "Network error", "hint": "Check your network or system proxy, then retry. On a slow network, increase the connection timeout in Settings." },
     "convert": { "title": "Merge or conversion failed", "hint": "Check that FFmpeg is available under Settings → Tools & updates, then retry." },
+    "quality": { "title": "Selected quality unavailable", "hint": "Parse the link again, choose an available quality, and create a new task." },
     "generic": { "title": "Download failed", "hint": "You can retry right away. If it keeps failing, export the diagnostics log to look into it." }
   },
   "files": {
@@ -78,6 +81,7 @@
     "stats": "Views / danmaku / comments / likes",
     "source": "Source",
     "directory": "Save location",
+    "batch": "Batch",
     "downloaded": "Downloaded",
     "speed": "Current speed",
     "eta": "Time left",

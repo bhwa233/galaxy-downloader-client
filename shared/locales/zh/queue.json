@@ -14,11 +14,13 @@
     "preparing": "正在解析作品并准备下载",
     "coverSaved": "封面已保存",
     "fileStart": "开始下载第 {{index}} / {{total}} 个文件",
-    "tierMissing": "这个视频没有所选的画质档位，改按最高画质下载",
+    "videoTierLower": "没有同档画质，改用较低档：{{quality}}",
     "audioTierMissing": "这个作品没有所选的音轨，改按最高音质下载",
     "completed": "下载完成"
   },
   "errors": {
+    "videoTierUnavailable": "此视频没有符合所选画质的码流，未改用更高画质。",
+    "videoQualityUnavailable": "所选画质已不可用，请重新解析链接并选择画质。",
     "jobNotFound": "下载任务不存在",
     "completedCannotStop": "已完成的任务不能暂停或取消",
     "stopping": "任务正在停止，请稍后重试",

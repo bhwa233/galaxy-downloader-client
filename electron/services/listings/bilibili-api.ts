@@ -7,13 +7,14 @@ import { signQuery } from './wbi'
 import type { Fetcher, ListingPage } from './types'
 
 type View = NonNullable<ViewResponse['data']>
-type Track = { id?: number; baseUrl?: string; base_url?: string; url?: string; mimeType?: string; mime_type?: string; codecs?: string; bandwidth?: number; size?: number; height?: number; frameRate?: string; frame_rate?: string }
+type Track = { id?: number; baseUrl?: string; base_url?: string; url?: string; mimeType?: string; mime_type?: string; codecs?: string; bandwidth?: number; size?: number; width?: number; height?: number; frameRate?: string; frame_rate?: string }
 type PlayResponse = { code?: number; message?: string; data?: {
   quality?: number; format?: string; timelength?: number; video_codecid?: number; v_voucher?: string
   dash?: { video?: Track[]; audio?: Track[]; dolby?: { audio?: Track[] }; flac?: { audio?: Track } }
   durl?: { url?: string; size?: number; length?: number }[]
 } }
 type Stream = NonNullable<RawInfo['formats']>[number]
+type SubtitleResponse = { data?: { subtitle?: { subtitles?: { lan?: string; subtitle_url?: string }[] } } }
 export type BilibiliPage = {
   listing?: ListingPage; metadata?: RawInfo; sampleId?: string; url: string
   cookies: Cookie[]; userAgent: string; loadFormats: (signal: AbortSignal) => Promise<RawInfo>
@@ -97,7 +98,12 @@ export class BilibiliApi {
     const query = signQuery({ bvid, cid, fnval: 4048, ...device(fingerprint),
       ...(identity.cookies.some(cookie => cookie.name === 'SESSDATA') ? {} : { try_look: 1 }),
     }, key)
-    const body = await read<PlayResponse>(this.fetch, `${API}/x/player/wbi/playurl?${query}`, address, signal)
+    const subtitleQuery = signQuery({ bvid, cid }, key)
+    const [body, captions] = await Promise.all([
+      read<PlayResponse>(this.fetch, `${API}/x/player/wbi/playurl?${query}`, address, signal),
+      read<SubtitleResponse>(this.fetch, `${API}/x/player/wbi/v2?${subtitleQuery}`, address, AbortSignal.any([signal, AbortSignal.timeout(2_500)])).catch(() => undefined),
+    ])
+    signal.throwIfAborted()
     const play = body.data
     if (!play || play.v_voucher) throw new Error('Bilibili playback requires page verification')
     const formats: Stream[] = []
@@ -109,21 +115,24 @@ export class BilibiliApi {
       const rate = (track.frameRate || track.frame_rate || '').split('/').map(Number)
       formats.push({ url: address, format_id: audio ? String(track.id) : /-(\d+)\.m4s(?:\?|$)/.exec(address)?.[1] || String(track.id),
         ext: audio ? 'm4a' : 'mp4', vcodec: audio ? 'none' : track.codecs, acodec: audio ? track.codecs : audios.length ? 'none' : undefined,
-        height: track.height, fps: rate[0] > 0 ? rate[0] / (rate[1] || 1) : undefined,
+        width: track.width, height: track.height, fps: rate[0] > 0 ? rate[0] / (rate[1] || 1) : undefined,
+        dynamic_range: !audio && track.id === 126 ? 'DV' : !audio && track.id === 125 ? 'HDR10' : undefined,
+        format_note: !audio && track.id === 112 ? 'high bitrate' : undefined,
         filesize: track.size, tbr: track.bandwidth ? track.bandwidth / 1000 : undefined,
       })
     }
     const fragments = play.durl?.filter(item => item.url && /^https?:\/\//i.test(item.url))
     if (fragments?.length) {
-      const heights: Record<number, number> = { 6: 240, 16: 360, 32: 480, 64: 720, 74: 720, 80: 1080, 112: 1080, 116: 1080, 120: 2160, 125: 2160, 126: 2160, 127: 4320 }
       formats.push({ format_id: String(play.quality), url: fragments[0].url, ext: play.format?.startsWith('flv') ? 'flv' : 'mp4',
-        height: heights[play.quality || 0], filesize: fragments.every(item => item.size !== undefined) ? fragments.reduce((sum, item) => sum + item.size!, 0) : undefined,
+        filesize: fragments.every(item => item.size !== undefined) ? fragments.reduce((sum, item) => sum + item.size!, 0) : undefined,
       })
     }
     if (!formats.length) throw new Error('Bilibili playback formats are unavailable')
     // Match the engine's ascending quality/codec order before using the shared tier normalizer.
     const codec = (stream: Stream) => /^av01/.test(stream.vcodec || '') ? 3 : /^(hev|hvc)/.test(stream.vcodec || '') ? 2 : 1
     formats.sort((a, b) => (a.height || 0) - (b.height || 0) || (a.fps || 0) - (b.fps || 0) || codec(a) - codec(b) || (a.tbr || 0) - (b.tbr || 0))
-    return { ...metadata, duration: metadata.duration ?? (play.timelength ? play.timelength / 1000 : undefined), formats }
+    const subtitles = Object.fromEntries((captions?.data?.subtitle?.subtitles || [])
+      .flatMap(track => track.lan && track.subtitle_url ? [[track.lan, [{ url: track.subtitle_url }]]] : []))
+    return { ...metadata, duration: metadata.duration ?? (play.timelength ? play.timelength / 1000 : undefined), formats, subtitles }
   }
 }

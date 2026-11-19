@@ -27,7 +27,7 @@ A local-first desktop media downloader. Paste a link — a video, a post, a whol
 | Bilibili | videos, multi-part videos, anime episodes | uploads, collections and series, the parts of a video | optional; needed for member-only quality |
 | YouTube | videos, Shorts | channels (videos, Shorts), playlists, mixes (first 100) | optional |
 | Douyin | videos, photo posts, short-drama episodes | profiles (posts, likes, recommended), collections, short-drama series and the series list | needed beyond the first page |
-| Xiaohongshu | notes | — (profiles are not supported) | recommended |
+| Xiaohongshu | video notes and share links | creator profiles (video only) | may be required |
 | Weibo | posts | profiles | needed for profiles |
 | X | posts with video or images | a user's media timeline | needed |
 | Instagram | reels, posts with images | profiles, reels | needed |

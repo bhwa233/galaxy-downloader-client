@@ -31,6 +31,10 @@ class Logger:
         emit('log', message=message)
 
 
+class VideoQualityUnavailable(Exception):
+    pass
+
+
 def main():
     try:
         request = json.load(sys.stdin)
@@ -122,6 +126,8 @@ def main():
         # Platform subtitles are only ever kept as files beside the media, as the platform serves them
         # apart from being converted to SRT. Older jobs may still say 'embed' or 'burn'.
         subtitles = 'off' if request.get('subtitles', 'off') == 'off' else 'file'
+        if request.get('lowestVideoQuality'):
+            options.update(format='wv*+ba/wv*', format_sort=['res', 'fps'], format_sort_force=True)
         if request.get('audioOnly'):
             audio_format_id = request.get('audioFormatId')
             options['format'] = f'{audio_format_id}/bestaudio/best' if audio_format_id and audio_format_id != 'best' else 'bestaudio/best'
@@ -174,6 +180,31 @@ def main():
         if anonymous:
             configured['http_headers'] = {key: value for key, value in (options.get('http_headers') or {}).items() if key.lower() != 'cookie'}
         ydl = Downloader(configured)
+        video_id = request.get('videoFormatId')
+        short_edge_cap = request.get('videoMaxShortEdge')
+        if operation == 'download' and (video_id or short_edge_cap):
+            merge_video = ydl.build_format_selector('bv*+ba/bv*')
+
+            def select_video(context):
+                formats = context['formats']
+
+                def eligible(stream):
+                    if stream.get('vcodec') == 'none':
+                        return True
+                    if video_id and stream.get('format_id') != video_id:
+                        return False
+                    return short_edge_cap is None or any(
+                        isinstance(side, (int, float)) and 0 < side <= short_edge_cap
+                        for side in (stream.get('width'), stream.get('height')))
+
+                allowed = [stream for stream in formats if eligible(stream)]
+                if not any(stream.get('vcodec') != 'none' for stream in allowed):
+                    if short_edge_cap and not video_id:
+                        raise VideoQualityUnavailable('没有可确认符合短边上限的视频流。' if request.get('locale') == 'zh' else 'No video stream can be verified to fit the short-edge limit.')
+                    raise VideoQualityUnavailable('请求的视频画质已不可用。' if request.get('locale') == 'zh' else 'The requested video quality is no longer available.')
+                return merge_video({**context, 'formats': allowed})
+
+            ydl.format_selector = select_video
         # Credentials remain in this process; the fallback gets a fresh cookie jar
         # without changing the client's persist:media session.
         for item in [] if anonymous else request.get('cookies', []):
@@ -290,6 +321,9 @@ if __name__ == '__main__':
         details, seen, cause = {}, set(), error
         while isinstance(cause, BaseException) and id(cause) not in seen:
             seen.add(id(cause))
+            if isinstance(cause, VideoQualityUnavailable):
+                details['code'] = 'video-quality-unavailable'
+                break
             # Network/SSL exceptions can also inherit OSError; only file errors
             # carry a filename. yt-dlp preserves wrapped causes in exc_info.
             if isinstance(cause, OSError) and cause.filename is not None and cause.errno in errno.errorcode:

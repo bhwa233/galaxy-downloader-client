@@ -1,5 +1,18 @@
 {
   "title": "Parse result",
+  "parseSession": {
+    "guest": "Parsed as guest",
+    "signedIn": "Parsed while signed in",
+    "unknown": "Sign-in status unconfirmed",
+    "login": "Sign in to Xiaohongshu",
+    "refreshing": "Refreshing result…",
+    "refreshFailed": "Could not refresh qualities. The previous result is still available.",
+    "refreshed": "Reparsed while signed in",
+    "added_one": "{{count}} new quality option",
+    "added_other": "{{count}} new quality options",
+    "available_one": "{{count}} quality option available",
+    "available_other": "{{count}} quality options available"
+  },
   "preview": "Preview",
   "openingPage": "Opening page…",
   "about": "≈ {{size}}",
@@ -35,10 +48,17 @@
     "count_one": "{{count}} quality",
     "count_other": "{{count}} qualities",
     "original": "Original image",
-    "best": "Best quality",
     "label": "Download quality",
     "reading": "Reading qualities…",
-    "default": "Default quality"
+    "batchBest": "Highest per video",
+    "batchLowest": "Lowest per video",
+    "reset": "Restore default selection",
+    "shortEdge": "{{value}} px short edge",
+    "width": "{{value}} px wide",
+    "height": "{{value}} px high",
+    "unknown": "Resolution not reported",
+    "highBitrate": "High bitrate",
+    "batchFallback": "Uses a lower quality if there is no match. Items with no suitable quality won't download."
   },
   "audioQuality": {
     "language": "Audio language",
@@ -93,7 +113,7 @@
     "title_one": "Only the first {{count}} entry is listed",
     "title_other": "Only the first {{count}} entries are listed",
     "total": "This list has {{total}} entries; parsing stopped at the limit.",
-    "limit": "Parsing stopped at the entry limit; there may be more after it.",
+    "limit": "The full list could not be read; there may be more entries.",
     "hint": " To get a later one, paste its own link."
   },
   "noMatch": "Nothing matches the filters",
@@ -190,9 +210,6 @@
     "searchingEmpty": "No matches yet. Still searching…",
     "selectFound": "Select all {{count}} found items",
     "hiddenSelected": "{{count}} outside the current results",
-    "reviewSelected": "Review selection",
-    "reviewHint": "{{count}} items selected, including hidden items and other groups. Deselect them here.",
-    "clearSelection": "Clear selection",
     "downloadFirst": "Download first {{count}} items",
     "nativeOrder": "Loaded in the platform’s reverse collection order. Load more to continue.",
     "missingDates_one": "1 item has no publication date: date searches exclude it and date sorting puts it last."

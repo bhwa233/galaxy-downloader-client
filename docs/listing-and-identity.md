@@ -154,11 +154,11 @@
 
 **匿名只能拿第 1 页。** 第 2 页返回只有 `status_code` 的空信封（页面自己那次请求的响应头里是 `whale-decision-custom: black_no_login`）。这种情况抛出明确的登录提示，而不是报成"这个作者没有更多作品"。
 
-### 2.4 小红书（已停用）
+### 2.4 小红书（仅视频）
 
-`listings/xiaohongshu.ts` 完整保留但**不注册**，并由 `parser.ts` 的 `REFUSED` 清单直接拒绝，错误信息为"暂不支持小红书主页解析，请改用单篇笔记链接"。
+创作者主页使用应用内浏览器的现有会话。适配器只读当前主页的笔记数据及网页自行请求的列表响应，不直接调用签名接口。沿用「加载更多」，必要时在网页内滚动，按笔记 ID 去重，只列视频，最多保留 500 条；未确认结束时保留已读结果并提示不完整。
 
-原因：小红书每个 API 调用都带 `x-s` 签名，由页面内混淆脚本计算。**页内 fetch 也救不了它** —— 它的拦截器装在自己的 HTTP 客户端上，不拦原生 `fetch`，所以从页面里直接调接口同样缺 `x-s`。上游 MediaCrawler 的做法是用纯算法重写签名（`sign_with_xhshow`），而不是在页面里求值；模块名 `playwright_sign` 说明页面求值那条路以前有过、后来被替换掉了。抛普通 `Error` 而非 `LoginRequired`，界面因此显示为错误而不是引导用户去登录。单篇笔记链接不受影响。
+单篇笔记按链接中的笔记 ID 读取该笔记的视频格式，由本地引擎选择画质与下载。分享短链沿用既有跳转解析；图文笔记不在本轮范围内。遇到登录或验证时提示用户在应用内完成后重试。
 
 ## 3. 分页语义
 
@@ -336,7 +336,7 @@ Playwright 端到端（`pnpm test:e2e`）覆盖真实 Electron 窗口的解析�
 ## 8. 已知限制
 
 1. **yt-dlp 的 TLS 指纹**：Python urllib 的 JA3/JA4 明显不是浏览器。唯一根治方式是在引擎中引入 `curl_cffi` 并启用 yt-dlp 的 `impersonate`，代价是三平台各增加十余 MB 的原生二进制与相应回归验证。本轮未做，理由是列表解析已走真实 Chromium，而 yt-dlp 主要面对的 CDN 端点对指纹敏感度较低。
-2. **小红书主页**不支持，见 2.4。
+2. **小红书图文笔记**不支持；主页只列视频，见 2.4。
 3. **YouTube 标题截断**：栅格给出的标题本身已被截断，文件名会随之变短。取回完整标题需要额外请求每个视频的观看页。
 4. **播放量为显示值**：`247K views` 解析为 247000，并非精确计数。
 5. **`Accept-Language` 在 session 首次准备时设定**，运行中切换界面语言需重启生效。
@@ -360,7 +360,7 @@ Playwright 端到端（`pnpm test:e2e`）覆盖真实 Electron 窗口的解析�
 | `electron/services/listings/douyin.ts` | 抖音作品列表 |
 | `electron/services/listings/wbi.ts` | wbi 签名 |
 | `electron/services/listings/youtube.ts` | YouTube 频道列表 |
-| `electron/services/listings/xiaohongshu.ts` | 小红书列表（保留未启用） |
+| `electron/services/listings/xiaohongshu.ts` | 小红书视频笔记与主页视频列表 |
 | `electron/services/listings/text.ts` | 时长与计数的显示串解析 |
 | `electron/services/listings/pace.ts` | 请求与页面节奏 |
 | `electron/services/identity.ts` | UA、语言、客户端提示、关联域 |

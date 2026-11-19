@@ -87,9 +87,9 @@
       "hint": "Keep each collection or multipart video in its own folder."
     },
     "videoQuality": {
-      "label": "Default video quality",
-      "best": "Best available quality",
-      "upTo": "Up to {{height}}p"
+      "label": "Preferred video quality",
+      "best": "Highest quality",
+      "lowest": "Lowest quality"
     },
     "audioFormat": {
       "label": "Audio format",

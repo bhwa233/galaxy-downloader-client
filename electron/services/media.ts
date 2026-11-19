@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { MediaResult, MediaItem } from '../../shared/contracts'
 import { i18n } from '../../shared/i18n'
+import { compareVideoFormats, videoRateClass } from '../../shared/video-quality'
 
 export const ARTICLE_HOSTS = /(^|\.)mp\.weixin\.qq\.com$/
 
@@ -9,11 +10,22 @@ export type RawInfo = {
   thumbnails?: { url?: string; width?: number }[]; _type?: string;
   view_count?: number; comment_count?: number; uploader?: string; uploader_id?: string; channel_id?: string; artist?: string; channel?: string; timestamp?: number; upload_date?: string;
   extractor_key?: string; extractor?: string; vcodec?: string; entries?: RawInfo[]; playlist_index?: number; playlist_count?: number;
-  formats?: RawFormat[]
+  formats?: RawFormat[]; subtitles?: RawSubtitles; automatic_captions?: RawSubtitles
+}
+
+type RawSubtitles = Record<string, { url?: string; data?: string }[]>
+
+function subtitleTracksOf(info: RawInfo): MediaItem['subtitleTracks'] {
+  const languages = (tracks?: RawSubtitles) => Object.entries(tracks || {})
+    .filter(([language, variants]) => language !== 'danmaku' && language !== 'live_chat' && variants?.some(track => track?.url || track?.data))
+    .map(([language]) => language)
+  const manual = languages(info.subtitles)
+  const automatic = languages(info.automatic_captions)
+  return manual.length || automatic.length ? { manual, automatic } : undefined
 }
 
 const bestThumbnail = (value: RawInfo | undefined): string | undefined => value?.thumbnail || value?.thumbnails?.filter(item => item.url).sort((first, second) => (second.width || 0) - (first.width || 0))[0]?.url
-type RawFormat = { url?: string; format_id: string; height?: number; fps?: number; format_note?: string; ext?: string; vcodec?: string; acodec?: string; has_drm?: boolean; filesize?: number; filesize_approx?: number; tbr?: number; abr?: number; language?: string; language_preference?: number; audio_channels?: number; asr?: number; is_drc?: boolean; protocol?: string }
+type RawFormat = { url?: string; format_id: string; width?: number; height?: number; fps?: number; format?: string; format_note?: string; dynamic_range?: string; ext?: string; vcodec?: string; acodec?: string; has_drm?: boolean; filesize?: number; filesize_approx?: number; tbr?: number; abr?: number; language?: string; language_preference?: number; audio_channels?: number; asr?: number; is_drc?: boolean; protocol?: string }
 
 // A stream's size as the platform states it - exact where it knows, approximate where it gives one -
 // and otherwise its bitrate over the whole duration.
@@ -25,66 +37,37 @@ function streamSize(format: RawFormat | undefined, duration: number | undefined)
   return format.tbr && duration ? Math.round(format.tbr * 1000 / 8 * duration) : undefined
 }
 
-// What each platform calls a quality tier. 哔哩哔哩's extractor leaves format_note empty, so its own
-// names are put back by height and frame rate; YouTube's format_note already is its name ('720p60').
-function tierName(format: RawFormat, platform: string): string {
-  const height = format.height || 0
-  const smooth = (format.fps || 0) >= 50
-  if (platform === 'Bilibili') {
-    if (height >= 4000) return i18n.t('errors:media.tier.8k')
-    if (height >= 2000) return i18n.t('errors:media.tier.4k')
-    if (height >= 1000) return i18n.t(smooth ? 'errors:media.tier.1080p60' : 'errors:media.tier.1080p')
-    if (height >= 700) return i18n.t(smooth ? 'errors:media.tier.720p60' : 'errors:media.tier.720p')
-    if (height >= 460) return i18n.t('errors:media.tier.480p')
-    return i18n.t('errors:media.tier.360p')
-  }
-  if (format.format_note && /^\d{3,4}p/.test(format.format_note)) return format.format_note
-  return `${height}p${smooth ? Math.round(format.fps!) : ''}`
+function videoVariant({ dynamic_range, format, format_note }: RawFormat): string | undefined {
+  const name = `${dynamic_range || ''} ${format_note || ''} ${format || ''}`
+  if (/\bDV\b|Dolby Vision|杜比视界/i.test(name)) return 'Dolby Vision'
+  const hdr = name.match(/\bHDR(?:10\+?|12)?|\bHLG\b/i)?.[0]
+  if (hdr) return hdr.toUpperCase()
+  if (/high bitrate|premium|高码率|高碼率/i.test(name)) return 'high-bitrate'
+  return undefined
 }
 
-// One entry per tier, as the platform shows it. A tier comes in several codecs with the same name -
-// 哔哩哔哩 lists AVC, HEVC and AV1 of every height - and three identical names are no choice at all.
-// AVC is the one kept: every player takes it, and its format id is the one that recurs from video to
-// video (30064 is 720P on every 哔哩哔哩 video, 137 is 1080p on every YouTube one), which is what lets
-// a tier picked on a listing's first video apply to the rest. Audio-only formats are left to 仅音频.
-function tiersOf(formats: RawFormat[], platform: string, duration?: number): MediaItem['formats'] {
-  // The audio a video-only tier is merged with: the best audio stream, as the download picks it.
-  const audio = formats.filter(format => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
-    .sort((first, second) => (second.tbr || 0) - (first.tbr || 0))[0]
-  const byName = new Map<string, RawFormat>()
-  // The last format of each tier in yt-dlp's order: the one it prefers, and so the one a default
-  // download ('bv*+ba') takes at that height (measured: HEVC 30066 / 30077 on 哔哩哔哩, 616 on YouTube).
-  const preferred = new Map<string, RawFormat>()
+export function tiersOf(formats: RawFormat[], duration?: number): MediaItem['formats'] {
+  const audio = formats.findLast(format => !format.has_drm && format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
+  const choices = new Map<string, MediaItem['formats'][number]>()
   for (const format of formats) {
-    // A missing vcodec is a codec yt-dlp could not name, not an absent video: 哔哩哔哩's progressive MP4s
-    // (16 / 32 / 64, audio muxed in) come that way to a visitor, and were every tier such a video had.
-    // Only 'none' says there is no picture.
-    if (format.has_drm || format.ext === 'mhtml' || format.vcodec === 'none' || !format.height) continue
-    const name = tierName(format, platform)
-    const held = byName.get(name)
-    // AVC first, and a video-only stream over one with its audio already muxed in. The muxed ones are
-    // YouTube's legacy formats (18 is 360p), which the download session is not always offered: picking
-    // 360p then fell through to the best and fetched 1080p (measured 2026-09-24). A video-only stream
-    // is merged with the best audio, which is what every other tier does anyway.
-    const rank = (candidate?: RawFormat) => (/^avc/.test(candidate?.vcodec || '') ? 2 : 0) + (candidate?.acodec === 'none' ? 1 : 0)
-    // yt-dlp lists formats worst first, so a later one of the same rank is the better one.
-    if (!held || rank(format) >= rank(held)) byName.set(name, format)
-    preferred.set(name, format)
-  }
-  // The whole download for one video format: the stream plus the audio it is merged with, if it has none.
-  const measure = (format: RawFormat) => {
+    if (format.has_drm || format.ext === 'mhtml' || format.vcodec === 'none' || !format.format_id) continue
+    const width = Number.isSafeInteger(format.width) && format.width! > 0 ? format.width : undefined
+    const height = Number.isSafeInteger(format.height) && format.height! > 0 ? format.height : undefined
+    const fps = Number.isFinite(format.fps) && format.fps! > 0 ? Math.round(format.fps! * 100) / 100 || undefined : undefined
+    const variant = videoVariant(format)
+    const dimensions = width && height ? `${width} × ${height}` : width ? i18n.t('result:quality.width', { value: width }) : height ? i18n.t('result:quality.height', { value: height }) : i18n.t('result:quality.unknown')
     const merged = format.acodec === 'none' ? audio : undefined
     const video = streamSize(format, duration)
     const size = video === undefined ? undefined : video + (streamSize(merged, duration) || 0)
     const bitrate = format.tbr ? format.tbr + (merged?.tbr || 0) : undefined
-    return { size, bitrate }
+    const label = [dimensions, fps && `${fps} fps`, variant === 'high-bitrate' ? i18n.t('result:quality.highBitrate') : variant].filter(Boolean).join(' · ')
+    const key = width || height ? JSON.stringify([width, height, videoRateClass(fps), variant]) : format.format_id
+    choices.set(key, { id: format.format_id, label, width, height, fps, variant, extension: format.ext || '', audioOnly: false, size, bitrate })
   }
-  return [...byName.entries()].sort(([, first], [, second]) => (second.height || 0) - (first.height || 0) || (second.fps || 0) - (first.fps || 0))
-    .map(([name, format]) => {
-      const own = measure(format)
-      const taken = measure(preferred.get(name) || format)
-      return { id: format.format_id, label: name, height: format.height, extension: format.ext || '', audioOnly: false, ...own, preferredSize: taken.size, preferredBitrate: taken.bitrate }
-    })
+  const sorted = [...choices.values()].sort(compareVideoFormats)
+  const labels = new Map<string, number>()
+  for (const format of sorted) labels.set(format.label, (labels.get(format.label) ?? 0) + 1)
+  return sorted.map(format => labels.get(format.label) === 1 ? format : { ...format, label: `${format.label} · ${format.id}` })
 }
 
 // Keep distinct languages and qualities, rather than presenting every transport/client duplicate.
@@ -197,8 +180,9 @@ export function mediaResult(raw: RawInfo, url: string, method: MediaResult['meth
     // Channel and playlist entries carry a thumbnails list instead of a single thumbnail.
     thumbnail: bestThumbnail(entry) || bestThumbnail(raw),
     kind: entry.vcodec === 'none' ? 'audio' : 'video',
-    formats: tiersOf(entry.formats || [], platformOf(url), entry.duration),
+    formats: tiersOf(entry.formats || [], entry.duration),
     audioFormats: audioTiersOf(entry.formats || [], entry.duration),
+    subtitleTracks: subtitleTracksOf(entry),
   }))
   if (!items.length && start === 1) throw new Error(i18n.t('errors:media.nothingFound'))
   // A list that filled the limit exactly is one the engine stopped at rather than reached the end of:

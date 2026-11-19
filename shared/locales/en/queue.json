@@ -14,11 +14,13 @@
     "preparing": "Parsing the post and preparing the download",
     "coverSaved": "Cover saved",
     "fileStart": "Downloading file {{index}} of {{total}}",
-    "tierMissing": "This video lacks the selected quality; downloading the best available instead",
+    "videoTierLower": "Selected quality unavailable; using a lower one: {{quality}}",
     "audioTierMissing": "This item lacks the selected audio track; downloading the best audio instead",
     "completed": "Download complete"
   },
   "errors": {
+    "videoTierUnavailable": "No stream matches the selected quality. A higher quality was not substituted.",
+    "videoQualityUnavailable": "The selected quality is no longer available. Parse the link again and choose a quality.",
     "jobNotFound": "Download task not found",
     "completedCannotStop": "A completed task can't be paused or cancelled",
     "stopping": "The task is stopping; try again shortly",
